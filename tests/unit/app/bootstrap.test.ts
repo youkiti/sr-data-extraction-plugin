@@ -3,6 +3,8 @@ import * as schemaEnumService from '../../../src/app/services/schemaEnumService'
 import { withSpreadsheetWriteLock } from '../../../src/app/services/verificationService';
 import * as pendingWrites from '../../../src/app/services/pendingWrites';
 import * as dashboardService from '../../../src/app/services/dashboardService';
+import * as criteriaService from '../../../src/app/services/acceptanceCriteriaService';
+import { confirmCriteria, emptyCriteriaDraft } from '../../../src/features/verification/acceptanceCriteria';
 import { createSavingBadge } from '../../../src/app/ui/savingBadge';
 import { saveConsensusQuotes } from '../../../src/app/services/adjudicationService';
 // メインビュー起動配線のテスト。hashchange の発火タイミングを決定的に制御するため、
@@ -574,6 +576,55 @@ describe('bootstrapApp', () => {
     expect(updated).not.toHaveBeenCalled();
     unsubscribe();
   });
+  test('合格基準の入力・確認・取消・結果計算・再読込を配線する', async () => {
+    const load = jest.spyOn(criteriaService, 'loadCriteria').mockResolvedValue();
+    const change = jest.spyOn(criteriaService, 'changeCriteriaDraft').mockImplementation(() => undefined);
+    const save = jest.spyOn(criteriaService, 'saveCriteria').mockResolvedValue();
+    const cancel = jest.spyOn(criteriaService, 'cancelCriteriaConfirmation').mockImplementation(() => undefined);
+    const calculate = jest.spyOn(criteriaService, 'calculateCriteria').mockResolvedValue();
+    try {
+      const state = createInitialState();
+      state.currentProject = PROJECT;
+      state.role.role = 'owner';
+      state.home.countsLoaded = true;
+      state.protocol.records = [];
+      state.documents.records = [];
+      state.documents.studies = [];
+      state.counts = { ...state.counts, documents: 1, schemaVersions: 1, protocolVersions: 1 };
+      state.schema.versions = [];
+      state.schema.currentFields = [matrixField()];
+      const draft = { ...emptyCriteriaDraft(), min_accuracy: '90' };
+      state.pilot.criteria = { ...criteriaService.emptyCriteriaState(), draft, confirming: true, error: 'retry',
+        versions: [confirmCriteria(draft, [], 'owner@example.com', '2026-11-07T00:00:00Z', 0)] };
+      state.pilot.history = [];
+      state.pilot.historyInitialized = true;
+      const stub = createWindowStub(state);
+      const { deps } = createFakeDeps([]);
+      const store = (await bootstrapApp(asWindow(stub), deps))!;
+      stub.location.hash = '#/pilot';
+      stub.fireHashChange();
+      await flush();
+      const input = document.getElementById('pilot-criteria-min_accuracy') as HTMLInputElement;
+      input.value = '95';
+      input.dispatchEvent(new Event('input'));
+      for (const id of ['confirm', 'save', 'cancel', 'calculate', 'reload']) {
+        (document.getElementById(`pilot-criteria-${id}`) as HTMLButtonElement).click();
+      }
+      expect(change).toHaveBeenCalledWith(store, expect.objectContaining({ min_accuracy: '95' }));
+      expect(save).toHaveBeenCalledWith(store, deps, false);
+      expect(save).toHaveBeenCalledWith(store, deps, true);
+      expect(cancel).toHaveBeenCalledWith(store);
+      expect(calculate).toHaveBeenCalledWith(store, deps);
+      expect(load).toHaveBeenCalledWith(store, deps);
+    } finally {
+      load.mockRestore();
+      change.mockRestore();
+      save.mockRestore();
+      cancel.mockRestore();
+      calculate.mockRestore();
+    }
+  });
+
   test('パイロットの並べ替え・再試行と項目編集クエリを配線する', async () => {
     const state = createInitialState();
     state.currentProject = PROJECT;

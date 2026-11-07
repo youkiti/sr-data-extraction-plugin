@@ -3,6 +3,78 @@ import {
   usesRequestedModelIds,
   type MethodsFacts,
 } from '../../../../src/features/export/methodsBoilerplate';
+import { confirmCriteria, emptyCriteriaDraft, evaluateCriteria } from '../../../../src/features/verification/acceptanceCriteria';
+
+test('合格基準は英日・単一/二重で前後・比較相手・3 値を論文の文で記す', () => {
+  const initial = confirmCriteria({ ...emptyCriteriaDraft(), entity_levels: ['study', 'arm'], min_accuracy: '90', max_fabrication_rate: '3',
+    max_omission_rate: '8', max_wrong_value_rate: '5', min_compared_cells: '50' }, [], 'owner@example.com', '2026-11-07T00:00:00Z', 0);
+  const groups = {
+    independent: ['AI の出力を見ずにレビュアーが独立に抽出した値', 'values extracted independently by reviewers who did not see the AI output'],
+    consensus: ['裁定後の合意値', 'consensus values after adjudication'],
+    human_independent: ['独立にデータを抽出したレビュアーの最終値', 'final values from a reviewer who extracted the data independently'],
+    human_with_ai: ['AI の出力を検証したレビュアーの最終値（独立の比較ではない）',
+      'final values from reviewers who verified the AI output, which is not an independent comparison'],
+  };
+  for (const language of ['ja', 'en'] as const) {
+    for (const workflow of ['single', 'dual'] as const) {
+      expect(buildMethodsText(language, workflow, makeFacts()).text).not.toContain(language === 'ja' ? '合格基準' : 'acceptance criteria');
+      for (const comparator of ['independent', 'consensus', 'human_independent', 'human_with_ai'] as const) {
+        for (const after of [0, 2]) {
+          for (const result of ['met', 'not_met'] as const) {
+            const criteria = { ...initial, comparator, pilot_runs_before: after };
+            const evaluation = { ...evaluateCriteria(criteria, [], [], new Set()), result, pilot_studies: 2, compared: 60,
+              accuracy: 91.25, fabrication_rate: 2, omission_rate: 4, wrong_value_rate: 2.75 };
+            const text = buildMethodsText(language, workflow, makeFacts({ acceptanceCriteria: { criteria, evaluation } })).text.split('\n\n').pop()!;
+            expect(text).toContain('2026-11-07');
+            expect(text).toContain(language === 'ja' ? '版 1' : 'version 1');
+            expect(text).toContain(groups[comparator][language === 'ja' ? 0 : 1]);
+            if (language === 'ja') {
+              expect(text).toContain(after === 0 ? 'パイロットの前に' : 'パイロットの開始後に');
+              expect(text).toContain('正確度 90% 以上、作り話の率 3% 以下、欠けの率 8% 以下、誤った値の率 5% 以下、比べられたセル 50 件以上');
+              expect(text).toContain('と比べて研究、群の単位で評価することを');
+              expect(text).toContain(result === 'met' ? 'この基準を満たした（正確度 91.3%' : 'この基準を満たさなかった（正確度 91.3%');
+              expect(text).toContain('作り話の率 2.0%、欠けの率 4.0%、誤った値の率 2.8%、比べられたセル 60 件');
+            } else {
+              expect(text).toContain(after === 0 ? 'Before the pilot, we prespecified acceptance criteria'
+                : 'After the pilot had begun, we specified acceptance criteria');
+              expect(text).toContain('accuracy of at least 90%, a fabrication rate of at most 3%, an omission rate of at most 8%,');
+              expect(text).toContain('a wrong-value rate of at most 5% and at least 50 compared cells');
+              expect(text).toContain('at the study and arm levels. In the pilot of 2 studies, AI extraction');
+              expect(text).toContain(result === 'met' ? 'met these criteria (accuracy 91.3%' : 'did not meet these criteria (accuracy 91.3%');
+              expect(text).toContain('fabrication rate 2.0%, omission rate 4.0%, wrong-value rate 2.8%, 60 compared cells');
+            }
+            if (after > 0) {
+              expect(text).not.toMatch(/事前に|prespecified/);
+            }
+          }
+        }
+      }
+      for (const after of [0, 1]) {
+        for (const reason of ['no_pilot', 'no_compared_cells', 'below_minimum', ''] as const) {
+          const criteria = { ...initial, pilot_runs_before: after };
+          const evaluation = { ...evaluateCriteria(initial, [], [], new Set()), not_evaluable_reason: reason, accuracy: 91.25 };
+          const text = buildMethodsText(language, workflow, makeFacts({ acceptanceCriteria: { criteria, evaluation } })).text.split('\n\n').pop()!;
+          expect(text).toContain(language === 'ja' ? 'この基準を評価できなかった' : 'these criteria could not be evaluated because');
+          const reasons = language === 'ja' ? { no_pilot: 'パイロットがなかった', no_compared_cells: '比べられたセルがなかった',
+            below_minimum: `比べられたセルが${after === 0 ? '事前に' : ''}定めた最小数に届かなかった`, '': '評価に必要な情報がなかった' }
+            : { no_pilot: 'there was no pilot run', no_compared_cells: 'no cells could be compared',
+              below_minimum: `fewer cells than the ${after === 0 ? 'prespecified' : 'specified'} minimum could be compared`,
+              '': 'the information required for evaluation was unavailable' };
+          expect(text).toContain(reasons[reason]);
+          expect(text).not.toContain('91.3%');
+        }
+      }
+      const criteria = { ...initial, entity_levels: ['study'] as const, max_fabrication_rate: null, max_omission_rate: null,
+        max_wrong_value_rate: null, min_compared_cells: null };
+      const evaluation = { ...evaluateCriteria(initial, [], [], new Set()), result: 'met' as const, pilot_studies: 1, compared: 1 };
+      const text = buildMethodsText(language, workflow, makeFacts({ acceptanceCriteria: {
+        criteria: { ...criteria, entity_levels: [...criteria.entity_levels] }, evaluation } })).text.split('\n\n').pop()!;
+      expect(text).toContain(language === 'ja' ? '正確度 90% 以上とし' : 'accuracy of at least 90%, assessed against');
+      expect(text).toContain(language === 'ja' ? '正確度 算出できず' : 'at the study level. In the pilot of 1 study');
+      expect(text).toContain(language === 'ja' ? '比べられたセル 1 件' : '1 compared cell');
+    }
+  }
+});
 
 /** 記録が何も無いプロジェクト（全文が既定の分岐・プレースホルダのまま） */
 function makeFacts(overrides: Partial<MethodsFacts> = {}): MethodsFacts {

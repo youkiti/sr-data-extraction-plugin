@@ -7,7 +7,9 @@
 import { getToolVersion as defaultGetToolVersion } from '../../utils/toolVersion';
 import { isConsultAction } from '../../domain/decision';
 import { readQuoteSetRows } from '../../features/verification/quoteSetRepository';
-import { readCompletedRunMetas } from '../../features/extraction/runRepository';
+import { readCompletedRunMetas, readPilotRuns } from '../../features/extraction/runRepository';
+import { readAcceptanceCriteria } from '../../features/verification/acceptanceCriteriaRepository';
+import { buildComparisonCells } from '../../features/verification/aiHumanComparison';
 import { bundleEvidence } from '../../features/verification/evidenceBundles';
 import { composeEvidenceByStudy } from './verifyService';
 import type { ExportFormat, ExportLogEntry } from '../../domain/exportLog';
@@ -119,6 +121,8 @@ export async function loadExportData(
       quoteSetRows,
       completedRuns,
       llmApiLogs,
+      acceptance,
+      pilotRuns,
     ] = await Promise.all([
       readDocuments(spreadsheetId, deps.google),
       readStudies(spreadsheetId, deps.google),
@@ -134,6 +138,8 @@ export async function loadExportData(
       readCompletedRunMetas(spreadsheetId, deps.google),
       // Methods 文案の事前抽出の成否（[batch_failed]）とフォームの草案のモデル（draft_schema）
       readLlmApiLogEntries(spreadsheetId, deps.google),
+      readAcceptanceCriteria(spreadsheetId, deps.google),
+      readPilotRuns(spreadsheetId, deps.google),
     ]);
     const latest = versions[0]; // listSchemaVersions は降順
     if (latest === undefined) {
@@ -163,6 +169,9 @@ export async function loadExportData(
     // R セット（issue #60）。素材は generateExport が正確な exported_at で再構築できるよう保持し、
     // ここでの構築結果はサマリ・プレビュー表示専用（rSetMaterials 参照。design-r-export.md §13）
     const rSetMaterials: RSetMaterials = {
+      acceptanceCriteria: acceptance.versions,
+      comparisonRuns: completedRuns,
+      pilotRuns,
       studies,
       studyRows: studySheet.rows,
       resultsRows,
@@ -180,6 +189,10 @@ export async function loadExportData(
     const rSet = buildRSet(rSetMaterials, rSetMeta);
     // Methods 文案カードの実績値（docs/methods-boilerplate.md §3。記録に合う文だけを出すための素材）
     const methodsFacts = buildMethodsFacts({
+      acceptanceCriteria: acceptance.versions,
+      pilotRuns,
+      comparisonCells: buildComparisonCells({ studies, fields, studyRows: studySheet.rows,
+        resultRows: resultsRows, evidence: evidences, runs: completedRuns }).cells,
       toolVersion,
       activeStudyIds: studies.map((study) => study.studyId),
       documents,
@@ -279,7 +292,7 @@ async function generateClassicExport(store: Store, deps: ExportServiceDeps): Pro
 }
 
 /**
- * R セット（issue #60）を生成して Drive `exports/rset_{YYYYMMDD-HHMMSS}/` へ 8 ファイル保存し、
+ * R セット（issue #60）を生成して Drive `exports/rset_{YYYYMMDD-HHMMSS}/` へ 9 ファイル保存し、
  * ExportLog に 1 行追記する。export_manifest.json の exported_at / app_version / review_mode は
  * ここで解決してから rSetMaterials を再構築する（読込時の rSet はプレビュー専用で、
  * 実際に保存する内容は生成時点の正確な時刻で作り直す。design-r-export.md §13）
@@ -315,7 +328,7 @@ async function generateRSetExport(store: Store, deps: ExportServiceDeps): Promis
     }
 
     const email = await getCurrentUserEmail(deps.profile);
-    // ExportLog は既存列のみで表現する（design-r-export.md §13）: file_ref は 8 ファイルの
+    // ExportLog は既存列のみで表現する（design-r-export.md §13）: file_ref は 9 ファイルの
     // 保存先サブフォルダの webViewLink、study_count は tab1.csv の行数（確定 annotator を
     // 特定できた study 数。tab1.csv は study 単位 1 行の表のため既存形式の study_count と同じ意味になる。
     // buildRSet は必ず tab1.csv を含む配列を返すため as キャストで扱う）
@@ -410,7 +423,7 @@ export function downloadExportResult(
     if (rSetResult === null) {
       return;
     }
-    // zip 化はしない（要望どおり 8 ファイルを個別ダウンロード）
+    // zip 化はしない（9 ファイルを個別ダウンロード）
     for (const file of rSetResult.built.files) {
       download(file.name, file.content, file.name.endsWith('.json') ? 'application/json' : 'text/csv');
     }

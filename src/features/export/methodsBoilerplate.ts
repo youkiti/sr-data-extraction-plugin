@@ -3,6 +3,8 @@
 // このモジュールは記録に合う文と英語の単数形・複数形の選択（issue #381）・プレースホルダの自動反映・見出しの
 // プレーンテキスト化のみを担い、文そのものは書き換えない（変更する場合は正典ドキュメントを先に改訂すること）
 
+import type { AcceptanceCriteria, CriteriaEvaluation } from '../verification/acceptanceCriteria';
+
 export type MethodsLanguage = 'en' | 'ja';
 export type MethodsWorkflow = 'single' | 'dual';
 
@@ -11,6 +13,7 @@ export type MethodsWorkflow = 'single' | 'dual';
  * 数値の 0 / 空配列は「反映できない」= {{...}} のまま残すか、その文を出さない（各文の条件は正典）
  */
 export interface MethodsFacts {
+  acceptanceCriteria?: { criteria: AcceptanceCriteria; evaluation: CriteriaEvaluation };
   /** 今インストールしている拡張の版（抽出時の版ではない。カードの説明文で示す） */
   toolVersion: string | null;
   /** AI の草案の記録（成功した draft_schema 呼び出し、または ai_draft の版）がある */
@@ -366,6 +369,9 @@ export function buildMethodsText(
     `${HEADING[language]} ${joinSentences(language, paragraph1(facts))}`,
     joinSentences(language, paragraph2(workflow, facts)),
   ];
+  if (facts.acceptanceCriteria !== undefined) {
+    parts.push(buildCriteriaSentence(language, facts.acceptanceCriteria));
+  }
   if (facts.scannedDocumentCount > 0) {
     parts.push(byCount(facts.scannedDocumentCount, OPTIONAL_SCANNED_ONE, OPTIONAL_SCANNED)[language]);
   }
@@ -401,4 +407,65 @@ export function buildMethodsText(
   }
   // n_sample / reviewer_initials / adjudicator_initials / supplement_ref は常に自動反映しない（§3）
   return { text, unresolved: findUnresolvedPlaceholders(text) };
+}
+
+/** 保存済みの基準と結果を、論文に貼れる文にする。 */
+function buildCriteriaSentence(language: MethodsLanguage, fact: NonNullable<MethodsFacts['acceptanceCriteria']>): string {
+  const { criteria: c, evaluation: e } = fact;
+  const ja = language === 'ja';
+  const before = c.pilot_runs_before === 0;
+  const groups = {
+    independent: ja ? 'AI の出力を見ずにレビュアーが独立に抽出した値'
+      : 'values extracted independently by reviewers who did not see the AI output',
+    consensus: ja ? '裁定後の合意値' : 'consensus values after adjudication',
+    human_independent: ja ? '独立にデータを抽出したレビュアーの最終値'
+      : 'final values from a reviewer who extracted the data independently',
+    human_with_ai: ja ? 'AI の出力を検証したレビュアーの最終値（独立の比較ではない）'
+      : 'final values from reviewers who verified the AI output, which is not an independent comparison',
+  };
+  const levels = { study: ja ? '研究' : 'study', arm: ja ? '群' : 'arm',
+    outcome_result: ja ? 'アウトカム結果' : 'outcome result', rob_domain: ja ? 'バイアスの領域' : 'risk-of-bias domain' };
+  const join = (items: string[]): string => ja ? items.join('、')
+    : items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+  const thresholds: string[] = [];
+  const labels = ja ? ['正確度', '作り話の率', '欠けの率', '誤った値の率']
+    : ['accuracy of at least', 'a fabrication rate of at most', 'an omission rate of at most', 'a wrong-value rate of at most'];
+  [c.min_accuracy, c.max_fabrication_rate, c.max_omission_rate, c.max_wrong_value_rate].forEach((value, index) => {
+    if (value !== null) {
+      thresholds.push(`${labels[index]} ${value}%${ja ? (index === 0 ? ' 以上' : ' 以下') : ''}`);
+    }
+  });
+  if (c.min_compared_cells !== null) {
+    thresholds.push(ja ? `比べられたセル ${c.min_compared_cells} 件以上` : `at least ${c.min_compared_cells} compared cells`);
+  }
+  const timing = before ? (ja ? 'パイロットの前に' : 'Before the pilot, we prespecified')
+    : (ja ? 'パイロットの開始後に' : 'After the pilot had begun, we specified');
+  const levelText = join(c.entity_levels.map((level) => levels[level]));
+  const version = ja ? `版 ${c.version}、${c.confirmed_at.slice(0, 10)} 確定`
+    : `version ${c.version}, confirmed on ${c.confirmed_at.slice(0, 10)}`;
+  const criteriaText = ja ? `${timing}、AI 抽出の合格基準（${version}）を、${join(thresholds)}とし、` +
+    `${groups[c.comparator]}と比べて${levelText}の単位で評価することを${before ? '事前に' : ''}定めた。`
+    : `${timing} acceptance criteria for AI extraction (${version}): ${join(thresholds)}, ` +
+      `assessed against ${groups[c.comparator]} at the ${levelText} ${c.entity_levels.length === 1 ? 'level' : 'levels'}. `;
+  if (e.result === 'not_evaluable') {
+    const reasons = {
+      '': ja ? '評価に必要な情報がなかった' : 'the information required for evaluation was unavailable',
+      no_pilot: ja ? 'パイロットがなかった' : 'there was no pilot run',
+      no_compared_cells: ja ? '比べられたセルがなかった' : 'no cells could be compared',
+      below_minimum: ja ? `比べられたセルが${before ? '事前に' : ''}定めた最小数に届かなかった`
+        : `fewer cells than the ${before ? 'prespecified' : 'specified'} minimum could be compared`,
+    };
+    return criteriaText + (ja ? `パイロットでは、${reasons[e.not_evaluable_reason]}ため、この基準を評価できなかった。`
+      : `In the pilot, these criteria could not be evaluated because ${reasons[e.not_evaluable_reason]}.`);
+  }
+  const percent = (value: number | null): string => value === null ? (ja ? '算出できず' : 'unavailable') : `${value.toFixed(1)}%`;
+  if (ja) {
+    return criteriaText + `パイロットの ${e.pilot_studies} 研究で、AI 抽出はこの基準を${e.result === 'met' ? '満たした' : '満たさなかった'}（` +
+      `正確度 ${percent(e.accuracy)}、作り話の率 ${percent(e.fabrication_rate)}、欠けの率 ${percent(e.omission_rate)}、` +
+      `誤った値の率 ${percent(e.wrong_value_rate)}、比べられたセル ${e.compared} 件）。`;
+  }
+  return criteriaText + `In the pilot of ${e.pilot_studies} ${e.pilot_studies === 1 ? 'study' : 'studies'}, ` +
+    `AI extraction ${e.result === 'met' ? 'met' : 'did not meet'} these criteria (accuracy ${percent(e.accuracy)}, ` +
+    `fabrication rate ${percent(e.fabrication_rate)}, omission rate ${percent(e.omission_rate)}, ` +
+    `wrong-value rate ${percent(e.wrong_value_rate)}, ${e.compared} compared ${e.compared === 1 ? 'cell' : 'cells'}).`;
 }

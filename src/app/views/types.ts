@@ -193,6 +193,11 @@ export interface SchemaViewCallbacks {
 
 /** #/pilot（S6）のユーザー操作コールバック */
 export interface PilotViewCallbacks {
+  onCriteriaDraft?(draft: import('../../features/verification/acceptanceCriteria').CriteriaDraft): void;
+  onConfirmCriteria?(confirmed: boolean): void;
+  onCancelCriteria?(): void;
+  onCalculateCriteria?(): void;
+  onReloadCriteria?(): void;
   onRetryMatrix?(): void;
   onSortMatrix?(): void;
   /** 対象 study チェックボックスの切替（最大 3 study） */

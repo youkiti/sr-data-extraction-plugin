@@ -349,7 +349,7 @@ test('論文 Methods 記載例カード（issue #67）: 実績値反映 → 言�
   await expect(page.locator('.toast')).toContainText('コピーしました');
 });
 
-test('R セット選択 → サマリ/プレビュー → 生成で Drive フォルダ + 8 ファイル upload + ExportLog 追記 + UTF-8 案内文（issue #60）', async ({
+test('R セット選択 → サマリ/プレビュー → 生成で Drive フォルダ + 9 ファイル upload + ExportLog 追記 + UTF-8 案内文（issue #60）', async ({
   page,
 }) => {
   const captured = await setupRoutes(page);
@@ -361,7 +361,7 @@ test('R セット選択 → サマリ/プレビュー → 生成で Drive フォ
   // サマリ（ファイル数 / データ行数 / 未検証セル数 / export_issues 件数）+ ファイル一覧
   const summary = page.locator('#export-rset-summary');
   await expect(summary).toContainText('ファイル数');
-  await expect(summary).toContainText('8');
+  await expect(summary).toContainText('9');
   const fileList = page.locator('#export-rset-files');
   await expect(fileList).toContainText('tab1.csv');
   await expect(fileList).toContainText('export_manifest.json');
@@ -377,15 +377,16 @@ test('R セット選択 → サマリ/プレビュー → 生成で Drive フォ
   const resultCard = page.locator('#export-rset-result');
   await expect(resultCard).toBeVisible({ timeout: 15_000 });
   await expect(resultCard).toContainText(
-    'フォルダに 8 ファイルを Drive に保存しました（ExportLog に記録済み）。',
+    'フォルダに 9 ファイルを Drive に保存しました（ExportLog に記録済み）。',
   );
 
-  // Drive: exports/ → rset_{YYYYMMDD-HHMMSS}/ の 2 段フォルダ作成 + 8 ファイル upload
+  // Drive: exports/ → rset_{YYYYMMDD-HHMMSS}/ の 2 段フォルダ作成 + 9 ファイル upload
   expect(captured.createdFolderNames).toContain('exports');
   expect(captured.createdFolderNames.some((name) => /^rset_\d{8}-\d{6}$/.test(name))).toBe(true);
-  expect(captured.uploadCount).toBe(8);
+  expect(captured.uploadCount).toBe(9);
   expect([...captured.uploadedFileNames].sort()).toEqual(
     [
+      'acceptance_criteria.csv',
       'tab1.csv',
       'tab1_status.csv',
       'ma.csv',
