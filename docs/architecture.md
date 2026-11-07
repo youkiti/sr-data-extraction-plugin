@@ -273,6 +273,8 @@ anchorQuote() ──文字範囲──▶ highlightMap() ──span 座標──
 - **画像デコーダの wasm（`dist/wasm/`）・標準 14 フォント（`dist/standard_fonts/`）・既定 ICC プロファイル（`dist/iccs/`）も同梱**し、`getDocument` にそれぞれ `wasmUrl` / `standardFontDataUrl` / `iccUrl` を渡す。pdfjs-dist 6.x は CCITTFax/JBIG2・JPEG2000・ICC のデコーダが wasm 実装になっており、`wasmUrl` 未指定だと `Jbig2Error` 等で初期化に失敗し、スキャン PDF の該当ページ（CCITTFaxDecode 等）が白紙になる（テキスト層は無事なためハイライトだけ出る症状）。`quickjs-eval.*`（PDF 内 JavaScript の隔離実行用）は本拡張が使わないため同梱から除外する。manifest には `content_security_policy.extension_pages` に `'wasm-unsafe-eval'` を追加している。この CSP による wasm の実行許可を前提として、画像デコーダの JavaScript 版フォールバック（`*_nowasm_fallback.js`）は同梱しない。
 - `.env` 運用（`OAUTH_CLIENT_ID` / `LOCAL_OAUTH_CLIENT_ID`）、dev ビルドの拡張名 `(dev)` 付与、固定 `key` による拡張 ID 固定は sr-query-builder の `webpack.config.js` / `release-alpha.ps1` を踏襲
 
+- ヘルプ相談の小節データは `hosted/help.html` からビルド時に生成し、dynamic import で `help-sections-ja` / `help-sections-en` チャンクへ分離する。相談の利用時に必要な言語だけ取得する。
+
 ### 3.2 npm スクリプト
 
 `dev` / `watch` / `build` / `bundle:report` / `build:demo` / `pack:release` / `lint` / `lint:css` / `typecheck` / `test` / `test:watch` / `test:coverage` / `test:e2e` / `test:e2e:ui` / `manual:check` / `video:setup` / `video:record` / `video:tts` / `video:assemble`。
