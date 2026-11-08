@@ -96,7 +96,9 @@ export function createHelpPopover(doc: Document, win: Window, conditions: () => 
   }
   function refreshAnchor(): void {
     if (!anchor || anchor.isConnected) return;
-    const replacement = doc.querySelector<HTMLAnchorElement>(`a[data-help='${anchor.dataset.help}']`);
+    const candidates = [...doc.querySelectorAll<HTMLAnchorElement>(`a[data-help='${anchor.dataset.help}']`)];
+    // 再描画で外れる画面内の「?」を、同じ話題を持つ固定ヘッダのヘルプより優先する。
+    const replacement = candidates.find(candidate => candidate.id !== 'app-open-help') ?? candidates[0];
     if (!replacement) { close(); return; }
     anchor.removeAttribute('aria-expanded');
     anchor = replacement;

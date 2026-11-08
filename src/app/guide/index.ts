@@ -9,7 +9,8 @@ import { createTourEntry } from './tourEntry';
 import { createHelpPopover } from './helpPopover';
 import { createSuggestBand } from './suggestBand';
 import { guideEvents, routeGuideEvent } from './guideEvents';
-import { onUiLanguageChange } from '../../lib/i18n';
+import { getUiLanguage, onUiLanguageChange } from '../../lib/i18n';
+import { buildHelpUrl, helpTopicForRoute } from '../../lib/help/topics';
 
 export async function initGuide({ store, win, doc }: { store: Store; win: Window; doc: Document }): Promise<void> {
   const anchor = doc.getElementById('app-open-tours');
@@ -47,7 +48,15 @@ export async function initGuide({ store, win, doc }: { store: Store; win: Window
   }
   const entry = createTourEntry(doc, anchor, conditions, start);
   let helpPopover: ReturnType<typeof createHelpPopover>;
+  function syncHeaderHelp(): void {
+    const help = doc.getElementById('app-open-help');
+    if (!help) return;
+    const topic = helpTopicForRoute(currentRoute()) ?? 'home';
+    help.dataset.help = topic;
+    help.setAttribute('href', buildHelpUrl(topic, getUiLanguage()));
+  }
   function refresh(): void {
+    syncHeaderHelp();
     helpPopover.refreshAnchor();
     const existing = doc.getElementById('guide-suggest-band');
     const currentConditions = conditions();

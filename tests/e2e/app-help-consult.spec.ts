@@ -46,7 +46,7 @@ test('「?」からヘルプを検索し、同意後に回答と小節リンク�
   await page.route('https://sheets.googleapis.com/**', route => route.fulfill({ json: { values: [] } }));
   await page.route('https://www.googleapis.com/**', route => route.fulfill({ json: { files: [] } }));
   await page.goto('/app/app.html#/home');
-  await page.locator('a[data-help="home"]').click();
+  await page.locator('#app-content a[data-help="home"]').click();
   await page.locator('[data-help-action="consult"]').click();
   const dialog = page.locator('#help-consult');
   await expect(dialog).toBeVisible();

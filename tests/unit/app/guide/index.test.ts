@@ -5,6 +5,7 @@ import { GUIDE_TOURS } from '../../../../src/lib/guide/tours';
 import * as storage from '../../../../src/lib/storage/guideProgressStore';
 import { createTourRunner } from '../../../../src/app/guide/tourRunner';
 import { setUiLanguage, t } from '../../../../src/lib/i18n';
+import * as helpTopics from '../../../../src/lib/help/topics';
 
 import { useTestTours } from '../../lib/guide/__fixtures__/tours';
 
@@ -56,6 +57,61 @@ function startFromList(id = 'getting-started'): void {
   document.getElementById('app-open-tours')!.click();
   document.querySelector<HTMLButtonElement>(`#guide-tour-list [data-guide-tour="${id}"]`)!.click();
 }
+
+test('上部のヘルプは現在の画面の節を指し、同じ節の吹き出しを開く', async () => {
+  document.body.insertAdjacentHTML('afterbegin', '<a id="app-open-help">ヘルプ</a>');
+  await initGuide({ store, win: window, doc: document });
+  const help = document.getElementById('app-open-help')!;
+  expect(help.dataset.help).toBe('home');
+  expect(help.getAttribute('href')).toBe(helpTopics.buildHelpUrl('home', 'ja'));
+  help.click();
+  expect(document.getElementById('help-popover')).not.toBeNull();
+  expect(document.querySelector('[data-help-action="help"]')?.getAttribute('href')).toBe(helpTopics.buildHelpUrl('home', 'ja'));
+  window.history.replaceState(null, '', '#/verify');
+  window.dispatchEvent(new Event('hashchange'));
+  expect(help.dataset.help).toBe('verify');
+  expect(help.getAttribute('href')).toBe(helpTopics.buildHelpUrl('verify', 'ja'));
+  help.click();
+  expect(document.getElementById('help-popover')).not.toBeNull();
+  expect(document.querySelector('[data-help-action="help"]')?.getAttribute('href')).toBe(helpTopics.buildHelpUrl('verify', 'ja'));
+});
+
+test('上部のヘルプがなくても初期化できる', async () => {
+  await expect(initGuide({ store, win: window, doc: document })).resolves.toBeUndefined();
+  expect(runner.resume).toHaveBeenCalled();
+});
+
+test('画面に対応するトピックがなければ上部のヘルプを home に戻す', async () => {
+  document.body.insertAdjacentHTML('afterbegin', '<a id="app-open-help">ヘルプ</a>');
+  const spy = jest.spyOn(helpTopics, 'helpTopicForRoute').mockReturnValue(null);
+  try {
+    await initGuide({ store, win: window, doc: document });
+    const help = document.getElementById('app-open-help')!;
+    expect(help.dataset.help).toBe('home');
+    expect(help.getAttribute('href')).toBe(helpTopics.buildHelpUrl('home', 'ja'));
+  } finally { spy.mockRestore(); }
+});
+
+test.each(['store', 'observer', 'language'])('%s の通知で上部のヘルプを同期し直す', async source => {
+  document.body.insertAdjacentHTML('afterbegin', '<a id="app-open-help">ヘルプ</a>');
+  await initGuide({ store, win: window, doc: document });
+  const help = document.getElementById('app-open-help')!;
+  help.dataset.help = 'verify';
+  help.setAttribute('href', '#');
+  try {
+    if (source === 'store') store.setState({});
+    else if (source === 'language') setUiLanguage('en');
+    else {
+      document.getElementById('app-content')!.replaceChildren();
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    expect(help.dataset.help).toBe('home');
+    expect(help.getAttribute('href')).toBe(helpTopics.buildHelpUrl('home', source === 'language' ? 'en' : 'ja'));
+  } finally {
+    window.dispatchEvent(new Event('pagehide'));
+    setUiLanguage('ja');
+  }
+});
 
 test('件数読込前は帯も再開もなく、読込後に残作業があれば帯を出す', async () => {
   waitForCounts();

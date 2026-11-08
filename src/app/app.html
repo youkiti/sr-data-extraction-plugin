@@ -20,9 +20,9 @@
         </div>
         <p id="app-status" class="app__status">読み込み中…</p>
         <a id="app-open-popup" href="../popup/popup.html" data-i18n="app.openPopup" hidden>プロジェクト選択を開く</a>
-        <!-- 使い方ガイド（GitHub Pages）。URL の正典は src/lib/publicPages.ts の HELP_URL
-             （一致は tests/unit/lib/publicPages.test.ts が検査する）。
-             data-public-page: 表示言語を ?lang= で引き継ぐ目印（applyPublicPageLanguage） -->
+        <!-- ヘルプは起動後に guide が data-help と href を現在の画面の節に同期し、クリックで吹き出しを開く。
+             静的 URL の正典は src/lib/publicPages.ts の HELP_URL（一致は tests/unit/lib/publicPages.test.ts が検査する）。
+             data-public-page は表示言語を ?lang= で引き継ぐ目印（applyPublicPageLanguage） -->
         <button id="app-open-tours" type="button" class="app__options-link" data-tour="tour-list"
           data-i18n-title="guide.openTours" data-i18n-aria-label="guide.openTours">
           <span class="app__options-icon" aria-hidden="true">▤</span>
@@ -35,7 +35,7 @@
           data-public-page
           target="_blank"
           rel="noopener noreferrer"
-          title="使い方ガイドを新しいタブで開く"
+          title="ヘルプ・動画・ツアー・AI への相談を開く"
           data-i18n-title="app.openHelpTitle"
         >
           <span class="app__options-icon" aria-hidden="true">?</span>

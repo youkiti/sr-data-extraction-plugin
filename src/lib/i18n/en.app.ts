@@ -184,7 +184,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'app.openOptions': 'Settings',
   'app.openOptionsTitle': 'Open settings',
   'app.openHelp': 'Help',
-  'app.openHelpTitle': 'Open the user guide in a new tab',
+  'app.openHelpTitle': 'Open help, videos, tours, and AI help',
   'app.switchProject': 'Open another project',
   'app.navAriaLabel': 'Step navigation',
   'app.navHome': 'Home',
