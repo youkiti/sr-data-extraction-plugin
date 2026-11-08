@@ -50,19 +50,26 @@ test('サイドバーから #/documents へ遷移できる（注意書きの常�
   );
 });
 
-test('ヘッダに使い方ガイドへの外部リンクがある（issue #214）', async ({ page }) => {
+test('ヘッダのヘルプが現在の画面の吹き出しを開く', async ({ page }) => {
   await page.goto('/app/app.html#/home');
   const help = page.locator('#app-open-help');
   await expect(help).toBeVisible();
   // アイコン（装飾・aria-hidden）+ ラベルの 2 span 構成のためラベル側を見る
   await expect(help.locator('.app__options-text')).toHaveText('ヘルプ');
-  // 表示言語を ?lang= で引き継ぐ（公開ページ側は hosted/lang.js がこれを最優先で読む）
+  // 現在の画面の節と表示言語を引き継ぐ。
   await expect(help).toHaveAttribute(
     'href',
-    'https://youkiti.github.io/sr-data-extraction-plugin/help.html?lang=ja',
+    'https://youkiti.github.io/sr-data-extraction-plugin/help.html?lang=ja#project',
   );
   await expect(help).toHaveAttribute('target', '_blank');
   await expect(help).toHaveAttribute('rel', 'noopener noreferrer');
+  await help.click();
+  await expect(page.locator('#help-popover')).toBeVisible();
+  await expect(page.locator('[data-help-action="help"]')).toHaveAttribute(
+    'href',
+    'https://youkiti.github.io/sr-data-extraction-plugin/help.html?lang=ja#project',
+  );
+  await expect(page.locator('[data-help-action="consult"]')).toBeVisible();
 });
 
 test('アクセシビリティ違反がない（axe）', async ({ page }) => {

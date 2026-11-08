@@ -14,6 +14,8 @@ This is the public changelog of this extension. Any change that can alter AI out
 ## 未リリース / Unreleased
 
 ### その他の変更 / Other changes
+- 上部の「ヘルプ」を、画面の「?」と同じく、ヘルプ・動画・ツアー・AI への相談を選べる吹き出しで開くようにしました（2026-11-09）。  
+  The top “Help” link now opens the same popover as the screen’s “?”, with options for help, videos, tours, and AI help (2026-11-09).
 - リリースの手順の検査で、Anthropic の推論の強さの既定、ヘルプ相談の固定モデル、temperature も監視するようにしました。前回のリリースから変わったのにこのファイルが更新されていなければ止まります（2026-11-08）。  
   The release check now also watches the default Anthropic reasoning effort, the fixed models used for help consultation and temperature, and stops when one of them has changed since the previous release and this file has not been updated (2026-11-08).
 

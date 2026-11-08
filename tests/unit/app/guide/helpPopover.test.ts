@@ -30,6 +30,32 @@ beforeEach(() => {
 });
 afterEach(() => { popover.destroy(); setUiLanguage('ja'); });
 
+test('再描画後はヘッダより画面内の同じ話題のリンクを優先する', () => {
+  const header = createHelpButton('home');
+  header.id = 'app-open-help';
+  document.body.prepend(header);
+  click(home);
+  const replacement = createHelpButton('home');
+  home.replaceWith(replacement);
+  popover.refreshAnchor();
+  expect(panel()).not.toBeNull();
+  expect(home.hasAttribute('aria-expanded')).toBe(false);
+  expect(replacement.getAttribute('aria-expanded')).toBe('true');
+  expect(header.hasAttribute('aria-expanded')).toBe(false);
+});
+
+test('再描画後にヘッダしか残っていなければ代わりのアンカーにする', () => {
+  const header = createHelpButton('home');
+  header.id = 'app-open-help';
+  document.body.prepend(header);
+  click(home);
+  home.remove();
+  popover.refreshAnchor();
+  expect(panel()).not.toBeNull();
+  expect(home.hasAttribute('aria-expanded')).toBe(false);
+  expect(header.getAttribute('aria-expanded')).toBe('true');
+});
+
 test('document 全体から開き、項目と属性・フォーカス・位置を設定する', () => {
   const child = document.createElement('span');
   home.append(child);

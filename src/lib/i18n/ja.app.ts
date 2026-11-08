@@ -183,7 +183,7 @@ export const jaApp = {
   'app.openOptions': '設定',
   'app.openOptionsTitle': '設定を開く',
   'app.openHelp': 'ヘルプ',
-  'app.openHelpTitle': '使い方ガイドを新しいタブで開く',
+  'app.openHelpTitle': 'ヘルプ・動画・ツアー・AI への相談を開く',
   'app.switchProject': '別のプロジェクトを開く',
   'app.navAriaLabel': 'ステップナビゲーション',
   'app.navHome': 'Home',
