@@ -5,6 +5,9 @@ import { CONSULT_MODELS, type ConsultProviderId } from './model';
 import { buildAnswerMessages, buildSelectionMessages, parseSelection, SELECTION_RESPONSE_SCHEMA } from './prompt';
 import type { ConsultFailureKind, ConsultResult, HelpLanguage, HelpSection } from './types';
 
+/** ヘルプ相談は再現性優先で温度 0 に固定する */
+export const HELP_CONSULT_TEMPERATURE = 0;
+
 export function classifyConsultError(error: unknown): ConsultFailureKind {
   if (error instanceof LlmProviderError) {
     if (error.status === 429) {
@@ -72,7 +75,7 @@ export async function consultHelp(params: ConsultHelpParams): Promise<ConsultRes
       fetch: (input, init) => baseFetch(input, { ...init, signal: controller.signal }),
     });
     // DeepSeek V4 Flash の推論が237〜2,925トークンに揺れ、2,048では回答が打ち切られたため8,192を確保する。
-    const options = { temperature: 0, maxOutputTokens: 8192 };
+    const options = { temperature: HELP_CONSULT_TEMPERATURE, maxOutputTokens: 8192 };
     const selection = await Promise.race([
       provider.chat(buildSelectionMessages(params.sections, params.question), { ...options, responseSchema: SELECTION_RESPONSE_SCHEMA }),
       stopPromise,

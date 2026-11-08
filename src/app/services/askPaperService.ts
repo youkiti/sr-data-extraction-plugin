@@ -26,6 +26,9 @@ import { applyRateLimitPolicy, UNLIMITED_POLICY } from '../../lib/llm/rateLimitP
 import { FACTORY_DEFAULT_MODEL, loadDefaultModel } from '../../lib/storage/settingsStore';
 import type { RelocateQuoteDeps } from './relocateQuoteService';
 
+/** 論文への質問は再現性優先で温度 0 に固定する */
+export const ASK_PAPER_TEMPERATURE = 0;
+
 export type AskPaperDeps = RelocateQuoteDeps;
 export interface AskPaperParams {
   spreadsheetId: string;
@@ -92,7 +95,7 @@ export async function askPaper(
         history: params.history,
         question: params.question,
       }),
-      { temperature: 0, responseSchema: ASK_PAPER_RESPONSE_SCHEMA },
+      { temperature: ASK_PAPER_TEMPERATURE, responseSchema: ASK_PAPER_RESPONSE_SCHEMA },
     );
     const parsed = parseAskPaperResponse(response.text, params.documents.length);
     const citations = anchorAskPaperCitations(parsed.citations, params.documents);

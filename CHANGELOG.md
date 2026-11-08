@@ -1,8 +1,8 @@
 # 変更履歴 / Changelog
 
-この拡張の公開の変更履歴です。AI の出力（抽出値・引用・スキーマのドラフト・回答）や、その集計の結果を変えうる変更は、必ず「AI の結果に影響する変更」に載せます。対象は、既定モデル、プロンプトとその版数、推論の強さなどの既定値、引用の照合と一致度などの集計方法です。プロンプトの版数は、各 AI 呼び出しのログ（プロジェクトのシートの LLMApiLog タブの prompt_version 列）に記録されます（この列を足す前の行は空です）。
+この拡張の公開の変更履歴です。AI の出力（抽出値・引用・スキーマのドラフト・回答）や、その集計の結果を変えうる変更は、必ず「AI の結果に影響する変更」に載せます。対象は、既定モデルとヘルプ相談などの固定モデル、プロンプトとその版数、推論の強さや temperature などの既定値、引用の照合と一致度などの集計方法です。プロンプトの版数は、各 AI 呼び出しのログ（プロジェクトのシートの LLMApiLog タブの prompt_version 列）に記録されます（この列を足す前の行は空です）。
 
-This is the public changelog of this extension. Any change that can alter AI output (extracted values, quotes, schema drafts, answers) or the way those results are counted is always listed under "Changes that affect AI output". This covers the default model, prompts and their version numbers, defaults such as reasoning effort, and counting methods such as quote anchoring and agreement statistics. The prompt version is recorded in the log of each AI call (the prompt_version column of the LLMApiLog tab in the project sheet; rows written before that column was added are empty).
+This is the public changelog of this extension. Any change that can alter AI output (extracted values, quotes, schema drafts, answers) or the way those results are counted is always listed under "Changes that affect AI output". This covers the default model and fixed models such as the one used for help consultation, prompts and their version numbers, defaults such as reasoning effort and temperature, and counting methods such as quote anchoring and agreement statistics. The prompt version is recorded in the log of each AI call (the prompt_version column of the LLMApiLog tab in the project sheet; rows written before that column was added are empty).
 
 - v0.27.0 以前は、AI の結果に影響する変更だけを、git の履歴と PR からさかのぼって載せています。それ以外の変更は [GitHub の PR](https://github.com/youkiti/sr-data-extraction-plugin/pulls?q=is%3Apr+is%3Amerged) を参照してください。  
   Up to v0.27.0, only changes that affect AI output are listed, reconstructed from the git history and pull requests. For other changes, see the [merged pull requests](https://github.com/youkiti/sr-data-extraction-plugin/pulls?q=is%3Apr+is%3Amerged).
@@ -13,7 +13,9 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
-（まだありません / Nothing yet）
+### その他の変更 / Other changes
+- リリースの手順の検査で、Anthropic の推論の強さの既定、ヘルプ相談の固定モデル、temperature も監視するようにしました。前回のリリースから変わったのにこのファイルが更新されていなければ止まります（2026-11-08）。  
+  The release check now also watches the default Anthropic reasoning effort, the fixed models used for help consultation and temperature, and stops when one of them has changed since the previous release and this file has not been updated (2026-11-08).
 
 ## v0.28.0（2026-11-08）
 
