@@ -234,6 +234,55 @@ test('owner は校正 1 件と 1 グループへ分割し、seed と研究の割
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
 
+test('owner は分割後にグループの文献を 1 件だけキャリブレーションへ移せる', async ({ page }) => {
+  const { tabs, writes } = await setup(page, OWNER, 'owner', ['', '', '', ''], []);
+  await page.goto('/app/app.html#/home');
+  await page.locator('#review-sets-calibration').fill('1');
+  await page.locator('#review-sets-groups').fill('1');
+  await page.locator('#review-sets-split').click();
+  const calibrationRow = page.locator('#review-sets-list tbody tr').filter({ hasText: 'calibration' });
+  const groupRow = page.locator('#review-sets-list tbody tr').filter({ hasText: 'group-1' });
+  await expect(calibrationRow.locator('td').first()).toHaveText('1');
+  await expect(groupRow.locator('td').first()).toHaveText('3');
+  await expect(page.locator('.review-sets__reassign').first()).toBeEnabled();
+  const beforeStudies = tabs.Studies!.slice(1).map((row) => [...row]);
+  const beforeSets = tabs.ReviewSets!.slice(1).map((row) => [...row]);
+  const moved = beforeStudies.find((row) => row[6] === 'group-1')!;
+  const writesBefore = writes.length;
+  await page.locator('#review-sets-reassign summary').click();
+  await page.getByLabel(`研究 ${moved[0]!.split('-')[1]} の担当セット`, { exact: true })
+    .selectOption('calibration');
+  await expect(calibrationRow.locator('td').first()).toHaveText('2');
+  await expect(groupRow.locator('td').first()).toHaveText('2');
+  await expect(page.locator('#review-sets-reassign')).toHaveAttribute('open', '');
+  // 表の件数は ReviewSets の追記で先に変わり、Studies の書き換えはその後に届くので待つ。
+  await expect.poll(() =>
+    writes.slice(writesBefore).flatMap((write) => write.body.data ?? []),
+  ).toEqual([{
+    range: `Studies!A${Number(moved[0]!.split('-')[1]) + 1}`,
+    values: [[...moved.slice(0, 6), 'calibration']],
+  }]);
+  expect(tabs.Studies!.slice(1)).toEqual(beforeStudies.map((row) =>
+    row[0] === moved[0] ? [...row.slice(0, 6), 'calibration'] : row,
+  ));
+  const appended = writes.slice(writesBefore)
+    .filter((write) => write.url.includes('/values/ReviewSets!A1:append'))
+    .flatMap((write) => write.body.values!);
+  expect(appended.map((row) => row[0]).sort()).toEqual(['calibration', 'group-1']);
+  for (const row of appended) {
+    const previous = beforeSets.find((set) => set[0] === row[0])!;
+    expect(row[1]).toBe(previous[1]);
+    expect(row[2]).toBe('');
+    expect(row[3]).toBe(OWNER);
+    const members = previous[5]!.split(';').filter(Boolean);
+    const expected = row[0] === 'calibration'
+      ? [...members, moved[0]!]
+      : members.filter((id) => id !== moved[0]);
+    expect(row[5]!.split(';').sort()).toEqual(expected.sort());
+  }
+  expect(tabs.ReviewSets!.slice(-2)).toEqual(appended);
+});
+
 test('reviewer の検証一覧は校正と担当グループだけで、非 owner の追記を無視する', async ({
   page,
 }) => {

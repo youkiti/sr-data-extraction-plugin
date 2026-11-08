@@ -14,6 +14,8 @@ import { el } from '../ui/dom';
 import { headingWithHelp } from '../ui/helpButton';
 import type { ViewContext } from './types';
 
+const reassignOpen = new Map<string, boolean>();
+
 function splitForm(
   studies: readonly StudyRecord[],
   sets: readonly ReviewSetRow[],
@@ -126,6 +128,51 @@ function unassignedStudies(
       ]);
     }),
   ]);
+}
+
+function reassignStudies(
+  studies: readonly StudyRecord[],
+  sets: readonly ReviewSetRow[],
+  saving: boolean,
+  projectKey: string,
+  ctx: ViewContext,
+): HTMLElement {
+  const details = el('details', { id: 'review-sets-reassign' }, [
+    el('summary', { text: t('reviewSets.reassignSummary', { n: studies.length }) }),
+    el('p', { text: t('reviewSets.reassignLead') }),
+  ]) as HTMLDetailsElement;
+  details.open = reassignOpen.get(projectKey) ?? false;
+  details.addEventListener('toggle', () => reassignOpen.set(projectKey, details.open));
+  for (const set of sets) {
+    const members = studies.filter((study) => reviewSetForStudy(study, sets) === set.setId);
+    if (members.length === 0) continue;
+    details.append(el('h4', {
+      text: t('reviewSets.reassignGroup', { set: set.setId, n: members.length }),
+    }));
+    for (const study of members) {
+      const select = el('select', {
+        className: 'review-sets__reassign',
+        attributes: { 'aria-label': t('reviewSets.assignAria', { study: study.studyLabel }) },
+      }) as HTMLSelectElement;
+      select.append(
+        el('option', { text: t('reviewSets.unassigned'), attributes: { value: '' } }),
+        ...sets.map((option) =>
+          el('option', { text: option.setId, attributes: { value: option.setId } }),
+        ),
+      );
+      select.value = set.setId;
+      select.disabled = saving;
+      select.addEventListener('change', () => {
+        if (select.value !== set.setId)
+          ctx.home.onAssignStudyReviewSet(study.studyId, select.value === '' ? null : select.value);
+      });
+      details.append(el('label', { className: 'reviewers__form-field' }, [
+        el('span', { text: study.studyLabel }),
+        select,
+      ]));
+    }
+  }
+  return details;
 }
 
 function resplitConfirm(saving: boolean, ctx: ViewContext): HTMLElement {
@@ -258,6 +305,11 @@ export function renderReviewSetsCard(state: AppState, ctx: ViewContext): HTMLEle
     );
     if (unassigned.length > 0)
       children.push(unassignedStudies(unassigned, sets, reviewSets.saving, ctx));
+    const assigned = studies.filter((study) => reviewSetForStudy(study, sets) !== null);
+    if (assigned.length > 0)
+      children.push(reassignStudies(
+        assigned, sets, reviewSets.saving, state.currentProject?.spreadsheetId ?? '', ctx,
+      ));
   } else children.push(el('p', { text: t('reviewSets.lead') }));
   if (studies.length === 0)
     children.push(el('p', { id: 'review-sets-empty', text: t('reviewSets.noStudies') }));

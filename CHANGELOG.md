@@ -16,6 +16,8 @@ This is the public changelog of this extension. Any change that can alter AI out
 ### その他の変更 / Other changes
 - リリースの手順の検査で、Anthropic の推論の強さの既定、ヘルプ相談の固定モデル、temperature も監視するようにしました。前回のリリースから変わったのにこのファイルが更新されていなければ止まります（2026-11-08）。  
   The release check now also watches the default Anthropic reasoning effort, the fixed models used for help consultation and temperature, and stops when one of them has changed since the previous release and this file has not been updated (2026-11-08).
+- 担当セットで、割り振り済みの文献も 1 件ずつ別のセットへ移せるようにしました。「分け直す」の確認文に、キャリブレーションの文献も無作為に選び直されることを書きました（2026-11-09、#460）。  
+  Assigned studies can now be moved to another review set one at a time. The “Split again” confirmation now explains that calibration studies are also randomly selected again (2026-11-09, #460).
 
 ## v0.28.0（2026-11-08）
 
