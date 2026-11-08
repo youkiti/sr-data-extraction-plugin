@@ -14,8 +14,14 @@ const files = {
   'src/features/verification/skills/askPaper.ts': 'export const ASK_PAPER_PROMPT_VERSION = 1;',
   'src/lib/help/consult/prompt.ts': 'export const HELP_CONSULT_PROMPT_VERSION = 1;',
   'src/lib/llm/GeminiProvider.ts': "thinkingLevel: options.reasoningEffort ?? this.reasoningEffort ?? 'low',",
+  'src/lib/llm/AnthropicProvider.ts': "const DEFAULT_EFFORT = 'low';",
+  'src/lib/help/consult/model.ts': "export const CONSULT_MODELS = {\r\n  gemini: 'gemini-3.1-flash-lite',\r\n  anthropic: 'claude-haiku-4-5',\r\n  openrouter: 'deepseek/deepseek-v4-flash',\r\n} as const;",
+  'src/features/extraction/executeRun.ts': 'export const EXTRACT_DATA_TEMPERATURE = 0;',
+  'src/app/services/relocateQuoteService.ts': 'export const RELOCATE_QUOTE_TEMPERATURE = 0;',
+  'src/app/services/askPaperService.ts': 'export const ASK_PAPER_TEMPERATURE = 0;',
+  'src/lib/help/consult/consult.ts': 'export const HELP_CONSULT_TEMPERATURE = 0;',
 };
-const grep = Object.entries(files).filter(([, value]) => value.includes('_PROMPT_VERSION')).map(([path, value]) => `HEAD:${path}:1:${value}`).join('\n');
+const grep = Object.entries(files).filter(([, value]) => /_(PROMPT_VERSION|TEMPERATURE)/.test(value)).map(([path, value]) => `HEAD:${path}:1:${value}`).join('\n');
 
 function run(argv = [], { before = {}, after = {}, updated = false, matches = grep, failureAt } = {}) {
   const calls = [];
@@ -35,7 +41,7 @@ function run(argv = [], { before = {}, after = {}, updated = false, matches = gr
         return hash + '\n';
       }
       if (command[0] === 'grep') {
-        assert.deepEqual(command, ['grep', '-n', '-E', 'export const [A-Z_]+_PROMPT_VERSION = ', 'HEAD', '--', 'src']);
+        assert.deepEqual(command, ['grep', '-n', '-E', 'export const [A-Z_]+_(PROMPT_VERSION|TEMPERATURE) = ', 'HEAD', '--', 'src']);
         return matches;
       }
       if (command[0] === 'diff') {
@@ -86,6 +92,22 @@ test('既定モデル変更と変更履歴の有無に応じて案内と終了�
   }
 });
 
+test('固定モデル・小数の temperature・Anthropic の推論の強さの変更を検出する', () => {
+  for (const [path, content, expected] of [
+    ['src/lib/help/consult/model.ts', files['src/lib/help/consult/model.ts'].replace('gemini-3.1-flash-lite', 'old-model'), 'ヘルプ相談の固定モデル（Gemini）: old-model → gemini-3.1-flash-lite'],
+    ['src/app/services/askPaperService.ts', 'export const ASK_PAPER_TEMPERATURE = 0.2;', 'ask-paper の temperature: 0 → 0.2'],
+    ['src/lib/llm/AnthropicProvider.ts', "const DEFAULT_EFFORT = 'high';", 'Anthropic の推論の強さの既定: low → high'],
+  ]) {
+    const result = path === 'src/lib/help/consult/model.ts'
+      ? run([], { before: { [path]: content } })
+      : run([], { after: { [path]: content } });
+    assert.equal(result.code, 0);
+    assert.deepEqual(result.errors, []);
+    assert.match(result.logs[0], /変更: 1 件/);
+    assert.equal(result.logs[1], `  ${expected}`);
+  }
+});
+
 test('起点でファイルや定数が無い値は「なし」として変更に数える', () => {
   for (const content of [null, '古いファイル']) {
     const result = run([], { before: { 'src/features/verification/skills/askPaper.ts': content } });
@@ -104,12 +126,13 @@ test('HEAD の値が無い場合は監視の表の確認を求める', () => {
 });
 
 test('表に無いファイルと定数の組を検出し、テストファイルは除外する', () => {
-  for (const extra of ['HEAD:src/new.ts:2:export const NEW_PROMPT_VERSION = 1;', 'HEAD:src/new.ts:2:export const ASK_PAPER_PROMPT_VERSION = 1;']) {
+  for (const extra of ['HEAD:src/new.ts:2:export const NEW_PROMPT_VERSION = 1;', 'HEAD:src/new.ts:2:export const ASK_PAPER_PROMPT_VERSION = 1;', 'HEAD:src/new.ts:2:export const NEW_TEMPERATURE = 0;', 'HEAD:src/new.ts:2:export const ASK_PAPER_TEMPERATURE = 0;']) {
     const result = run([], { matches: grep + '\n' + extra });
     assert.equal(result.code, 1);
     assert.match(result.errors[0], /監視の表に src\/new.ts の .* を追加してください/);
   }
   assert.equal(run([], { matches: grep + '\nHEAD:src/new.test.ts:2:export const NEW_PROMPT_VERSION = 1;' }).code, 0);
+  assert.equal(run([], { matches: grep + '\nHEAD:src/new.test.ts:2:export const NEW_TEMPERATURE = 0;' }).code, 0);
 });
 
 test('--since をコミットに解決して比較に使う', () => {

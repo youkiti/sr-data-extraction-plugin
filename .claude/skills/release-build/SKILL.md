@@ -24,7 +24,7 @@ npm run release -- minor    # 機能追加を含む ／ patch = 修正のみ ／
   - `-SkipCiCheck` — gh が無い / 未認証の環境
   - `-Force` — master 以外のブランチ・origin と不一致・CI が green でないときの停止を警告に落とす（作業ツリーの汚れ・ヘルプ確認による停止は解除されない）
   - `-HelpReviewed` — ヘルプ未記載の候補を確認済みとして続行する（候補の取得失敗は解除されない）
-  - `-ChangelogReviewed` — 既定モデル・プロンプトの版数・Gemini の推論の強さの既定が前回のリリースから変わったのに `CHANGELOG.md` が更新されていない状態を、確認済みとして続行する（値の取得失敗は解除されない。単独では `npm run changelog:check`）
+  - `-ChangelogReviewed` — 既定モデル・プロンプトの版数・推論の強さの既定（Gemini・Anthropic）・ヘルプ相談の固定モデル・temperature が前回のリリースから変わったのに `CHANGELOG.md` が更新されていない状態を、確認済みとして続行する（値の取得失敗は解除されない。単独では `npm run changelog:check`）
   - `-IncludeKeyPem` — 初回アップロード専用（2026-07-10 に使用済み。通常は不要）
 - **失敗時の後始末**: build / pack で落ちた場合、push はまだなので origin は無傷。ローカルのバンプ commit だけが残るので `git reset --hard HEAD~1` で戻せる（version 3 ファイル + 文書 3 ファイルの計 6 ファイルを戻す）。
 
@@ -120,7 +120,7 @@ pwsh -NoProfile -File tools/release/pack.ps1 -IncludeKeyPem
 | `package.json の version が manifest と一致しません` で停止 | 3 箇所のバンプ漏れ。手順 0-2 |
 | `作業ツリーが汚れています` で停止 | 未コミットの変更がある（前回の失敗で version 編集が残っている場合は `git checkout -- src/manifest.json package.json package-lock.json docs/project-facts.md hosted/help.html CHANGELOG.md`）。機能変更を release コマンドで master へ持ち込ませないための停止なので、`-Force` でも解除されない |
 | `ヘルプ未記載の候補があります` で停止 | 一覧を見て `hosted/help.html` を直す。追記不要と確かめたら `-HelpReviewed`。別の PR で修正済みでも元の候補は残るため、確認後に同オプションを使う。`-Force` では解除されない |
-| `AI の値が変わったのに CHANGELOG.md が更新されていません` で停止 | 表示された値の変更を `CHANGELOG.md` の「未リリース / Unreleased」の「AI の結果に影響する変更」に書いて PR でマージしてから再実行する。追記不要と確かめたら `-ChangelogReviewed`。`-Force` では解除されない。「監視の表」を求めるエラーは、プロンプトの版数の定数を足した・既定値の書き方を変えたときに出るので、`tools/changelog/checkAiChanges.mjs` の `watchedValues` を直す |
+| `AI の値が変わったのに CHANGELOG.md が更新されていません` で停止 | 表示された値の変更を `CHANGELOG.md` の「未リリース / Unreleased」の「AI の結果に影響する変更」に書いて PR でマージしてから再実行する。追記不要と確かめたら `-ChangelogReviewed`。`-Force` では解除されない。「監視の表」を求めるエラーは、プロンプトの版数や temperature の定数を足した・既定値の書き方を変えたときに出るので、`tools/changelog/checkAiChanges.mjs` の `watchedValues` を直す |
 | `master の CI がまだ実行中です` / `失敗しています` で停止 | CI の完了を待つ。急ぐなら `-Force`（自己責任）、gh が使えない環境なら `-SkipCiCheck` |
 | `manifest の version 行を一意に特定できません` で停止 | `src/manifest.json` の整形が変わった（トップレベルのインデントは半角 2 個が前提）。`tools/release/release.ps1` の `$versionLinePattern` を追随させる |
 | `manifest の key 行を一意に特定できません` で停止 | dist/manifest.json の整形が変わった（webpack の `transformManifest` は `JSON.stringify(manifest, null, 2)` 前提でトップレベルのインデントは半角 2 個）。webpack.config.js の変更を確認し、必要なら `tools/release/pack.ps1` の `$keyLinePattern` を追随させる |

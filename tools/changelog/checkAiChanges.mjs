@@ -8,14 +8,22 @@ import { findRelease } from '../help/listHelpGaps.mjs';
 const usage = '使い方: node tools/changelog/checkAiChanges.mjs [--since <リビジョン>] [--fail-on-unlogged]';
 export const watchedValues = [
   { label: '既定モデル', path: 'src/lib/storage/settingsStore.ts', pattern: /export const FACTORY_DEFAULT_MODEL = '([^']+)';/ },
+  { label: 'ヘルプ相談の固定モデル（Gemini）', path: 'src/lib/help/consult/model.ts', pattern: /^\s*gemini: '([^']+)',\r?$/m },
+  { label: 'ヘルプ相談の固定モデル（Anthropic）', path: 'src/lib/help/consult/model.ts', pattern: /^\s*anthropic: '([^']+)',\r?$/m },
+  { label: 'ヘルプ相談の固定モデル（OpenRouter）', path: 'src/lib/help/consult/model.ts', pattern: /^\s*openrouter: '([^']+)',\r?$/m },
   { label: 'extract-data プロンプトの版数', path: 'src/features/extraction/skills/extractData.ts', name: 'EXTRACT_DATA_PROMPT_VERSION' },
+  { label: 'extract-data の temperature', path: 'src/features/extraction/executeRun.ts', name: 'EXTRACT_DATA_TEMPERATURE' },
   { label: 'relocate-quote プロンプトの版数', path: 'src/features/extraction/skills/relocateQuote.ts', name: 'RELOCATE_QUOTE_PROMPT_VERSION' },
+  { label: 'relocate-quote の temperature', path: 'src/app/services/relocateQuoteService.ts', name: 'RELOCATE_QUOTE_TEMPERATURE' },
   { label: 'draft-schema プロンプトの版数', path: 'src/features/schema/skills/draftSchema.ts', name: 'DRAFT_SCHEMA_PROMPT_VERSION' },
   { label: 'suggest-enum プロンプトの版数', path: 'src/features/schema/skills/suggestEnum.ts', name: 'SUGGEST_ENUM_PROMPT_VERSION' },
   { label: 'ask-paper プロンプトの版数', path: 'src/features/verification/skills/askPaper.ts', name: 'ASK_PAPER_PROMPT_VERSION' },
+  { label: 'ask-paper の temperature', path: 'src/app/services/askPaperService.ts', name: 'ASK_PAPER_TEMPERATURE' },
   { label: 'help-consult プロンプトの版数', path: 'src/lib/help/consult/prompt.ts', name: 'HELP_CONSULT_PROMPT_VERSION' },
+  { label: 'help-consult の temperature', path: 'src/lib/help/consult/consult.ts', name: 'HELP_CONSULT_TEMPERATURE' },
   { label: 'Gemini の推論の強さの既定', path: 'src/lib/llm/GeminiProvider.ts', pattern: /thinkingLevel: options\.reasoningEffort \?\? this\.reasoningEffort \?\? '([^']+)',/ },
-].map((item) => ({ ...item, pattern: item.pattern ?? new RegExp(`export const ${item.name} = (\\d+);`) }));
+  { label: 'Anthropic の推論の強さの既定', path: 'src/lib/llm/AnthropicProvider.ts', pattern: /const DEFAULT_EFFORT = '([^']+)';/ },
+].map((item) => ({ ...item, pattern: item.pattern ?? new RegExp(`export const ${item.name} = (\\d+(?:\\.\\d+)?);`) }));
 
 export function parseArgs(argv) {
   let since;
@@ -56,7 +64,7 @@ export function main(argv, deps = {}) {
     const [shortHash, subject] = runGit(['log', '-1', '--format=%h%x09%s', hash]).trim().split('\t');
     let matches;
     try {
-      matches = runGit(['grep', '-n', '-E', 'export const [A-Z_]+_PROMPT_VERSION = ', 'HEAD', '--', 'src']);
+      matches = runGit(['grep', '-n', '-E', 'export const [A-Z_]+_(PROMPT_VERSION|TEMPERATURE) = ', 'HEAD', '--', 'src']);
     } catch (cause) {
       if (cause.status !== 1) {
         throw cause;
@@ -64,7 +72,7 @@ export function main(argv, deps = {}) {
       matches = '';
     }
     for (const line of matches.split(/\r?\n/)) {
-      const match = line.match(/^HEAD:(.+):(\d+):.*export const ([A-Z_]+_PROMPT_VERSION) = /);
+      const match = line.match(/^HEAD:(.+):(\d+):.*export const ([A-Z_]+_(?:PROMPT_VERSION|TEMPERATURE)) = /);
       if (match && !match[1].endsWith('.test.ts') && !watchedValues.some((item) => item.path === match[1] && item.name === match[3])) {
         throw new Error(`監視の表に ${match[1]} の ${match[3]} を追加してください`);
       }
