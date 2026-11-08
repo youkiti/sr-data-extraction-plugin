@@ -73,6 +73,7 @@ test('未使用なら本数入力と分割ボタンを表示する', () => {
     groupCount: 2,
   });
   expect(view.querySelector('#review-sets-list')).toBeNull();
+  expect(view.querySelector('#review-sets-reassign')).toBeNull();
 });
 test('参照されていない study しか無ければ案内だけを出す', () => {
   const f = fixture();
@@ -172,6 +173,8 @@ test.each([false, true])('改ざん警告・再分割確認・保存中=%s の�
   );
   for (const button of view.querySelectorAll('button')) expect(button.disabled).toBe(saving);
   expect((view.querySelector('.review-sets__assign') as HTMLSelectElement).disabled).toBe(saving);
+  for (const select of view.querySelectorAll<HTMLSelectElement>('.review-sets__reassign'))
+    expect(select.disabled).toBe(saving);
   (view.querySelector('#review-sets-resplit-ok') as HTMLButtonElement).click();
   (view.querySelector('#review-sets-resplit-cancel') as HTMLButtonElement).click();
   expect(f.callbacks.onConfirmResplit).toHaveBeenCalledTimes(saving ? 0 : 1);
@@ -213,6 +216,59 @@ test('再分割で退役したグループは表・割当選択肢・既定グ�
   expect((f.render().querySelector('#review-sets-groups') as HTMLInputElement).value).toBe('2');
 });
 
+
+test('割り振り済みのアクティブ study を表と同じセット順で選び直せる', () => {
+  const f = fixture(true);
+  const view = f.render();
+  const details = view.querySelector<HTMLDetailsElement>('#review-sets-reassign')!;
+  expect(details.open).toBe(false);
+  expect(details.querySelector('summary')?.textContent).toBe('文献ごとに選び直す（割り振り済み 2 件）');
+  expect([...details.querySelectorAll('h4')].map((node) => node.textContent)).toEqual([
+    'calibration（1 件）', 'group-1（1 件）',
+  ]);
+  expect(view.querySelector('#review-sets-unassigned')?.nextElementSibling).toBe(details);
+  expect(details.nextElementSibling?.id).toBe('review-sets-split-form');
+  const selects = [...details.querySelectorAll<HTMLSelectElement>('.review-sets__reassign')];
+  expect(selects.map((select) => select.value)).toEqual(['calibration', 'group-1']);
+  expect([...selects[1]!.options].map((option) => option.value)).toEqual([
+    '', 'calibration', 'group-1', 'group-10',
+  ]);
+  expect(selects[1]!.getAttribute('aria-label')).toBe('研究1 の担当セット');
+  selects[1]!.dispatchEvent(new Event('change'));
+  expect(f.callbacks.onAssignStudyReviewSet).not.toHaveBeenCalled();
+  selects[1]!.value = 'calibration';
+  selects[1]!.dispatchEvent(new Event('change'));
+  expect(f.callbacks.onAssignStudyReviewSet).toHaveBeenLastCalledWith('s1', 'calibration');
+  selects[1]!.value = '';
+  selects[1]!.dispatchEvent(new Event('change'));
+  expect(f.callbacks.onAssignStudyReviewSet).toHaveBeenLastCalledWith('s1', null);
+  expect(f.callbacks.onAssignStudyReviewSet).toHaveBeenCalledTimes(2);
+});
+
+test('全件未割当なら選び直す折りたたみを出さない', () => {
+  const f = fixture(true);
+  f.state.reviewSets.sets = [reviewSet({ studyIds: [] })];
+  f.state.documents.studies = f.state.documents.studies!.map((row) => ({ ...row, reviewSet: null }));
+  expect(f.render().querySelector('#review-sets-reassign')).toBeNull();
+});
+
+test('選び直す折りたたみの開閉をプロジェクトごとに保持する', () => {
+  const f = fixture(true);
+  f.state.currentProject = {
+    projectId: 'reassign-a', spreadsheetId: 'reassign-a', driveFolderId: 'folder', name: '開閉',
+  };
+  const details = f.render().querySelector<HTMLDetailsElement>('#review-sets-reassign')!;
+  details.open = true;
+  details.dispatchEvent(new Event('toggle'));
+  expect(f.render().querySelector<HTMLDetailsElement>('#review-sets-reassign')!.open).toBe(true);
+  f.state.currentProject.spreadsheetId = 'reassign-b';
+  expect(f.render().querySelector<HTMLDetailsElement>('#review-sets-reassign')!.open).toBe(false);
+  f.state.currentProject.spreadsheetId = 'reassign-a';
+  const reopened = f.render().querySelector<HTMLDetailsElement>('#review-sets-reassign')!;
+  reopened.open = false;
+  reopened.dispatchEvent(new Event('toggle'));
+  expect(f.render().querySelector<HTMLDetailsElement>('#review-sets-reassign')!.open).toBe(false);
+});
 
 test('アクティブ study の所属の食い違いだけを owner カードに警告する', () => {
   const f = fixture(true);
