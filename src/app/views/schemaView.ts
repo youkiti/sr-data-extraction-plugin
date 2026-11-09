@@ -30,6 +30,7 @@ import type {
   Rob2DeviationType,
   RobinsIEffect,
 } from '../../features/schema/presets/robTemplates';
+import { isCsvImportSource } from '../../features/schema/schemaTransfer';
 import type { SchemaEditorRow } from '../../features/schema/types';
 import type { FieldValidationError } from '../../features/schema/validateField';
 import { t, type MessageKey } from '../../lib/i18n';
@@ -320,12 +321,12 @@ function renderConsultDocSection(
   return el('section', { id: 'schema-consult-doc', className: 'schema__redraft-form schema__consult-doc' }, children);
 }
 
-/** JSON ファイルの読み込み欄（ドラフト前の画面と確定済み画面のカードで共有。issue #316） */
+/** JSON / CSV ファイルの読み込み欄（ドラフト前の画面と確定済み画面のカードで共有。issue #316・CSV は #469） */
 function renderSchemaImportField(state: AppState, ctx: ViewContext): HTMLElement[] {
   const transfer = state.schema.transfer;
   const input = el('input', {
     id: 'schema-import-file',
-    attributes: { type: 'file', accept: '.json,application/json' },
+    attributes: { type: 'file', accept: '.json,application/json,.csv,text/csv' },
   }) as HTMLInputElement;
   input.disabled = transfer.importing;
   input.addEventListener('change', () => {
@@ -353,7 +354,7 @@ function renderSchemaImportField(state: AppState, ctx: ViewContext): HTMLElement
   return children;
 }
 
-/** 確定済み画面の「スキーマのファイル（JSON）」カード（issue #316）: 書き出しと読み込み */
+/** 確定済み画面の「スキーマのファイル（JSON / CSV）」カード（issue #316・CSV は #469）: 書き出しと読み込み */
 function renderTransferSection(
   versions: readonly SchemaVersion[],
   latest: SchemaVersion,
@@ -386,7 +387,14 @@ function renderTransferSection(
     attributes: { type: 'button' },
   });
   button.disabled = transfer.exporting;
-  button.addEventListener('click', () => ctx.schema.onExportSchemaFile(selected));
+  button.addEventListener('click', () => ctx.schema.onExportSchemaFile(selected, 'json'));
+  const csvButton = el('button', {
+    id: 'schema-export-csv',
+    text: transfer.exporting ? t('schema.transferExporting') : t('schema.transferExportCsv'),
+    attributes: { type: 'button' },
+  });
+  csvButton.disabled = transfer.exporting;
+  csvButton.addEventListener('click', () => ctx.schema.onExportSchemaFile(selected, 'csv'));
 
   const children: HTMLElement[] = [
     el('h3', { text: t('schema.transferTitle') }),
@@ -394,6 +402,7 @@ function renderTransferSection(
     el('div', { className: 'schema__actions' }, [
       el('label', { text: t('schema.transferExportLabel') }, [select]),
       button,
+      csvButton,
     ]),
   ];
   if (transfer.exportError !== null) {
@@ -1822,12 +1831,17 @@ function renderRedraftReview(redraft: RedraftReviewState, ctx: ViewContext): HTM
       : [
           el('p', {
             id: 'schema-import-source',
-            text: t('schema.importSource', {
-              projectName: imported.projectName,
-              version: imported.schemaVersion,
-              exportedAt: imported.exportedAt.slice(0, 10),
-            }),
+            text: isCsvImportSource(imported)
+              ? t('schema.importCsvSource', { fileName: imported.fileName })
+              : t('schema.importSource', {
+                  projectName: imported.projectName,
+                  version: imported.schemaVersion,
+                  exportedAt: imported.exportedAt.slice(0, 10),
+                }),
           }),
+          ...(diff.importOrderChanged === true
+            ? [el('p', { id: 'schema-import-order-changed', text: t('schema.importOrderChanged') })]
+            : []),
         ]),
     el('p', { id: 'schema-redraft-summary', text: heading.summary }),
     el('h4', { text: heading.added }),

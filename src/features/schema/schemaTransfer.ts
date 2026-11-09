@@ -23,6 +23,20 @@ export interface SchemaExportSource {
   appVersion: string | null;
 }
 
+/** CSV（issue #469）の読み込み元。CSV には版などの記録が無いため、ファイル名だけを残す */
+export interface SchemaCsvImportSource {
+  kind: 'csv';
+  fileName: string;
+}
+
+/** 読み込み元の記録（差分承認画面の表示と改訂理由の初期値に使う）。kind が無いものは JSON */
+export type SchemaImportSource = SchemaExportSource | SchemaCsvImportSource;
+
+/** CSV から読み込んだか */
+export function isCsvImportSource(source: SchemaImportSource): source is SchemaCsvImportSource {
+  return 'kind' in source;
+}
+
 /** ファイル内の 1 項目（SchemaFields の列のうち、版をまたいで意味を持つもの） */
 export interface SchemaExportField {
   section: string;
@@ -222,17 +236,25 @@ export function parseSchemaExport(text: string): ParsedSchemaImport {
 }
 
 /**
- * 書き出すファイル名。プロジェクト名は英数字・ハイフン・ドット以外を _ に置き換える
+ * 書き出すファイル名（JSON・CSV 共通）。プロジェクト名は英数字・ハイフン・ドット以外を _ に置き換える
  * （日本語などを含む名前は、ブラウザによってはダウンロード名が「download」に置き換わるため。
  * プロジェクト名そのものはファイル内の source.projectName に残る）。何も残らなければ project
  */
-export function schemaExportFilename(projectName: string, schemaVersion: number, exportedAt: string): string {
+export function schemaExportFilename(
+  projectName: string,
+  schemaVersion: number,
+  exportedAt: string,
+  extension: 'json' | 'csv' = 'json',
+): string {
   const safe = projectName.replace(/[^A-Za-z0-9.-]+/g, '_').replace(/^[_.]+|[_.]+$/g, '') || 'project';
-  return `schema-v${schemaVersion}-${safe}-${exportedAt.slice(0, 10)}.json`;
+  return `schema-v${schemaVersion}-${safe}-${exportedAt.slice(0, 10)}.${extension}`;
 }
 
 /** 読み込んだ版の改訂理由（SchemaVersions.note）の初期値。出所の記録を残す */
-export function importNoteDefault(source: SchemaExportSource): string {
+export function importNoteDefault(source: SchemaImportSource): string {
+  if (isCsvImportSource(source)) {
+    return t('schema.importCsvNoteDefault', { fileName: source.fileName });
+  }
   return t('schema.importNoteDefault', {
     projectName: source.projectName,
     version: source.schemaVersion,

@@ -1710,7 +1710,9 @@ describe('bootstrapApp', () => {
     expect(select).toHaveBeenCalledWith(store, 1);
     await flush();
     (document.getElementById('schema-export-file') as HTMLButtonElement).click();
-    expect(exportFile).toHaveBeenCalledWith(store, deps, 1);
+    expect(exportFile).toHaveBeenCalledWith(store, deps, 1, 'json');
+    (document.getElementById('schema-export-csv') as HTMLButtonElement).click();
+    expect(exportFile).toHaveBeenCalledWith(store, deps, 1, 'csv');
     const input = document.getElementById('schema-import-file') as HTMLInputElement;
     const file = new File(['{}'], 'schema.json');
     Object.defineProperty(input, 'files', { value: [file] });

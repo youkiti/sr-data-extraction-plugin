@@ -1,4 +1,5 @@
-// S5「スキーマのファイル（JSON）」（issue #316）のサービスのテスト
+// S5「スキーマのファイル（JSON / CSV）」（issue #316・CSV は #469）のサービスのテスト
+import { TextDecoder as NodeTextDecoder } from 'util';
 import { createInitialState, createStore, type Store } from '../../../../src/app/store';
 import {
   exportSchemaFile,
@@ -83,9 +84,24 @@ const OTHER_SOURCE = {
   appVersion: '0.12.0',
 };
 
+const noBytes = async (): Promise<ArrayBuffer> => new ArrayBuffer(0);
+
 function fileOf(text: string, size = text.length): SchemaImportFile {
-  return { size, text: async () => text };
+  return { name: 'schema.json', size, text: async () => text, arrayBuffer: noBytes };
 }
+
+/** CSV のファイル（バイト列で渡す。拡張子で CSV と判定される） */
+function csvFileOf(text: string, name = 'guideline.CSV'): SchemaImportFile {
+  const bytes = Buffer.from(text, 'utf-8');
+  return {
+    name,
+    size: bytes.length,
+    text: async () => text,
+    arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+  };
+}
+
+const makeDecoder = (label: string, options?: { fatal?: boolean }) => new NodeTextDecoder(label, options);
 
 function exportedFile(fields: SchemaField[]): SchemaImportFile {
   return fileOf(serializeSchemaExport(fields, OTHER_SOURCE));
@@ -130,6 +146,19 @@ describe('exportSchemaFile', () => {
     });
     expect(json.fields.map((field: { fieldName: string }) => field.fieldName)).toEqual(['study_design', 'sample_size']);
     expect(store.getState().schema.transfer).toMatchObject({ exportVersion: 2, exporting: false, exportError: null });
+  });
+
+  test('CSV を選ぶと、1 行 1 項目の BOM 付き CSV をダウンロードする（issue #469）', async () => {
+    const store = storeOf();
+    const { deps, download } = makeDeps();
+    await exportSchemaFile(store, deps, 2, 'csv');
+    expect(emailMock).not.toHaveBeenCalled();
+    const [filename, content, mime] = download.mock.calls[0] as [string, string, string];
+    expect(filename).toBe('schema-v2-SR-2026-10-05.csv');
+    expect(mime).toBe('text/csv;charset=utf-8');
+    expect(content.startsWith('\uFEFFsection,field_name,')).toBe(true);
+    expect(content.split('\r\n')[2]).toContain('sample_size');
+    expect(store.getState().schema.transfer).toMatchObject({ exporting: false, exportError: null });
   });
 
   test('古い版は Sheets から項目を読む。メールが取れなければ空にする', async () => {
@@ -245,7 +274,7 @@ describe('importSchemaFile', () => {
     const store = storeOf();
     setup(store);
     const text = jest.fn(async () => '{}');
-    await importSchemaFile(store, { size: 2, text });
+    await importSchemaFile(store, { name: 'a.json', size: 2, text, arrayBuffer: noBytes });
     expect(text).not.toHaveBeenCalled();
   });
 
@@ -257,7 +286,7 @@ describe('importSchemaFile', () => {
   ])('読み込み中に%sときは結果を捨てる', async (_label, interrupt) => {
     const store = storeOf();
     let resolve: (text: string) => void = () => undefined;
-    const file: SchemaImportFile = { size: 10, text: () => new Promise((r) => { resolve = r; }) };
+    const file: SchemaImportFile = { name: 'a.json', size: 10, text: () => new Promise((r) => { resolve = r; }), arrayBuffer: noBytes };
     const pending = importSchemaFile(store, file);
     interrupt(store);
     const before = store.getState().schema;
@@ -267,5 +296,47 @@ describe('importSchemaFile', () => {
     expect(schema.transfer.importing).toBe(false);
     expect(schema.redraft).toBe(before.redraft);
     expect(schema.editorRows).toBe(before.editorRows);
+  });
+});
+
+describe('importSchemaFile（CSV。issue #469）', () => {
+  const HEADER = 'memo,field_name,section,field_label,entity_level,data_type,extraction_instruction';
+
+  test('版が無いプロジェクトでは、行の順にエディタへ入れ、ファイル名を改訂理由の初期値にする', async () => {
+    const store = storeOf([], []);
+    const csv = [HEADER, 'x,second,methods,二番目,study,text,Do it.', ',,,,,,', 'y,first,methods,一番目,arm,integer,Count.'].join('\n');
+    await importSchemaFile(store, csvFileOf(csv), makeDecoder);
+    const { schema } = store.getState();
+    expect(schema.editorRows?.map((row) => [row.fieldName, row.entityLevel])).toEqual([
+      ['second', 'study'],
+      ['first', 'arm'],
+    ]);
+    expect(schema.editorNoteDefault).toBe('CSV ファイル（guideline.CSV）から読み込み');
+    expect(document.body.textContent).toContain('ファイルから 2 項目を読み込みました');
+  });
+
+  test('版があるプロジェクトでは、差分承認を経てファイルの行の順に並べる', async () => {
+    const store = storeOf();
+    const csv = [HEADER, 'm,sample_size,methods,研究デザイン,study,text,Report the design.', 'm,study_design,methods,研究デザイン,study,text,Report the design.'].join('\r\n');
+    await importSchemaFile(store, csvFileOf(csv), makeDecoder);
+    const { redraft } = store.getState().schema;
+    expect(redraft?.imported).toEqual({ kind: 'csv', fileName: 'guideline.CSV' });
+    expect(redraft?.diff.importOrderChanged).toBe(true);
+    applyRedraft(store);
+    const { schema } = store.getState();
+    expect(schema.editorRows?.map((row) => [row.fieldId, row.fieldName])).toEqual([
+      ['f-2', 'sample_size'],
+      ['f-1', 'study_design'],
+    ]);
+    expect(schema.editorNoteDefault).toBe('CSV ファイル（guideline.CSV）から読み込み');
+  });
+
+  test('読めない CSV は理由を出す', async () => {
+    const store = storeOf();
+    await importSchemaFile(store, csvFileOf('field_name,section\na,b', 'x.csv'), makeDecoder);
+    expect(store.getState().schema.transfer.importError).toBe(
+      '必須の列がありません: field_label, entity_level, data_type, extraction_instruction。1 行目を見出し行（書き出した CSV と同じ列名）にしてください。',
+    );
+    expect(store.getState().schema.redraft).toBeNull();
   });
 });

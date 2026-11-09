@@ -172,9 +172,11 @@ describe('schemaExportFilename / importNoteDefault', () => {
   test('英数字・ハイフン・ドット以外は _ にし、何も残らなければ project にする', () => {
     expect(schemaExportFilename('不眠 SR: 2026/10 v1.2', 3, '2026-10-05T12:00:00Z')).toBe('schema-v3-SR_2026_10_v1.2-2026-10-05.json');
     expect(schemaExportFilename('不眠症', 1, '2026-10-05T12:00:00Z')).toBe('schema-v1-project-2026-10-05.json');
+    expect(schemaExportFilename('SR', 2, '2026-10-05T12:00:00Z', 'csv')).toBe('schema-v2-SR-2026-10-05.csv');
   });
 
   test('出所を改訂理由の初期値にする', () => {
     expect(importNoteDefault(SOURCE)).toBe('不眠 SR の v3（2026-10-05）から読み込み');
+    expect(importNoteDefault({ kind: 'csv', fileName: 'gl.csv' })).toBe('CSV ファイル（gl.csv）から読み込み');
   });
 });

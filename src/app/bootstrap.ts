@@ -770,8 +770,8 @@ export async function bootstrapApp(
       onSelectSchemaExportVersion: (version) => {
         selectSchemaExportVersion(store, version);
       },
-      onExportSchemaFile: (version) => {
-        void exportSchemaFile(store, deps, version);
+      onExportSchemaFile: (version, format) => {
+        void exportSchemaFile(store, deps, version, format);
       },
       onImportSchemaFile: (file) => {
         void importSchemaFile(store, file);

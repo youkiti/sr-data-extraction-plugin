@@ -43,7 +43,7 @@ import type { DashboardData } from '../features/verification/dashboard';
 import type { LoadedPdfView } from '../features/verification/pdfViewCache';
 import type { PresetDialogState } from '../features/schema/presets/prespecDialog';
 import type { RedraftDiff, RedraftSelection, RevertSource } from '../features/schema/redraftDiff';
-import type { SchemaExportSource } from '../features/schema/schemaTransfer';
+import type { SchemaImportSource } from '../features/schema/schemaTransfer';
 import type { SchemaEditorRow } from '../features/schema/types';
 import type { FieldValidationError } from '../features/schema/validateField';
 import type { VerificationProgress } from '../features/verification/progress';
@@ -271,8 +271,8 @@ export interface RedraftReviewState {
    * 反映時の並び順（戻し元の版の順）と、確定時の parent_version に使う
    */
   revert?: RevertSource;
-  /** ファイルから読み込む差分（issue #316）のときの書き出し元。未設定 = 読み込みではない */
-  imported?: SchemaExportSource;
+  /** ファイルから読み込む差分（issue #316 / CSV は #469）のときの読み込み元。未設定 = 読み込みではない */
+  imported?: SchemaImportSource;
 }
 
 /** 確定済み画面の「スキーマのファイル（JSON）」カードの状態（issue #316） */
