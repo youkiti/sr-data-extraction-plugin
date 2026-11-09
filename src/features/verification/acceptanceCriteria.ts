@@ -7,6 +7,7 @@ import { summarizeComparison, type ComparisonCell, type ComparisonGroup } from '
 
 export const CRITERIA_LEVELS: readonly EntityLevel[] = ['study', 'arm', 'outcome_result', 'rob_domain'];
 export const CRITERIA_GROUPS: readonly ComparisonGroup[] = ['independent', 'consensus', 'human_independent', 'human_with_ai'];
+// 保存済みの版を読むため保存名は維持する。表示名は偽陽性 / 偽陰性 / 誤分類。
 export const RATE_KEYS = ['min_accuracy', 'max_fabrication_rate', 'max_omission_rate', 'max_wrong_value_rate'] as const;
 export type CriteriaRate = typeof RATE_KEYS[number];
 export interface CriteriaDraft {
@@ -36,15 +37,32 @@ export interface CriteriaEvaluation {
   not_evaluable_reason: 'no_pilot' | 'no_compared_cells' | 'below_minimum' | '';
   compared: number;
   accuracy: number | null;
-  fabrication_rate: number | null;
-  omission_rate: number | null;
-  wrong_value_rate: number | null;
+  false_positive_proportion: number | null;
+  false_negative_proportion: number | null;
+  misclassification_proportion: number | null;
   pilot_studies: number;
 }
 
 export function emptyCriteriaDraft(): CriteriaDraft {
   return { comparator: 'independent', entity_levels: [...CRITERIA_LEVELS], min_accuracy: '',
     max_fabrication_rate: '', max_omission_rate: '', max_wrong_value_rate: '', min_compared_cells: '', note: '' };
+}
+
+/** 現行版を引き継ぎ、版が無ければ CESAR の参考値を入力する。 */
+export function initialCriteriaDraft(current: AcceptanceCriteria | null): CriteriaDraft {
+  if (current === null) {
+    return { ...emptyCriteriaDraft(), min_accuracy: '92', max_fabrication_rate: '3' };
+  }
+  return {
+    comparator: current.comparator,
+    entity_levels: [...current.entity_levels],
+    min_accuracy: String(current.min_accuracy ?? ''),
+    max_fabrication_rate: String(current.max_fabrication_rate ?? ''),
+    max_omission_rate: String(current.max_omission_rate ?? ''),
+    max_wrong_value_rate: String(current.max_wrong_value_rate ?? ''),
+    min_compared_cells: String(current.min_compared_cells ?? ''),
+    note: '',
+  };
 }
 
 /** 空欄とゼロを区別し、不正な数値を確定前に拒否する。 */
@@ -142,8 +160,8 @@ export function evaluateCriteria(
     .find((row) => row.group === criteria.comparator && row.entityLevel === null && row.fieldId === null);
   const percent = (value: number | null | undefined): number | null => value == null ? null : value * 100;
   const values = { compared: summary?.compared ?? 0, accuracy: percent(summary?.accuracy),
-    fabrication_rate: percent(summary?.fabricationRate), omission_rate: percent(summary?.omissionRate),
-    wrong_value_rate: percent(summary?.wrongValueRate), pilot_studies: studyIds.size };
+    false_positive_proportion: percent(summary?.falsePositiveProportion), false_negative_proportion: percent(summary?.falseNegativeProportion),
+    misclassification_proportion: percent(summary?.misclassificationProportion), pilot_studies: studyIds.size };
   const reason = !runs.some((run) => run.runType === 'pilot') ? 'no_pilot' : values.compared === 0 ? 'no_compared_cells'
     : values.compared < (criteria.min_compared_cells ?? 1) ? 'below_minimum' : '';
   // 割り算の丸めで等号を落とさないよう、百分率と件数を交差乗算する。
@@ -152,18 +170,18 @@ export function evaluateCriteria(
   const checks: CriteriaEvaluation['checks'] = {
     min_accuracy: check(criteria.min_accuracy, (summary?.match ?? 0) * 100 >= (criteria.min_accuracy ?? 0) * values.compared),
     max_fabrication_rate: check(criteria.max_fabrication_rate,
-      (summary?.fabrication ?? 0) * 100 <= (criteria.max_fabrication_rate ?? 0) * values.compared),
-    max_omission_rate: check(criteria.max_omission_rate, (summary?.omission ?? 0) * 100 <= (criteria.max_omission_rate ?? 0) * values.compared),
+      (summary?.false_positive ?? 0) * 100 <= (criteria.max_fabrication_rate ?? 0) * values.compared),
+    max_omission_rate: check(criteria.max_omission_rate, (summary?.false_negative ?? 0) * 100 <= (criteria.max_omission_rate ?? 0) * values.compared),
     max_wrong_value_rate: check(criteria.max_wrong_value_rate,
-      (summary?.wrong_value ?? 0) * 100 <= (criteria.max_wrong_value_rate ?? 0) * values.compared),
+      (summary?.misclassification ?? 0) * 100 <= (criteria.max_wrong_value_rate ?? 0) * values.compared),
     min_compared_cells: check(criteria.min_compared_cells, values.compared >= (criteria.min_compared_cells ?? 0)),
   };
   const met = Object.values(checks).every((value) => value !== false);
   return { ...values, checks, result: reason !== '' ? 'not_evaluable' : met ? 'met' : 'not_met', not_evaluable_reason: reason };
 }
 
-export const CRITERIA_RESULT_COLUMNS = ['result', 'not_evaluable_reason', 'compared', 'accuracy', 'fabrication_rate',
-  'omission_rate', 'wrong_value_rate', 'pilot_studies'] as const;
+export const CRITERIA_RESULT_COLUMNS = ['result', 'not_evaluable_reason', 'compared', 'accuracy', 'false_positive_proportion',
+  'false_negative_proportion', 'misclassification_proportion', 'pilot_studies'] as const;
 
 export function buildAcceptanceCriteriaCsv(
   versions: readonly AcceptanceCriteria[], cells: readonly ComparisonCell[], runs: readonly PilotRun[], activeStudyIds: ReadonlySet<string>,

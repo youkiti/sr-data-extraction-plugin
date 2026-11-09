@@ -34,8 +34,8 @@ function renderTable(rows: readonly ComparisonSummary[], group: ComparisonGroup)
         el('th', { text: row.entityLevel === null ? t('dashboard.compareOverall')
           : row.fieldId === null ? t(LEVEL_LABELS[row.entityLevel]) : `${t(LEVEL_LABELS[row.entityLevel])}: ${row.fieldLabel}`,
         attributes: { scope: 'row' } }),
-        ...[String(row.compared), `${row.match} (${percent(row.accuracy)})`, `${row.wrong_value} (${percent(row.wrongValueRate)})`,
-          `${row.fabrication} (${percent(row.fabricationRate)})`, `${row.omission} (${percent(row.omissionRate)})`,
+        ...[String(row.compared), `${row.match} (${percent(row.accuracy)})`, `${row.misclassification} (${percent(row.misclassificationProportion)})`,
+          `${row.false_positive} (${percent(row.falsePositiveProportion)})`, `${row.false_negative} (${percent(row.falseNegativeProportion)})`,
           String(row.incomparable), String(row.humanUnjudged), String(row.aiNotExtracted), String(row.missingQuote)]
           .map((text) => el('td', { text })),
       ]))),

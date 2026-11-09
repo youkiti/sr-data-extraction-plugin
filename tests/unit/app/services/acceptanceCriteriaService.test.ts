@@ -79,7 +79,7 @@ test.each(['ja', 'en'] as const)('入力エラーを %s の利用者向け文言
   expect(error).toContain(language === 'ja' ? '正の整数' : 'positive integer');
   changeCriteriaDraft(store, emptyCriteriaDraft());
   await saveCriteria(store, deps);
-  expect(criteriaState(store).error).toContain(language === 'ja' ? '4 つの率のうち 1 つ以上' : 'at least one of the four rates');
+  expect(criteriaState(store).error).toContain(language === 'ja' ? '4 つの割合のうち 1 つ以上' : 'at least one of the four proportions');
   setUiLanguage('ja');
 });
 
@@ -125,6 +125,28 @@ test('読込・重複起動・失敗・再読込', async () => {
   expect(criteriaState(store).error).toBeNull();
 });
 
+test('読込時は未編集の下書きだけを現行版または参考値で埋める', async () => {
+  const store = storeOf();
+  await loadCriteria(store, deps);
+  expect(criteriaState(store).draft).toEqual(draft);
+  changeCriteriaDraft(store, { ...emptyCriteriaDraft(), note: '編集中' });
+  await loadCriteria(store, deps);
+  expect(criteriaState(store).draft).toEqual({ ...emptyCriteriaDraft(), note: '編集中' });
+  const fresh = storeOf();
+  jest.mocked(readAcceptanceCriteria).mockResolvedValueOnce({ versions: [], ignoredCount: 0 });
+  await loadCriteria(fresh, deps);
+  expect(criteriaState(fresh).draft).toEqual({ ...emptyCriteriaDraft(), min_accuracy: '92', max_fabrication_rate: '3' });
+});
+
+test('読込中に対象レベルを編集しても上書きしない', async () => {
+  const store = storeOf();
+  const loading = loadCriteria(store, deps);
+  const edited = { ...emptyCriteriaDraft(), entity_levels: [] };
+  changeCriteriaDraft(store, edited);
+  await loading;
+  expect(criteriaState(store).draft).toEqual(edited);
+});
+
 test('owner は確認を挟み最大版の次に追記、パイロットだけを数える', async () => {
   const store = storeOf();
   changeCriteriaDraft(store, draft);
@@ -143,7 +165,7 @@ test('owner は確認を挟み最大版の次に追記、パイロットだけ�
 test('検証・保存失敗・メール無し、非 owner は確定しない', async () => {
   const store = storeOf();
   await saveCriteria(store, deps);
-  expect(criteriaState(store).error).toContain('4 つの率のうち 1 つ以上を入れてください');
+  expect(criteriaState(store).error).toContain('4 つの割合のうち 1 つ以上を入れてください');
   changeCriteriaDraft(store, draft);
   await saveCriteria(store, deps);
   jest.mocked(getCurrentUserEmail).mockResolvedValueOnce(null);

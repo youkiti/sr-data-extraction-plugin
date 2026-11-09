@@ -23,25 +23,25 @@ test('合格基準は英日・単一/二重で前後・比較相手・3 値を�
           for (const result of ['met', 'not_met'] as const) {
             const criteria = { ...initial, comparator, pilot_runs_before: after };
             const evaluation = { ...evaluateCriteria(criteria, [], [], new Set()), result, pilot_studies: 2, compared: 60,
-              accuracy: 91.25, fabrication_rate: 2, omission_rate: 4, wrong_value_rate: 2.75 };
+              accuracy: 91.25, false_positive_proportion: 2, false_negative_proportion: 4, misclassification_proportion: 2.75 };
             const text = buildMethodsText(language, workflow, makeFacts({ acceptanceCriteria: { criteria, evaluation } })).text.split('\n\n').pop()!;
             expect(text).toContain('2026-11-07');
             expect(text).toContain(language === 'ja' ? '版 1' : 'version 1');
             expect(text).toContain(groups[comparator][language === 'ja' ? 0 : 1]);
             if (language === 'ja') {
               expect(text).toContain(after === 0 ? 'パイロットの前に' : 'パイロットの開始後に');
-              expect(text).toContain('正確度 90% 以上、作り話の率 3% 以下、欠けの率 8% 以下、誤った値の率 5% 以下、比べられたセル 50 件以上');
+              expect(text).toContain('正確度 90% 以上、偽陽性の割合 3% 以下、偽陰性の割合 8% 以下、誤分類の割合 5% 以下、比べられたセル 50 件以上');
               expect(text).toContain('と比べて研究、群の単位で評価することを');
               expect(text).toContain(result === 'met' ? 'この基準を満たした（正確度 91.3%' : 'この基準を満たさなかった（正確度 91.3%');
-              expect(text).toContain('作り話の率 2.0%、欠けの率 4.0%、誤った値の率 2.8%、比べられたセル 60 件');
+              expect(text).toContain('偽陽性の割合 2.0%、偽陰性の割合 4.0%、誤分類の割合 2.8%、比べられたセル 60 件');
             } else {
               expect(text).toContain(after === 0 ? 'Before the pilot, we prespecified acceptance criteria'
                 : 'After the pilot had begun, we specified acceptance criteria');
-              expect(text).toContain('accuracy of at least 90%, a fabrication rate of at most 3%, an omission rate of at most 8%,');
-              expect(text).toContain('a wrong-value rate of at most 5% and at least 50 compared cells');
+              expect(text).toContain('accuracy of at least 90%, a false-positive proportion of at most 3%, a false-negative proportion of at most 8%,');
+              expect(text).toContain('a misclassification proportion of at most 5% and at least 50 compared cells');
               expect(text).toContain('at the study and arm levels. In the pilot of 2 studies, AI extraction');
               expect(text).toContain(result === 'met' ? 'met these criteria (accuracy 91.3%' : 'did not meet these criteria (accuracy 91.3%');
-              expect(text).toContain('fabrication rate 2.0%, omission rate 4.0%, wrong-value rate 2.8%, 60 compared cells');
+              expect(text).toContain('false-positive proportion 2.0%, false-negative proportion 4.0%, misclassification proportion 2.8%, 60 compared cells');
             }
             if (after > 0) {
               expect(text).not.toMatch(/事前に|prespecified/);

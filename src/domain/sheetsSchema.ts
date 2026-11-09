@@ -56,6 +56,7 @@ export const META_BUDGET_COLUMNS = ['budget_usd', 'budget_updated_by', 'budget_u
  */
 export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
   AcceptanceCriteria: [
+    // 保存済みの版を読むため保存名は維持する。表示名は偽陽性 / 偽陰性 / 誤分類。
     'version', 'confirmed_at', 'confirmed_by', 'comparator', 'entity_levels', 'min_accuracy',
     'max_fabrication_rate', 'max_omission_rate', 'max_wrong_value_rate', 'min_compared_cells', 'pilot_runs_before', 'note',
   ],

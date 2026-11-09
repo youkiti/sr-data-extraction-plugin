@@ -13,7 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
-（まだありません / Nothing yet）
+### その他の変更 / Other changes
+
+- 合格基準と AI・人の比較を偽陽性・偽陰性・誤分類の割合に改称し、数え方と設定値の方向を表示しました。入力欄は前の版、なければ正確度 92%・偽陽性の割合 3% から始まります。CSV 列名は `wrong_value → misclassification`、`fabrication → false_positive`、`omission → false_negative`、`wrong_value_rate → misclassification_proportion`、`fabrication_rate → false_positive_proportion`、`omission_rate → false_negative_proportion` に変更しました。旧列名を読む R コードは更新が必要です。分類と計算方法は変わりません（2026-11-09）。
+  Acceptance criteria and AI vs human comparisons now use false-positive, false-negative and misclassification proportions, with counting definitions and threshold directions. Drafts start with the previous version, or accuracy 92% and false-positive proportion 3%. CSV columns were renamed: `wrong_value → misclassification`, `fabrication → false_positive`, `omission → false_negative`, `wrong_value_rate → misclassification_proportion`, `fabrication_rate → false_positive_proportion`, and `omission_rate → false_negative_proportion`. R code reading the old columns needs updating. Classification and arithmetic are unchanged (2026-11-09).
 
 ## v0.29.0（2026-11-09）
 

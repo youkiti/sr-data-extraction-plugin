@@ -3,7 +3,7 @@ import { emptyCriteriaState } from '../../../../src/app/services/acceptanceCrite
 import { renderPilotCriteria } from '../../../../src/app/views/pilotCriteria';
 import type { PilotViewCallbacks } from '../../../../src/app/views/types';
 import { confirmCriteria, emptyCriteriaDraft, evaluateCriteria } from '../../../../src/features/verification/acceptanceCriteria';
-import { registerMessages } from '../../../../src/lib/i18n';
+import { registerMessages, setUiLanguage } from '../../../../src/lib/i18n';
 import { jaApp } from '../../../../src/lib/i18n/ja.app';
 import { enApp } from '../../../../src/lib/i18n/en.app';
 import { formatPilotRunDate } from '../../../../src/app/ui/formatPilotRunDate';
@@ -22,24 +22,48 @@ test('結果表は設定・実測・個別判定を分け、計算前と設定�
   state.pilot.criteria = { ...emptyCriteriaState(), versions: [current] };
   let view = renderPilotCriteria(state, callbacks());
   expect(view.textContent).toContain(formatPilotRunDate(criteria.confirmed_at));
-  expect([...view.querySelectorAll('thead th')].map((node) => node.textContent)).toEqual(['基準', '設定値', 'パイロットの値', '判定']);
+  expect([...view.querySelectorAll('thead th')].map((node) => node.textContent)).toEqual(['基準', '設定値', 'パイロットの値', '判定', '数え方']);
+  expect([...view.querySelectorAll('tbody th')].map((node) => node.textContent))
+    .toEqual(['正確度', '偽陽性の割合', '偽陰性の割合', '誤分類の割合', '比べられたセル数']);
+  expect([...view.querySelectorAll('tbody tr')].map((node) => node.lastElementChild?.textContent)).toEqual([
+    '人と AI の値が一致したセルの割合',
+    '人が「報告なし」なのに AI が値を出した、または値が違い AI の引用が本文に無い',
+    '人は値を入れたのに AI が報告なし・値なし',
+    '人と AI の値が違う（引用は本文にある）',
+    '割合の分母。人が未判定・AI 未抽出のセルは除く',
+  ]);
   for (const row of view.querySelectorAll('tbody tr')) {
-    expect([...row.querySelectorAll('td')].slice(1).map((node) => node.textContent)).toEqual(['—', '—']);
+    expect([...row.querySelectorAll('td')].slice(1, 3).map((node) => node.textContent)).toEqual(['—', '—']);
   }
   for (const compared of [49, 50]) {
     state.pilot.criteria.evaluation = { ...evaluateCriteria(current, [], [], new Set()),
-      accuracy: 89.95, fabrication_rate: 3, omission_rate: 9, wrong_value_rate: 5, compared,
+      accuracy: 89.95, false_positive_proportion: 3, false_negative_proportion: 9, misclassification_proportion: 5, compared,
       checks: { min_accuracy: false, max_fabrication_rate: true, max_omission_rate: false,
         max_wrong_value_rate: null, min_compared_cells: compared === 50 } };
     view = renderPilotCriteria(state, callbacks());
-    const rows = [...view.querySelectorAll('tbody tr')].map((row) => [...row.querySelectorAll('td')].map((node) => node.textContent));
+    const rows = [...view.querySelectorAll('tbody tr')].map((row) => [...row.querySelectorAll('td')].slice(0, 3).map((node) => node.textContent));
     expect(rows).toEqual([
-      ['90%', '90.0%', '満たさない'], ['3%', '3.0%', '満たす'], ['8%', '9.0%', '満たさない'],
-      ['設定なし', '—', '—'], ['≥ 50', String(compared), compared === 50 ? '満たす' : '満たさない'],
+      ['90% 以上', '90.0%', '満たさない'], ['3% 以下', '3.0%', '満たす'], ['8% 以下', '9.0%', '満たさない'],
+      ['設定なし', '—', '—'], ['50 件以上', String(compared), compared === 50 ? '満たす' : '満たさない'],
     ]);
     expect(view.querySelector('#pilot-criteria-result')?.getAttribute('role')).toBe('status');
     expect(view.querySelector('.dashboard__compare-scroll table')).not.toBeNull();
   }
+});
+
+test('英語の結果表も方向と数え方を示し、入力ラベルは記号を保つ', () => {
+  setUiLanguage('en');
+  const state = createInitialState();
+  state.pilot.criteria = { ...emptyCriteriaState(), versions: [{ ...criteria, min_accuracy: 97,
+    max_fabrication_rate: 3, min_compared_cells: 50 }] };
+  const view = renderPilotCriteria(state, callbacks());
+  expect(view.textContent).toContain('How it is counted');
+  expect(view.textContent).toContain('at least 97%');
+  expect(view.textContent).toContain('at most 3%');
+  expect(view.textContent).toContain('at least 50');
+  expect(view.textContent).toContain(enApp['criteria.countFalsePositive']);
+  expect(view.textContent).toContain('False-positive proportion ≤ (%)');
+  setUiLanguage('ja');
 });
 
 test('未設定は空入力、全レベル選択、各入力の変更と確認・取消を通知する', () => {
@@ -91,7 +115,7 @@ test('現行と過去版、計算・エラー・警告・読み取り専用、�
     for (const reason of ['', 'no_pilot', 'no_compared_cells', 'below_minimum'] as const) {
       state.pilot.criteria = { ...emptyCriteriaState(), versions: [criteria, current], ignoredCount: 1,
         evaluation: { ...evaluateCriteria(current, [], [], new Set()), result, not_evaluable_reason: reason,
-          accuracy: 95, fabrication_rate: null } };
+          accuracy: 95, false_positive_proportion: null } };
       const view = renderPilotCriteria(state, ctx);
       expect(view.querySelector('#pilot-criteria-result')).not.toBeNull();
       expect(view.textContent).toContain('版 2');
@@ -147,7 +171,7 @@ test('正確度 29% の境界で行と全体がともに満たすと表示する
   const current = { ...criteria, min_accuracy: 29 };
   const cells = Array.from({ length: 100 }, (_, index): ComparisonCell => ({ studyId: 's1', studyLabel: 'Study',
     fieldId: 'f1', fieldName: 'name', fieldLabel: 'Name', entityLevel: 'study', entityKey: 'study', group: 'independent',
-    annotator: 'human', annotatorType: 'human_independent', category: index < 29 ? 'match' : 'omission',
+    annotator: 'human', annotatorType: 'human_independent', category: index < 29 ? 'match' : 'false_negative',
     reason: null, aiValue: 'a', humanValue: 'a', missingQuote: false }));
   const evaluation = evaluateCriteria(current, cells, [{ runType: 'pilot', studyIds: ['s1'] }], new Set(['s1']));
   state.pilot.criteria = { ...emptyCriteriaState(), versions: [current], evaluation };

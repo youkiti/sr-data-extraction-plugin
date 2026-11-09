@@ -21,14 +21,14 @@ describe('値を先に見る分類', () => {
     ['NR', 'unused', true, true, 'failed', 'match', null, false],
     ['NR', null, false, true, 'exact', 'match', null, false],
     ['NR', '  ', false, true, 'exact', 'match', null, false],
-    ['NR', '120', false, true, 'exact', 'fabrication', null, false],
-    ['120', 'unused', true, true, 'failed', 'omission', null, false],
-    ['120', null, false, true, 'exact', 'omission', null, false],
+    ['NR', '120', false, true, 'exact', 'false_positive', null, false],
+    ['120', 'unused', true, true, 'failed', 'false_negative', null, false],
+    ['120', null, false, true, 'exact', 'false_negative', null, false],
     [' 120 ', '120', false, true, 'failed', 'match', null, true],
-    ['120', '121', false, true, 'failed', 'fabrication', null, true],
-    ['120', '121', false, true, 'exact', 'wrong_value', null, false],
-    ['120', '120.0', false, true, null, 'wrong_value', null, false],
-    ['NR', 'NR', false, true, 'exact', 'fabrication', null, false],
+    ['120', '121', false, true, 'failed', 'false_positive', null, true],
+    ['120', '121', false, true, 'exact', 'misclassification', null, false],
+    ['120', '120.0', false, true, null, 'misclassification', null, false],
+    ['NR', 'NR', false, true, 'exact', 'false_positive', null, false],
   ] as const)('H=%s A=%s NR=%s 対象=%s 引用=%s', (human, value, notReported, targeted, anchorStatus, category, reason, missingQuote) => {
     const evidence = makeEvidence({ value, notReported, anchorStatus });
     expect(classifyComparisonCell(field, human, { evidence, quotes: [] }, targeted))
@@ -36,11 +36,11 @@ describe('値を先に見る分類', () => {
   });
 
   test('Evidence なしと複数引用の一部成功、複数選択の正準化', () => {
-    expect(classifyComparisonCell(field, '120', undefined, true).category).toBe('omission');
+    expect(classifyComparisonCell(field, '120', undefined, true).category).toBe('false_negative');
     expect(classifyComparisonCell(field, null, undefined, true).category).toBe('incomparable');
     const evidence = makeEvidence({ anchorStatus: 'failed' });
     expect(classifyComparisonCell(field, '121', { evidence, quotes: [evidence, makeEvidence()] }, true))
-      .toMatchObject({ category: 'wrong_value', missingQuote: false });
+      .toMatchObject({ category: 'misclassification', missingQuote: false });
     const multi = makeField({ dataType: 'enum', allowedValues: 'a|b', multiSelect: { freeTextValues: [], exclusiveValues: [] } });
     expect(classifyComparisonCell(multi, 'b | a', { evidence: makeEvidence({ value: 'a|b' }), quotes: [] }, true).category).toBe('match');
   });
@@ -53,7 +53,7 @@ describe('比較セルと対象者', () => {
     expect(report.unextractedStudyIds).toEqual(['study-3']);
     expect(report.cells.map((cell) => [cell.studyId, cell.group, cell.category])).toEqual([
       ['study-1', 'independent', 'match'], ['study-1', 'human_independent', 'match'],
-      ['study-2', 'independent', 'omission'], ['study-2', 'human_independent', 'omission'],
+      ['study-2', 'independent', 'false_negative'], ['study-2', 'human_independent', 'false_negative'],
     ]);
     expect(buildComparisonCells(input({ studyRows: [] })).noFinalStudyIds).toEqual(['study-1']);
   });
@@ -76,7 +76,7 @@ describe('比較セルと対象者', () => {
       evidence: [makeEvidence({ fieldId: 'f-arm', entityKey: 'arm:3' })], runs: [makeRun({ fieldIds: ['f-arm'] })] }));
     const independent = report.cells.filter((cell) => cell.group === 'independent');
     expect(independent.map((cell) => [cell.entityKey, cell.category])).toEqual([
-      ['-', 'incomparable'], ['arm:1', 'omission'], ['arm:2', 'match'], ['arm:3', 'incomparable'],
+      ['-', 'incomparable'], ['arm:1', 'false_negative'], ['arm:2', 'match'], ['arm:3', 'incomparable'],
     ]);
     expect(buildComparisonCells(input({ runs: [makeRun({ fieldIds: ['other'] })] })).cells[0]?.reason).toBe('ai_not_extracted');
     expect(buildComparisonCells(input({ runs: [makeRun({ fieldIds: [] })] })).cells[0]?.reason).toBeNull();
@@ -90,27 +90,27 @@ describe('比較セルと対象者', () => {
     expect(report.cells[0]?.category).toBe('match');
     const latest = buildComparisonCells(input({ evidence: [makeEvidence(), makeEvidence({ runId: 'run-2', value: '121' })],
       runs: [makeRun(), makeRun({ runId: 'run-2', startedAt: 't2' })] }));
-    expect(latest.cells[0]?.category).toBe('wrong_value');
+    expect(latest.cells[0]?.category).toBe('misclassification');
   });
 });
 
 describe('集計と CSV', () => {
   test('全区分の件数・率と引用なしを数え、集合で絞り込む', () => {
     const base = buildComparisonCells(input()).cells[0]!;
-    const cells = [base, { ...base, category: 'wrong_value' as const },
-      { ...base, category: 'fabrication' as const, missingQuote: true }, { ...base, category: 'omission' as const },
+    const cells = [base, { ...base, category: 'misclassification' as const },
+      { ...base, category: 'false_positive' as const, missingQuote: true }, { ...base, category: 'false_negative' as const },
       { ...base, category: 'incomparable' as const, reason: 'human_unjudged' as const },
       { ...base, category: 'incomparable' as const, reason: 'ai_not_extracted' as const }];
     const summary = summarizeComparison(cells);
     expect(summary).toHaveLength(3);
-    expect(summary[0]).toMatchObject({ compared: 4, match: 1, wrong_value: 1, fabrication: 1, omission: 1,
+    expect(summary[0]).toMatchObject({ compared: 4, match: 1, misclassification: 1, false_positive: 1, false_negative: 1,
       incomparable: 2, humanUnjudged: 1, aiNotExtracted: 1, missingQuote: 1, accuracy: 0.25,
-      wrongValueRate: 0.25, fabricationRate: 0.25, omissionRate: 0.25 });
+      misclassificationProportion: 0.25, falsePositiveProportion: 0.25, falseNegativeProportion: 0.25 });
     expect(summarizeComparison(cells, { studyIds: new Set() })).toEqual([]);
     expect(summarizeComparison(cells, { entityLevels: new Set(['arm']) })).toEqual([]);
     expect(summarizeComparison(cells, { studyIds: new Set(['study-1']), entityLevels: new Set(['study']) })).toEqual(summary);
     const zero = summarizeComparison([cells[4]!])[0]!;
-    expect(zero).toMatchObject({ compared: 0, accuracy: null, wrongValueRate: null, fabricationRate: null, omissionRate: null });
+    expect(zero).toMatchObject({ compared: 0, accuracy: null, misclassificationProportion: null, falsePositiveProportion: null, falseNegativeProportion: null });
     const report = { cells: [...cells, { ...base, humanValue: 'a,"b"\nc' }], unextractedStudyIds: ['s'], noFinalStudyIds: ['s2'] };
     expect(buildComparisonSummaryCsv(report)).toContain('unextracted_studies,no_final_studies\r\n');
     expect(buildComparisonSummaryCsv(report)).toContain(',1,1\r\n');
@@ -123,13 +123,13 @@ describe('集計と CSV', () => {
 
   test('CSV は指定の列順と研究ラベル・項目名を持ち、率を小数点以下 4 桁で丸める', () => {
     const base = buildComparisonCells(input()).cells[0]!;
-    const report = { cells: [base, { ...base, category: 'wrong_value' as const }, { ...base, category: 'omission' as const }],
+    const report = { cells: [base, { ...base, category: 'misclassification' as const }, { ...base, category: 'false_negative' as const }],
       unextractedStudyIds: [], noFinalStudyIds: [] };
     const summary = buildComparisonSummaryCsv(report);
     const cells = buildComparisonCellsCsv(report.cells);
-    expect(summary.split('\r\n')[0]).toBe('\uFEFFgroup,entity_level,field_id,field_name,field_label,compared,match,wrong_value,' +
-      'fabrication,omission,incomparable,human_unjudged,ai_not_extracted,missing_quote,accuracy,wrong_value_rate,' +
-      'fabrication_rate,omission_rate,unextracted_studies,no_final_studies');
+    expect(summary.split('\r\n')[0]).toBe('\uFEFFgroup,entity_level,field_id,field_name,field_label,compared,match,misclassification,' +
+      'false_positive,false_negative,incomparable,human_unjudged,ai_not_extracted,missing_quote,accuracy,misclassification_proportion,' +
+      'false_positive_proportion,false_negative_proportion,unextracted_studies,no_final_studies');
     expect(cells.split('\r\n')[0]).toBe('\uFEFFstudy_label,study_id,field_id,field_name,field_label,entity_level,entity_key,' +
       'group,annotator,annotator_type,category,reason,ai_value,human_value,missing_quote');
     expect(cells).toContain(`研究 1,study-1,${field.fieldId},${field.fieldName},${field.fieldLabel}`);
