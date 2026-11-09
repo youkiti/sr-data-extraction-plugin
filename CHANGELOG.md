@@ -13,6 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
+（まだありません / Nothing yet）
+
+## v0.30.0（2026-11-09）
+
 ### AI の結果に影響する変更 / Changes that affect AI output
 
 - パイロット・一括抽出に「ページ画像も送る」を追加しました（既定は未選択）。選択時は本文に全ページ画像を添付し、図だけにある人数なども抽出対象にします。extract-data プロンプトは版数 14。本文にも値があれば本文から逐語で引用し、画像だけの値には見える文字を書き起こして引用します。未選択時の送信内容・プロンプトは変わりません（2026-11-09）。
