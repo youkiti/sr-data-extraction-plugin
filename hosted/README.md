@@ -186,12 +186,14 @@ npm run help:shots -- verify    # 名前を指定したシーンだけ撮り直�
 
 ```
 npm run diagram:data-flow   # hosted/screenshots/data-flow-ja.png と data-flow-en.png を上書きする
+npm run diagram:data-flow -- --svg   # 同じ図の SVG（data-flow-ja.svg / data-flow-en.svg）も書き出す
 ```
 
 - 図の文言の正典は `docs/store/privacy-policy.md`。ポリシーの送信先・保存先・対応プロバイダを変えたら、`generate.mjs` の `TEXT`（日英）を直して描き直し、同じ PR に含める。
 - 脚注の日付（プライバシーポリシーの最終更新日）も合わせて直す。
 - 日本語フォントは実行環境のものを使う。描き直したら PNG を目で確かめる（文字のはみ出し・重なり）。
 - ロゴの入手元とライセンスは `tools/data-flow/logos/README.md`。
+- SVG はスライドや論文など外で使うための素材で、公開ページは PNG を参照する。文字は開いた環境のフォントで描かれるので、見た目は PNG と少し違うことがある。図を描き直したら SVG も `--svg` 付きで描き直す。
 
 ### ヘルプの見出しと画面の対応
 
