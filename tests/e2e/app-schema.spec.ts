@@ -886,6 +886,47 @@ test('スキーマのファイル: 版があるプロジェクトは差分を確
   await expect(page.locator('#schema-note')).toHaveValue('別の SR の v4（2026-09-30）から読み込み');
 });
 
+test('スキーマのファイル: 確定済みの版を CSV で書き出す（issue #469）', async ({ page }) => {
+  await initApp(page, CONFIRMED_SCHEMA_STATE, { schemaVersions: 1 });
+  const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#schema-export-csv').click()]);
+  expect(download.suggestedFilename()).toMatch(/^schema-v1-E2E-\d{4}-\d{2}-\d{2}\.csv$/);
+  const stream = await download.createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(chunk as Buffer);
+  const bytes = Buffer.concat(chunks);
+  // Excel が UTF-8 と認識する BOM
+  expect([...bytes.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+  const lines = bytes.subarray(3).toString('utf-8').split('\r\n');
+  expect(lines[0]).toBe(
+    'section,field_name,field_label,entity_level,data_type,unit,allowed_values,required,extraction_instruction,example,note,max_quotes,multi_select,exclusive_values,free_text_values',
+  );
+  expect(lines[1]).toContain(',study_design,');
+});
+
+test('スキーマのファイル: 列を入れ替え・メモ列を足した Shift_JIS の CSV を、行の順で読み込む（issue #469）', async ({ page }) => {
+  await initApp(page, CONFIRMED_SCHEMA_STATE, { schemaVersions: 1 });
+  // 「あ」の Shift_JIS は 0x82 0xA0（Excel の「CSV（コンマ区切り）」で保存したファイルを想定）
+  const buffer = Buffer.concat([
+    Buffer.from('memo,field_name,section,field_label,entity_level,data_type,extraction_instruction\r\nx,new_field,methods,', 'ascii'),
+    Buffer.from([0x82, 0xa0]),
+    Buffer.from(',study,text,Report it.\r\ny,study_design,methods,Design,study,text,Report the design.\r\n', 'ascii'),
+  ]);
+  await page.locator('#schema-transfer #schema-import-file').setInputFiles({ name: 'guideline.csv', mimeType: 'text/csv', buffer });
+  await expect(page.locator('#schema-import-source')).toHaveText('ファイル: guideline.csv（CSV）');
+  await expect(page.locator('#schema-import-order-changed')).toHaveText('項目の並び順は、ファイルの行の順に変わります。');
+  const axe = await new AxeBuilder({ page }).include('#schema-redraft-review').analyze();
+  expect(axe.violations).toEqual([]);
+  await expect(page.locator('#schema-redraft-added')).toContainText('あ');
+  await page.locator('#schema-redraft-apply').click();
+  await expect(page.locator('#schema-note')).toHaveValue('CSV ファイル（guideline.csv）から読み込み');
+  const names = await page
+    .locator('#schema-editor-table tbody tr')
+    .evaluateAll((rows) =>
+      rows.map((row) => [...row.querySelectorAll('input')].map((input) => (input as HTMLInputElement).value).find((value) => value === 'new_field' || value === 'study_design')),
+    );
+  expect(names).toEqual(['new_field', 'study_design']);
+});
+
 test('差分承認画面: 追加は既定チェック・削除候補は既定未チェックで描画され、反映でエディタへ遷移する（issue #197）', async ({
   page,
 }) => {

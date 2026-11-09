@@ -1,13 +1,16 @@
-// S5「スキーマのファイル（JSON）」（issue #316）。確定済みの版を JSON でダウンロードし、
-// 別のプロジェクトで読み込む。読み込みは、版が無ければエディタへ直接、版があれば
+// S5「スキーマのファイル（JSON / CSV）」（issue #316・CSV は #469）。確定済みの版を JSON か CSV で
+// ダウンロードし、別のプロジェクトで読み込む。読み込みは、版が無ければエディタへ直接、版があれば
 // 差分承認画面（AI 再ドラフト #197・前の版に戻す #318 と同じ部品）を経てエディタへ入れる。
 // どちらも最後は既存の「版として確定」。Google API は書き出しの項目読み込みにだけ使う
 import { EXTRACT_DATA_PROMPT_VERSION } from '../../features/extraction/skills/extractData';
 import { buildImportDiff, defaultRedraftSelection } from '../../features/schema/redraftDiff';
 import { getSchemaFieldsByVersion } from '../../features/schema/schemaRepository';
+import { decodeSchemaCsv, parseSchemaCsv, serializeSchemaCsv, type MakeTextDecoder } from '../../features/schema/schemaCsv';
 import {
   SCHEMA_IMPORT_MAX_BYTES,
   SchemaImportError,
+  type ParsedSchemaImport,
+  type SchemaImportSource,
   importNoteDefault,
   parseSchemaExport,
   schemaExportFilename,
@@ -30,10 +33,32 @@ export type SchemaTransferDeps = Pick<SchemaServiceDeps, 'google' | 'profile'> &
   download?: (filename: string, content: string, mimeType: string) => void;
 };
 
+/** 書き出す形式 */
+export type SchemaFileFormat = 'json' | 'csv';
+
 /** 読み込むファイル（`File` の必要な部分だけ。テストで差し替えやすくする） */
 export interface SchemaImportFile {
+  name: string;
   size: number;
   text(): Promise<string>;
+  arrayBuffer(): Promise<ArrayBuffer>;
+}
+
+/** 拡張子が .csv のファイルは CSV、それ以外は JSON として読む */
+function isCsvFile(file: SchemaImportFile): boolean {
+  return /\.csv$/i.test(file.name);
+}
+
+/** ファイルを読み、読み込み元の記録とエディタ行にする（形式は拡張子で決める） */
+async function parseImportFile(
+  file: SchemaImportFile,
+  makeDecoder: MakeTextDecoder | undefined,
+): Promise<{ source: SchemaImportSource; rows: ParsedSchemaImport['rows'] }> {
+  if (!isCsvFile(file)) {
+    return parseSchemaExport(await file.text());
+  }
+  const text = decodeSchemaCsv(new Uint8Array(await file.arrayBuffer()), makeDecoder);
+  return { source: { kind: 'csv', fileName: file.name }, rows: parseSchemaCsv(text) };
 }
 
 function toMessage(err: unknown): string {
@@ -60,8 +85,13 @@ export function selectSchemaExportVersion(store: Store, version: number): void {
   patchTransfer(store, { exportVersion: version, exportError: null });
 }
 
-/** 選んだ版を JSON にしてダウンロードする。最新版は読み込み済みの項目を使う */
-export async function exportSchemaFile(store: Store, deps: SchemaTransferDeps, version: number): Promise<void> {
+/** 選んだ版を JSON か CSV にしてダウンロードする。最新版は読み込み済みの項目を使う */
+export async function exportSchemaFile(
+  store: Store,
+  deps: SchemaTransferDeps,
+  version: number,
+  format: SchemaFileFormat = 'json',
+): Promise<void> {
   const state = store.getState();
   const project = state.currentProject;
   const { versions, currentFields, transfer } = state.schema;
@@ -78,6 +108,16 @@ export async function exportSchemaFile(store: Store, deps: SchemaTransferDeps, v
       throw new Error(t('schema.consultDocVersionMissing', { version }));
     }
     const exportedAt = (deps.now ?? (() => new Date().toISOString()))();
+    const download = deps.download ?? downloadTextFile;
+    if (format === 'csv') {
+      download(
+        schemaExportFilename(project.name, version, exportedAt, 'csv'),
+        serializeSchemaCsv(fields),
+        'text/csv;charset=utf-8',
+      );
+      patchTransfer(store, { exporting: false });
+      return;
+    }
     const content = serializeSchemaExport(fields, {
       projectName: project.name,
       schemaVersion: version,
@@ -86,7 +126,7 @@ export async function exportSchemaFile(store: Store, deps: SchemaTransferDeps, v
       extractPromptVersion: EXTRACT_DATA_PROMPT_VERSION,
       appVersion: (deps.getAppVersion ?? defaultAppVersion)(),
     });
-    (deps.download ?? downloadTextFile)(
+    download(
       schemaExportFilename(project.name, version, exportedAt),
       content,
       'application/json',
@@ -103,10 +143,15 @@ function isIdle(state: ReturnType<Store['getState']>): boolean {
 }
 
 /**
- * ファイルを読み込む。版が無いプロジェクトではエディタへ直接、版があるプロジェクトでは
- * 最新版との差分承認画面へ入れる。読めないファイルは画面を変えずに理由を出す
+ * ファイル（JSON / CSV）を読み込む。版が無いプロジェクトではエディタへ直接、版があるプロジェクトでは
+ * 最新版との差分承認画面へ入れる。読めないファイルは画面を変えずに理由を出す。
+ * makeDecoder は CSV の文字コードの読み分けに使う（jsdom に TextDecoder が無いためテストで注入する）
  */
-export async function importSchemaFile(store: Store, file: SchemaImportFile): Promise<void> {
+export async function importSchemaFile(
+  store: Store,
+  file: SchemaImportFile,
+  makeDecoder?: MakeTextDecoder,
+): Promise<void> {
   const state = store.getState();
   const project = state.currentProject;
   const { versions, currentFields, transfer } = state.schema;
@@ -118,7 +163,7 @@ export async function importSchemaFile(store: Store, file: SchemaImportFile): Pr
     if (file.size > SCHEMA_IMPORT_MAX_BYTES) {
       throw new SchemaImportError('schema.importTooLarge');
     }
-    const { source, rows } = parseSchemaExport(await file.text());
+    const { source, rows } = await parseImportFile(file, makeDecoder);
     // 読み込み中に別の操作（エディタを開く・AI 再ドラフト・確定・プロジェクト切替）が始まっていたら捨てる
     const after = store.getState();
     if (

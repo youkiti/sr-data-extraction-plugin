@@ -90,6 +90,13 @@ export interface RedraftDiff {
    * buildRedraftDiff / applyRedraftDiff のペアでのみ意味を持つ内部契約
    */
   readonly currentEntries: readonly RedraftEntry[];
+  /**
+   * ファイルからの読み込み（issue #316 / #469）だけが持つ: ファイルの項目の順（field_name を trim したもの）。
+   * applyImportDiff はこの順に並べる。無ければ従来どおり最新版の並び順を保つ
+   */
+  readonly importOrder?: readonly string[];
+  /** ファイルからの読み込みだけが持つ: 反映すると最新版から並び順が変わるか（差分承認画面の注記に使う） */
+  readonly importOrderChanged?: boolean;
 }
 
 /** 比較対象の属性をエディタ表示用の文字列へ変換する（boolean は 'true'/'false'、null はそのまま） */
@@ -550,15 +557,83 @@ export function buildImportDiff(
       currentEntries.push({ kind: 'unchanged', field });
     }
   }
+  const addedNames = new Set(importedByName.keys());
   const added: RedraftAddedItem[] = Array.from(importedByName.values()).map((row) => ({ row: { ...row, fieldId: null } }));
-  return { added, changed, removed, unchanged, protectedFields: [], currentEntries };
+  const importOrder = Array.from(new Set(imported.map((row) => row.fieldName.trim())));
+  return {
+    added,
+    changed,
+    removed,
+    unchanged,
+    protectedFields: [],
+    currentEntries,
+    importOrder,
+    importOrderChanged: isImportOrderChanged(current, importOrder, addedNames),
+  };
 }
 
 /**
- * 読み込みの選択を適用してエディタ行を返す（issue #316）。最新版の並び順を保ち、追加分を末尾に置く。
- * 採用した変更はファイルの設定（note を含む）で最新版の field_id を引き継ぐ
+ * 読み込みを反映すると並び順が変わるか。両方にある項目の相対順が違う、または
+ * ファイルにだけある項目が両方にある項目より前に来る（＝末尾への追加では済まない）とき true
+ */
+function isImportOrderChanged(
+  current: readonly SchemaField[],
+  importOrder: readonly string[],
+  addedNames: ReadonlySet<string>,
+): boolean {
+  const inFile = new Set(importOrder);
+  const currentCommon = current.map((field) => field.fieldName.trim()).filter((name) => inFile.has(name));
+  const fileCommon = importOrder.filter((name) => !addedNames.has(name));
+  if (currentCommon.some((name, index) => fileCommon[index] !== name)) {
+    return true;
+  }
+  // 末尾に付く追加分を除いても、まだファイルにだけある項目が残っていれば途中に挟まっている
+  const withoutTrailingAdded = [...importOrder];
+  while (withoutTrailingAdded.length > 0 && addedNames.has(withoutTrailingAdded[withoutTrailingAdded.length - 1] as string)) {
+    withoutTrailingAdded.pop();
+  }
+  return withoutTrailingAdded.some((name) => addedNames.has(name));
+}
+
+/**
+ * 読み込みの選択を適用してエディタ行を返す（issue #316 / #469）。
+ * - 並び順はファイルの項目の順（diff.importOrder）に合わせる。削除を採用しなかった項目（ファイルに無いが
+ *   残す項目）は、最新版で直前にあったファイルにもある項目の後ろに置く（前に何も無ければ先頭）
+ * - 採用した変更はファイルの設定（note を含む）で最新版の field_id を引き継ぐ
  */
 export function applyImportDiff(diff: RedraftDiff, selection: RedraftSelection): SchemaEditorRow[] {
+  const inCurrentOrder = applyImportDiffInCurrentOrder(diff, selection);
+  if (diff.importOrder === undefined) {
+    return inCurrentOrder;
+  }
+  // 最新版の順の行を、ファイルにある項目（両方にある項目・採用した追加）と、その後ろに付く残す項目へ分ける
+  const fileNames = new Set(diff.importOrder);
+  const byName = new Map<string, SchemaEditorRow>();
+  const trailing = new Map<string, SchemaEditorRow[]>();
+  let anchor = '';
+  for (const row of inCurrentOrder) {
+    const name = row.fieldName.trim();
+    if (fileNames.has(name)) {
+      byName.set(name, row);
+      if (row.fieldId !== null) {
+        anchor = name;
+      }
+      continue;
+    }
+    trailing.set(anchor, [...(trailing.get(anchor) ?? []), row]);
+  }
+  const rows: SchemaEditorRow[] = [...(trailing.get('') ?? [])];
+  for (const name of diff.importOrder) {
+    const row = byName.get(name);
+    if (row !== undefined) {
+      rows.push(row, ...(trailing.get(name) ?? []));
+    }
+  }
+  return rows;
+}
+
+/** 読み込みの選択を適用し、最新版の並び順のまま（追加分は末尾）の行を返す（#316 の当初の挙動） */
+function applyImportDiffInCurrentOrder(diff: RedraftDiff, selection: RedraftSelection): SchemaEditorRow[] {
   const rows: SchemaEditorRow[] = [];
   for (const entry of diff.currentEntries) {
     if (entry.kind === 'changed') {

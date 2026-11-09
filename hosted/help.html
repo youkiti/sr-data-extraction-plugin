@@ -1180,15 +1180,19 @@
             </li>
             <li>
               <span class="ja" lang="ja"
-                >確定した版は、確定済みの画面の「スキーマのファイル（JSON）」で JSON ファイルに書き出せます。RoB などの事前設定も含まれ、論文のデータや判定は含まれません。別のプロジェクトでは、同じカード（スキーマがまだ無いときはドラフト前の画面）でそのファイルを読み込みます。スキーマが既にあるプロジェクトでは、最新版との差分（ファイルにだけある項目・設定が違う項目・最新版にだけある項目）を確認してから反映します。最新版にだけある項目は、既定では残ります。同じ名前の項目は、今のプロジェクトの項目として引き継がれます。</span
+                >確定した版は、確定済みの画面の「スキーマのファイル（JSON / CSV）」で JSON か CSV のファイルに書き出せます。RoB などの事前設定も含まれ、論文のデータや判定は含まれません。CSV は Excel などで開くと 1 行が 1 項目になり、行を並べ替えると項目の順も変わります。ガイドラインの作業などで、項目を 1 枚のシートにまとめて管理するときに使えます。保存するときは CSV 形式のまま保存してください（UTF-8 でも、Excel の「CSV（コンマ区切り）」でも読めます）。1 行目の列名は変えないでください。自分用のメモの列は足しても構いません（読み込むときは無視されます）。別のプロジェクトでは、同じカード（スキーマがまだ無いときはドラフト前の画面）でそのファイルを読み込みます。スキーマが既にあるプロジェクトでは、最新版との差分（ファイルにだけある項目・設定が違う項目・最新版にだけある項目）を確認してから反映します。項目はファイルの行の順に並びます。最新版にだけある項目は、既定では残ります。同じ名前の項目は、今のプロジェクトの項目として引き継がれます。</span
               >
               <span class="en" lang="en"
-                >You can export a confirmed version as a JSON file under “Schema file (JSON)” on the confirmed screen. It
-                includes pre-specification settings such as RoB, but not study data or decisions. In another project,
+                >You can export a confirmed version as a JSON or CSV file under “Schema file (JSON / CSV)” on the confirmed
+                screen. It includes pre-specification settings such as RoB, but not study data or decisions. In a
+                spreadsheet such as Excel, the CSV has one field per row, and reordering the rows reorders the fields. This
+                helps when you manage fields in a single sheet, for example for clinical practice guidelines. Save it as CSV
+                (UTF-8 or Excel's “CSV (Comma delimited)” both work). Do not rename the columns in the first row; you may add
+                your own note columns, which are ignored on import. In another project,
                 import the file from the same card (or from the screen before drafting if there is no schema yet). If the
                 project already has a schema, you review the differences from the latest version (fields only in the file,
-                fields with different settings, and fields only in the latest version) before applying them. Fields only in
-                the latest version are kept by default. Fields with the same name are carried over as the project's existing
+                fields with different settings, and fields only in the latest version) before applying them. Fields follow
+                the row order of the file. Fields only in the latest version are kept by default. Fields with the same name are carried over as the project's existing
                 fields.</span
               >
             </li>

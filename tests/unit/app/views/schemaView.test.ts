@@ -1958,7 +1958,7 @@ describe('前の版の内容に戻す（issue #318）', () => {
   });
 });
 
-// スキーマのファイル（JSON。issue #316）
+// スキーマのファイル（JSON。issue #316 / CSV は #469）
 describe('スキーマのファイル（issue #316）', () => {
   const transferState = (patch: Partial<AppState['schema']['transfer']> = {}) =>
     makeState({
@@ -1970,12 +1970,16 @@ describe('スキーマのファイル（issue #316）', () => {
   test('確定済み画面のカード: 既定は最新版。版の選択・書き出しを親へ伝え、エラーは出さない', () => {
     const { ctx, callbacks } = makeCtx();
     const view = renderSchemaView(transferState(), ctx);
-    expect(view.querySelector('#schema-transfer h3')?.textContent).toBe('スキーマのファイル（JSON）');
+    expect(view.querySelector('#schema-transfer h3')?.textContent).toBe('スキーマのファイル（JSON / CSV）');
     const select = view.querySelector('#schema-export-version') as HTMLSelectElement;
     expect([...select.options].map((option) => option.textContent)).toEqual(['v2', 'v1']);
     expect(select.value).toBe('2');
     (view.querySelector('#schema-export-file') as HTMLButtonElement).click();
-    expect(callbacks.onExportSchemaFile).toHaveBeenCalledWith(2);
+    expect(callbacks.onExportSchemaFile).toHaveBeenCalledWith(2, 'json');
+    const csvButton = view.querySelector('#schema-export-csv') as HTMLButtonElement;
+    expect(csvButton.textContent).toBe('CSV を書き出す');
+    csvButton.click();
+    expect(callbacks.onExportSchemaFile).toHaveBeenCalledWith(2, 'csv');
     select.value = '1';
     select.dispatchEvent(new Event('change'));
     expect(callbacks.onSelectSchemaExportVersion).toHaveBeenCalledWith(1);
@@ -1989,7 +1993,7 @@ describe('スキーマのファイル（issue #316）', () => {
     expect((chosen.querySelector('#schema-export-version') as HTMLSelectElement).value).toBe('1');
     const missing = renderSchemaView(transferState({ exportVersion: 9 }), ctx);
     (missing.querySelector('#schema-export-file') as HTMLButtonElement).click();
-    expect(callbacks.onExportSchemaFile).toHaveBeenCalledWith(2);
+    expect(callbacks.onExportSchemaFile).toHaveBeenCalledWith(2, 'json');
   });
 
   test('書き出し中・読み込み中は無効化して文言を変え、失敗は role=alert で出す', () => {
@@ -1998,6 +2002,8 @@ describe('スキーマのファイル（issue #316）', () => {
     const button = busy.querySelector('#schema-export-file') as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     expect(button.textContent).toBe('書き出し中…');
+    const csvButton = busy.querySelector('#schema-export-csv') as HTMLButtonElement;
+    expect([csvButton.disabled, csvButton.textContent]).toEqual([true, '書き出し中…']);
     expect((busy.querySelector('#schema-export-version') as HTMLSelectElement).disabled).toBe(true);
     expect((busy.querySelector('#schema-import-file') as HTMLInputElement).disabled).toBe(true);
     expect(busy.textContent).toContain('読み込み中…');
@@ -2011,7 +2017,7 @@ describe('スキーマのファイル（issue #316）', () => {
     const { ctx, callbacks } = makeCtx();
     const view = renderSchemaView(transferState(), ctx);
     const input = view.querySelector('#schema-import-file') as HTMLInputElement;
-    expect(input.getAttribute('accept')).toBe('.json,application/json');
+    expect(input.getAttribute('accept')).toBe('.json,application/json,.csv,text/csv');
     input.dispatchEvent(new Event('change'));
     expect(callbacks.onImportSchemaFile).not.toHaveBeenCalled();
     const file = new File(['{}'], 'schema.json', { type: 'application/json' });
@@ -2057,6 +2063,23 @@ describe('スキーマのファイル（issue #316）', () => {
     );
     expect(view.querySelector('#schema-redraft-removed-note')?.textContent).toContain('既定では残します');
     expect((view.querySelector('#schema-redraft-removed input') as HTMLInputElement).checked).toBe(false);
+    expect(view.querySelector('#schema-import-order-changed')).toBeNull();
+  });
+
+  test('CSV からの差分承認画面は、ファイル名を出し、並び順が変わるときはそう示す（issue #469）', () => {
+    const current = [makeField({ fieldId: 'f-a', fieldName: 'a' }), makeField({ fieldId: 'f-b', fieldName: 'b' })];
+    const diff = buildImportDiff(current, [makeEditorRow({ fieldName: 'b' }), makeEditorRow({ fieldName: 'a' })]);
+    const { ctx } = makeCtx();
+    const view = renderSchemaView(
+      makeState({
+        versions: [makeVersion(1)],
+        currentFields: current,
+        redraft: { diff, selection: defaultRedraftSelection(diff), imported: { kind: 'csv', fileName: 'guideline.csv' } },
+      }),
+      ctx,
+    );
+    expect(view.querySelector('#schema-import-source')?.textContent).toBe('ファイル: guideline.csv（CSV）');
+    expect(view.querySelector('#schema-import-order-changed')?.textContent).toBe('項目の並び順は、ファイルの行の順に変わります。');
   });
 });
 

@@ -13,7 +13,7 @@ import type { SchemaPresetKind } from '../../features/schema/presets';
 import type { PresetDialogPatch } from '../../features/schema/presets/prespecDialog';
 import type { SchemaEditorRow } from '../../features/schema/types';
 import type { VerificationProgress } from '../../features/verification/progress';
-import type { SchemaImportFile } from '../services/schemaTransferService';
+import type { SchemaFileFormat, SchemaImportFile } from '../services/schemaTransferService';
 import type { VerifyLayoutMode, VerifyPaneLayout } from '../../lib/storage/settingsStore';
 import type { ExclusionDialogState } from '../store';
 import type { AskPaperParams } from '../services/askPaperService';
@@ -185,9 +185,9 @@ export interface SchemaViewCallbacks {
   onStartRevert: (version: number) => void;
   /** スキーマのファイル（issue #316）: 書き出す版の選択 */
   onSelectSchemaExportVersion: (version: number) => void;
-  /** スキーマのファイル: 選択中の版を JSON でダウンロード */
-  onExportSchemaFile: (version: number) => void;
-  /** スキーマのファイル: 選んだ JSON ファイルを読み込む */
+  /** スキーマのファイル: 選択中の版を JSON か CSV（#469）でダウンロード */
+  onExportSchemaFile: (version: number, format: SchemaFileFormat) => void;
+  /** スキーマのファイル: 選んだ JSON / CSV ファイルを読み込む */
   onImportSchemaFile: (file: SchemaImportFile) => void;
 }
 

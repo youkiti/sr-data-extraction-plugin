@@ -635,16 +635,18 @@ describe('buildImportDiff / applyImportDiff', () => {
     ]);
   });
 
-  test('既定の選択（追加・変更は採用、削除候補は残す）で、最新版の並びを保ち追加分を末尾に置く', () => {
+  test('既定の選択（追加・変更は採用、削除候補は残す）で、ファイルの順に並べ、残す項目は最新版で直前にあった項目の後ろに置く（#469）', () => {
     const diff = buildImportDiff(current, imported);
+    expect(diff.importOrder).toEqual(['new_field', 'same', 'diff']);
+    expect(diff.importOrderChanged).toBe(true);
     const rows = applyImportDiff(diff, defaultRedraftSelection(diff));
     expect(rows.map((row) => [row.fieldId, row.fieldName, row.note])).toEqual([
+      [null, 'new_field', null],
       ['f-same', 'same', null],
       ['f-diff', 'diff', '{"type":"rob2_prespec"}'],
       ['f-only', 'only_latest', null],
-      [null, 'new_field', null],
     ]);
-    expect(rows[1]?.aiGenerated).toBe(false);
+    expect(rows[2]?.aiGenerated).toBe(false);
   });
 
   test('変更を採用しない・削除候補を消す・追加しない選択も反映する', () => {
@@ -662,6 +664,37 @@ describe('buildImportDiff / applyImportDiff', () => {
       'f-same',
       'f-diff',
       'f-only',
+    ]);
+  });
+
+  test('並び替えだけのファイルでも、行の順に並べ替える。最新版で先頭にあった残す項目は先頭に置く（#469）', () => {
+    const latest = [
+      makeField({ fieldId: 'f-kept', fieldName: 'kept' }),
+      makeField({ fieldId: 'f-a', fieldName: 'a' }),
+      makeField({ fieldId: 'f-b', fieldName: 'b' }),
+      makeField({ fieldId: 'f-c', fieldName: 'c' }),
+    ];
+    const diff = buildImportDiff(latest, [makeRow({ fieldName: 'c' }), makeRow({ fieldName: 'a' }), makeRow({ fieldName: 'b' })]);
+    expect([diff.added.length, diff.changed.length, diff.removed.length]).toEqual([0, 0, 1]);
+    expect(diff.importOrderChanged).toBe(true);
+    expect(applyImportDiff(diff, defaultRedraftSelection(diff)).map((row) => row.fieldId)).toEqual(['f-kept', 'f-c', 'f-a', 'f-b']);
+  });
+
+  test('両方にある項目の順が同じで、追加分が末尾だけなら並び順は変わらない扱い', () => {
+    const latest = [makeField({ fieldId: 'f-a', fieldName: 'a' }), makeField({ fieldId: 'f-b', fieldName: 'b' })];
+    expect(buildImportDiff(latest, [makeRow({ fieldName: 'a' }), makeRow({ fieldName: 'b' }), makeRow({ fieldName: 'z' })]).importOrderChanged).toBe(false);
+    expect(buildImportDiff(latest, [makeRow({ fieldName: 'a' }), makeRow({ fieldName: 'z' }), makeRow({ fieldName: 'b' })]).importOrderChanged).toBe(true);
+    expect(buildImportDiff(latest, [makeRow({ fieldName: 'z' })]).importOrderChanged).toBe(false);
+  });
+
+  test('importOrder を持たない差分は、最新版の並びを保ち追加分を末尾に置く', () => {
+    const diff = { ...buildImportDiff(current, imported) };
+    delete (diff as { importOrder?: readonly string[] }).importOrder;
+    expect(applyImportDiff(diff, defaultRedraftSelection(diff)).map((row) => row.fieldName)).toEqual([
+      'same',
+      'diff',
+      'only_latest',
+      'new_field',
     ]);
   });
 });
