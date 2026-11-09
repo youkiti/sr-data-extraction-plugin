@@ -2358,6 +2358,11 @@ describe('bootstrapApp: #/pilot', () => {
     // 既定は全選択（null）
     expect(store?.getState().pilot.selectedFieldIds).toBeNull();
     const fieldCheckbox = document.querySelector<HTMLInputElement>('.pilot__field-checkbox');
+    const pageImages = document.querySelector<HTMLInputElement>('#pilot-page-images')!;
+    expect(pageImages.checked).toBe(false);
+    pageImages.checked = true;
+    pageImages.dispatchEvent(new Event('change'));
+    expect(store?.getState().pilot.pageImages).toBe(true);
     expect(fieldCheckbox?.checked).toBe(true);
 
     // 単一項目の解除が配線されている
@@ -2384,6 +2389,7 @@ describe('bootstrapApp: #/pilot', () => {
     await flush();
     expect(store?.getState().pilot.selectedFieldIds).toBeNull();
     expect(store?.getState().pilot.collapsedFieldSections).toEqual([]);
+    expect(store?.getState().pilot.pageImages).toBe(false);
   });
 
   test('#/pilot の検証セクション（study 切替セレクタ / 再試行）が配線されている', async () => {
@@ -3023,6 +3029,11 @@ describe('bootstrapApp: #/extract', () => {
     // 既定は全選択（null）
     expect(store?.getState().extract.selectedFieldIds).toBeNull();
     const fieldCheckbox = document.querySelector<HTMLInputElement>('.extract__field-checkbox');
+    const pageImages = document.querySelector<HTMLInputElement>('#extract-page-images')!;
+    expect(pageImages.checked).toBe(false);
+    pageImages.checked = true;
+    pageImages.dispatchEvent(new Event('change'));
+    expect(store?.getState().extract.pageImages).toBe(true);
     expect(fieldCheckbox?.checked).toBe(true);
 
     // 単一項目の解除が配線されている
@@ -3052,6 +3063,7 @@ describe('bootstrapApp: #/extract', () => {
     await flush();
     expect(store?.getState().extract.selectedFieldIds).toBeNull();
     expect(store?.getState().extract.collapsedFieldSections).toEqual([]);
+    expect(store?.getState().extract.pageImages).toBe(false);
   });
 
   test('#/extract の再試行と再読み込みが配線されている', async () => {

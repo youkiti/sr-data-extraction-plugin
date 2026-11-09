@@ -35,6 +35,7 @@ import { missingApiKeyMessage, providerModelMismatchMessage } from '../../lib/ll
 import { confirmAiDataConsent } from '../../lib/llm/aiDataConsent';
 import {
   isRunBlockedByImageUnsupportedModel,
+  resolveEffectivePageImages,
   resolveProviderConfig,
   type ProviderConfig,
   type ProviderResolutionDeps,
@@ -133,6 +134,11 @@ export function setPilotModel(store: Store, model: string): void {
   patchPilot(store, { model: model.trim() });
 }
 
+/** 本文に全ページ画像を追加するか切り替える。 */
+export function setPilotPageImages(store: Store, enabled: boolean): void {
+  patchPilot(store, { pageImages: enabled });
+}
+
 /**
  * フィールド選択チェックリストを全選択へリセットする（A-4: 画面入場のたびに全選択へ戻す。
  * storage への永続化はしない）。bootstrap の `#/pilot` ルート入場時に呼ぶ
@@ -141,6 +147,7 @@ export function resetPilotFieldSelection(store: Store): void {
   patchPilot(store, {
     selectedFieldIds: null,
     collapsedFieldSections: [],
+    pageImages: false,
   });
 }
 
@@ -295,6 +302,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         spreadsheetId: project.spreadsheetId,
         logsLlmFolderId: llmFolder.id,
         runType: 'pilot',
+        pageImages: resolveEffectivePageImages(state.pilot.pageImages, model, providerResolution.provider),
         documents: targets,
         fields: extractionFields,
         model,

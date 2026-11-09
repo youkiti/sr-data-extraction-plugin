@@ -282,6 +282,71 @@ function makeDeps(provider: LLMProvider): {
   };
 }
 
+describe('本文と全ページ画像の併用送信', () => {
+  const images = [{ page: 1, mimeType: 'image/png', dataBase64: 'QUJD' }];
+  const plan = () => makePlan([makeBatch({ studyId: 's', fieldIds: ['f_design'], augmentedImageDocumentIds: ['s'] })]);
+
+  test('本文と画像を送り、本文の引用照合を維持し bbox は要求しない', async () => {
+    const { provider, calls } = providerOf([chatResponse([DESIGN_ITEM])]);
+    const { deps } = makeDeps(provider);
+    const loadImages = jest.fn().mockResolvedValue(images);
+    const result = await execute({ runId: 'run-images', plan: plan(), fields: [STUDY_FIELD] }, { ...deps, loadDocumentPageImages: loadImages });
+    expect(loadImages).toHaveBeenCalledWith('s');
+    expect(calls[0]!.messages[0]!.content).toContain('both text and page images');
+    const parts = calls[0]!.messages[1]!.content as ChatContentPart[];
+    expect(parts[0]).toEqual(expect.objectContaining({ text: expect.stringContaining(PAGES[0]!.text) }));
+    expect(parts[1]).toEqual({ type: 'text', text: '[Document 1/1 page 1]' });
+    expect(calls[0]!.options!.responseSchema).toBe(EXTRACT_DATA_RESPONSE_SCHEMA);
+    expect(result.evidence[0]!.anchorStatus).toBe('exact');
+    expect(result.evidence[0]!.bbox).toBeNull();
+  });
+
+  test('図だけの引用は既存の failed として保存する', async () => {
+    const { provider } = providerOf([chatResponse([{ ...DESIGN_ITEM, quote: 'Randomized (n=147)', page: 1 }])]);
+    const { deps } = makeDeps(provider);
+    const result = await execute({ runId: 'run-images', plan: plan(), fields: [STUDY_FIELD] }, { ...deps, loadDocumentPageImages: async () => images });
+    expect(result.evidence[0]!.anchorStatus).toBe('failed');
+    expect(result.evidence[0]!.page).toBe(1);
+  });
+
+  test('スキャンとの混在時も併用を保ち、画像ローダは各文書を一度だけ読む', async () => {
+    const batch = makeBatch({
+      studyId: 's', fieldIds: ['f_design'], documentIds: ['s', 'scan'],
+      imageDocumentIds: ['scan'], augmentedImageDocumentIds: ['s'],
+    });
+    const { provider, calls } = providerOf([
+      chatResponse([DESIGN_ITEM]), chatResponse([{ ...DESIGN_ITEM, document_index: 2 }]),
+    ]);
+    const { deps } = makeDeps(provider);
+    const loadImages = jest.fn().mockResolvedValue(images);
+    const result = await execute({
+      runId: 'run-images', plan: makePlan([batch, { ...batch, section: 'second' }]), fields: [STUDY_FIELD],
+      documents: [makeDocument('s'), makeDocument('scan', { studyId: 's', textStatus: 'no_text_layer' })],
+    }, { ...deps, loadDocumentPageImages: loadImages });
+    expect(result.status).toBe('done');
+    expect(loadImages).toHaveBeenCalledTimes(2);
+    expect(calls[0]!.messages[0]!.content).toContain('both text and page images');
+    expect(calls[0]!.messages[0]!.content).toContain('bounding box');
+    expect((calls[0]!.messages[1]!.content as ChatContentPart[]).filter((part) => part.type === 'image')).toHaveLength(2);
+    expect(result.evidence[1]!.documentId).toBe('scan');
+  });
+
+  test('画像ローダ未注入は拒否し、空画像・空本文・ロード例外は失敗として扱う', async () => {
+    const { provider, calls } = providerOf([]);
+    const { deps } = makeDeps(provider);
+    await expect(execute({ runId: 'run-images', plan: plan(), fields: [STUDY_FIELD] }, deps)).rejects.toThrow('loadDocumentPageImages');
+    for (const loadImages of [async () => [], async () => { throw new Error('画像取得失敗'); }]) {
+      const result = await execute({ runId: 'run-images', plan: plan(), fields: [STUDY_FIELD] }, { ...deps, loadDocumentPageImages: loadImages });
+      expect(result.batchFailures[0]!.reason).toBe('load_failed');
+    }
+    const result = await execute({ runId: 'run-images', plan: plan(), fields: [STUDY_FIELD] }, {
+      ...deps, loadDocumentPages: async () => [], loadDocumentPageImages: async () => images,
+    });
+    expect(result.batchFailures[0]!.reason).toBe('load_failed');
+    expect(calls).toHaveLength(0);
+  });
+});
+
 const DESIGN_ITEM = {
   field_id: 'f_design',
   entity_key: '-',

@@ -1,4 +1,17 @@
 import { withSpreadsheetWriteLock } from '../../../../src/app/services/verificationService';
+
+test('ページ画像の選択を概算へ反映し、変更を通知する', () => {
+  const off = render(makeState({ pilot: { model: 'gemini-2.5-pro', pageImages: false } }));
+  const before = off.root.querySelector('#pilot-estimate')!.textContent;
+  const on = render(makeState({ pilot: { model: 'gemini-2.5-pro', pageImages: true } }));
+  expect(on.root.querySelector('#pilot-estimate')!.textContent).not.toBe(before);
+  expect(planRunMock.mock.calls.at(-1)![0].pageImages).toBe(true);
+  const box = on.root.querySelector<HTMLInputElement>('#pilot-page-images')!;
+  expect(box.checked).toBe(true);
+  box.checked = false;
+  box.dispatchEvent(new Event('change'));
+  expect(on.callbacks.onTogglePageImages).toHaveBeenCalledWith(false);
+});
 import { renderPilotView } from '../../../../src/app/views/pilotView';
 
 test.each([
@@ -80,6 +93,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
     onToggleField: jest.fn(),
     onToggleFieldSection: jest.fn(),
     onToggleFieldSectionCollapse: jest.fn(),
+    onTogglePageImages: jest.fn(),
     onRun: jest.fn(),
     onSelectRun: jest.fn(),
     onReloadHistory: jest.fn(),
@@ -194,6 +208,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
         onToggleField: jest.fn(),
         onToggleFieldSection: jest.fn(),
         onToggleFieldSectionCollapse: jest.fn(),
+        onTogglePageImages: jest.fn(),
         onRequestRun: jest.fn(),
         onConfirmRun: jest.fn(),
         onCancelConfirm: jest.fn(),

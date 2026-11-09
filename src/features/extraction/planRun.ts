@@ -13,6 +13,7 @@
 import { isMultiSelectField, multiSelectConfigOf, splitPipeList } from '../../domain/multiSelect';
 import { DOCUMENT_ROLE_ORDER, type DocumentRecord } from '../../domain/document';
 import type { InputMode } from '../../domain/extractionRun';
+import type { LlmProviderId } from '../../domain/llmApiLog';
 import type { EntityLevel, SchemaField } from '../../domain/schemaField';
 import {
   APPROX_IMAGE_TOKENS_PER_PAGE,
@@ -21,11 +22,12 @@ import {
   resolveModelImageInputSupport,
   resolveThinkingOutputMultiplier,
 } from '../../lib/llm/pricing';
-import { resolveProviderId } from '../../lib/llm/providerFactory';
+import { resolveEffectivePageImages, resolveProviderId } from '../../lib/llm/providerFactory';
 import {
   EXTRACT_DATA_ARM_COMPLETENESS_RULE,
   EXTRACT_DATA_OUTCOME_SOURCE_RULE,
   EXTRACT_DATA_SYSTEM_PROMPT,
+  EXTRACT_DATA_PAGE_IMAGES_RULE,
 } from './skills/extractData';
 
 /** 英語論文テキストの 1 トークンあたり文字数の目安（概算専用） */
@@ -99,6 +101,8 @@ export interface PlannedBatch {
    * documentIds の部分集合・同順。0 件なら全文書がテキスト入力（text_only）
    */
   imageDocumentIds: readonly string[];
+  /** 本文に加えて全ページ画像を送る文書。画像のみの文書とは排他。 */
+  augmentedImageDocumentIds?: readonly string[];
   /** section 単位分割時の section 名。スキーマ全項目一括なら null */
   section: string | null;
   /** 当該バッチで抽出する項目（fieldIndex 順） */
@@ -114,8 +118,8 @@ export interface RunPlan {
   model: string;
   batches: PlannedBatch[];
   /**
-   * いずれかのバッチに画像入力の文書があれば 'pdf_native'、無ければ 'text_only'
-   * （ExtractionRuns.input_mode の素材。requirements.md Q3 / handoff-scanned-pdf-native-highlight.md §7.4）
+   * 本文と画像を併用する文書があれば 'text_with_page_images' を優先する。
+   * 併用が無く画像入力の文書があれば 'pdf_native'、画像が無ければ 'text_only'。
    */
   inputMode: InputMode;
   /** 全バッチ合計（ExtractionRuns.cost_estimate と S7 表示の素材） */
@@ -130,6 +134,10 @@ export interface RunPlan {
 }
 
 export interface PlanRunInput {
+  /** 明示選択時だけ本文に全ページ画像を追加する。 */
+  pageImages?: boolean;
+  /** 保存済みの接続方式をモデル名からの推定より優先する。 */
+  providerOverride?: LlmProviderId | null;
   fallbackPricing?: ModelPricing;
   documents: readonly DocumentRecord[];
   /** 同一 schema_version の抽出項目（混在は契約違反として throw） */
@@ -211,6 +219,7 @@ function estimateBatch(
   docs: readonly DocumentRecord[],
   fields: readonly SchemaField[],
   protocolChars: number,
+  pageImages: boolean,
 ): BatchEstimate {
   const textDocs = docs.filter((doc) => !isImageDocument(doc));
   const imageDocs = docs.filter(isImageDocument);
@@ -229,6 +238,7 @@ function estimateBatch(
     ? EXTRACT_DATA_OUTCOME_SOURCE_RULE.length + 2
     : 0;
   const promptChars =
+    (pageImages && textDocs.length > 0 ? EXTRACT_DATA_PAGE_IMAGES_RULE.length + 2 : 0) +
     PROMPT_SCAFFOLD_CHARS +
     protocolChars +
     fields.reduce((sum, field) => sum + fieldPromptChars(field), 0) +
@@ -242,8 +252,11 @@ function estimateBatch(
     : (field.maxQuotes ?? 1));
   }, 0);
   const imageTokens = imageDocs.reduce((sum, doc) => sum + imageDocumentTokens(doc), 0);
+  const extraImageTokens = pageImages
+    ? textDocs.reduce((sum, doc) => sum + imageDocumentTokens(doc), 0)
+    : 0;
   return {
-    tokensIn: Math.ceil(promptChars / APPROX_CHARS_PER_TOKEN) + imageTokens,
+    tokensIn: Math.ceil(promptChars / APPROX_CHARS_PER_TOKEN) + imageTokens + extraImageTokens,
     tokensOut: Math.ceil((items * OUTPUT_CHARS_PER_ITEM) / APPROX_CHARS_PER_TOKEN),
   };
 }
@@ -325,14 +338,22 @@ export function planRun(input: PlanRunInput): RunPlan {
   const protocolChars = input.protocolContext?.length ?? 0;
   const sortedFields = [...input.fields].sort((a, b) => a.fieldIndex - b.fieldIndex);
   const allFieldIds = sortedFields.map((field) => field.fieldId);
+  const pageImages = resolveEffectivePageImages(input.pageImages === true, input.model, input.providerOverride);
 
   const batches: PlannedBatch[] = [];
   const imageDocumentIds = new Set<string>();
+  const augmentedImageDocumentIds = new Set<string>();
   let unknownCharCountDocs = 0;
 
   for (const [studyId, docs] of groupDocumentsByStudy(input.documents)) {
     const documentIds = docs.map((doc) => doc.documentId);
     const batchImageDocumentIds = docs.filter(isImageDocument).map((doc) => doc.documentId);
+    const augmentedIds = pageImages
+      ? docs.filter((doc) => !isImageDocument(doc)).map((doc) => doc.documentId)
+      : [];
+    for (const id of augmentedIds) {
+      augmentedImageDocumentIds.add(id);
+    }
     for (const id of batchImageDocumentIds) {
       imageDocumentIds.add(id);
     }
@@ -342,12 +363,13 @@ export function planRun(input: PlanRunInput): RunPlan {
       }
     }
 
-    const fullEstimate = estimateBatch(docs, sortedFields, protocolChars);
+    const fullEstimate = estimateBatch(docs, sortedFields, protocolChars, pageImages);
     if (withinBudget(fullEstimate, budget)) {
       batches.push({
         studyId,
         documentIds,
         imageDocumentIds: batchImageDocumentIds,
+        ...(augmentedIds.length > 0 ? { augmentedImageDocumentIds: augmentedIds } : {}),
         section: null,
         fieldIds: allFieldIds,
         tokensInEstimate: fullEstimate.tokensIn,
@@ -358,11 +380,12 @@ export function planRun(input: PlanRunInput): RunPlan {
     }
 
     for (const [section, sectionFields] of groupBySection(sortedFields)) {
-      const estimate = estimateBatch(docs, sectionFields, protocolChars);
+      const estimate = estimateBatch(docs, sectionFields, protocolChars, pageImages);
       batches.push({
         studyId,
         documentIds,
         imageDocumentIds: batchImageDocumentIds,
+        ...(augmentedIds.length > 0 ? { augmentedImageDocumentIds: augmentedIds } : {}),
         section,
         fieldIds: sectionFields.map((field) => field.fieldId),
         tokensInEstimate: estimate.tokensIn,
@@ -382,9 +405,14 @@ export function planRun(input: PlanRunInput): RunPlan {
     null,
     input.fallbackPricing,
   );
-  const inputMode: InputMode = imageDocumentIds.size > 0 ? 'pdf_native' : 'text_only';
+  const inputMode: InputMode = augmentedImageDocumentIds.size > 0
+    ? 'text_with_page_images'
+    : imageDocumentIds.size > 0 ? 'pdf_native' : 'text_only';
 
   const warnings: string[] = [];
+  if (augmentedImageDocumentIds.size > 0) {
+    warnings.push(`本文に加えて文献 ${augmentedImageDocumentIds.size} 件の全ページ画像も送信します（画像トークンぶん費用が増えます）`);
+  }
   if (thinkingOutputMultiplier > 1 && costEstimateUsd !== null) {
     warnings.push(
       `思考（thinking）トークンを見込み、コスト概算では出力トークンに ×${thinkingOutputMultiplier.toFixed(2)} を掛けています（表示の出力トークン数は応答本文ぶんのみ）`,
@@ -414,11 +442,13 @@ export function planRun(input: PlanRunInput): RunPlan {
   const modelSelected = input.modelSelected !== false;
   if (
     modelSelected &&
-    imageDocumentIds.size > 0 &&
-    resolveModelImageInputSupport(resolveProviderId(input.model), input.model) === 'unknown'
+    (imageDocumentIds.size > 0 || augmentedImageDocumentIds.size > 0) &&
+    resolveModelImageInputSupport(input.providerOverride ?? resolveProviderId(input.model), input.model) === 'unknown'
   ) {
     warnings.push(
-      `モデル「${input.model}」が画像入力に対応しているか分かっていません（カタログ外）。テキスト層のない文献が正しく読めない可能性があります`,
+      imageDocumentIds.size > 0
+        ? `モデル「${input.model}」が画像入力に対応しているか分かっていません（カタログ外）。テキスト層のない文献が正しく読めない可能性があります`
+        : `モデル「${input.model}」が画像入力に対応しているか分かっていません（カタログ外）。追加で送るページ画像が読まれない可能性があります`,
     );
   }
 

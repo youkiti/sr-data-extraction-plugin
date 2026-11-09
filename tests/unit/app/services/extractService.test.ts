@@ -8,6 +8,7 @@ import {
   retryExtractStudy,
   runExtract,
   setExtractModel,
+  setExtractPageImages,
   toggleAllExtractStudies,
   toggleExtractField,
   toggleExtractFieldSection,
@@ -501,6 +502,14 @@ describe('initExtractSelection', () => {
 });
 
 describe('toggleExtractStudy / setExtractModel', () => {
+  test('ページ画像の選択は画面再入場のリセットで外れる', () => {
+    const store = makeStore({});
+    expect(store.getState().extract.pageImages).toBe(false);
+    setExtractPageImages(store, true);
+    expect(store.getState().extract.pageImages).toBe(true);
+    resetExtractFieldSelection(store);
+    expect(store.getState().extract.pageImages).toBe(false);
+  });
   test('選択・重複追加・解除（上限なし）', () => {
     const store = makeStore({ extract: { selectedStudyIds: ['s1', 's2', 's3'] } });
     toggleExtractStudy(store, 's4', true);
@@ -885,6 +894,23 @@ describe('runExtract', () => {
     ]);
   });
 
+  test('ページ画像の明示選択を full run と再試行用の状態へ渡す', async () => {
+    const store = makeReadyStore();
+    setExtractPageImages(store, true);
+    runExtractionMock.mockResolvedValue(makeOutcome());
+    await runExtract(store, makeDeps());
+    expect(runExtractionMock.mock.calls[0]![0].pageImages).toBe(true);
+    expect(store.getState().extract.lastRunPageImages).toBe(true);
+  });
+
+  test('非対応モデルへの変更後は追加画像を効かせず、その実効値を再試行用に残す', async () => {
+    const store = makeReadyStore({ model: 'deepseek/deepseek-v4-flash', pageImages: true });
+    runExtractionMock.mockResolvedValue(makeOutcome());
+    await runExtract(store, makeDeps());
+    expect(runExtractionMock.mock.calls[0]![0].pageImages).toBe(false);
+    expect(store.getState().extract.lastRunPageImages).toBe(false);
+  });
+
   test('Options の reasoning effort を runExtraction の依存へ渡す（issue #381）', async () => {
     const chromeMock = installChromeMock();
     chromeMock.storage.local.data['settings.defaultReasoningEffort'] = 'high';
@@ -1189,6 +1215,13 @@ describe('runExtract', () => {
 });
 
 describe('retryExtractStudy', () => {
+  test('再試行は現在のチェックではなく元 run の画像選択を使う', async () => {
+    const store = makeFailedStore();
+    store.setState({ extract: { ...store.getState().extract, pageImages: false, lastRunPageImages: true } });
+    runExtractionMock.mockResolvedValue(makeOutcome({ studyIds: ['study-doc-2'] }));
+    await retryExtractStudy(store, makeDeps(), 'study-doc-2');
+    expect(runExtractionMock.mock.calls[0]![0].pageImages).toBe(true);
+  });
   test('接続方式とモデルが食い違う場合は再試行せず案内する', async () => {
     const store = makeFailedStore();
     store.setState({ extract: { ...store.getState().extract, model: 'gemini-2.5-pro' } });

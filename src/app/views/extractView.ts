@@ -38,6 +38,7 @@ import {
   renderFieldSelectionChecklist,
 } from './fieldSelectionChecklist';
 import type { ViewContext } from './types';
+import { renderPageImagesToggle } from './pageImagesToggle';
 
 // 表示言語に追従させるため、ラベルは描画時に t() で解決する（キー対応表のみ固定。issue #93）
 const STATUS_LABEL_KEYS: Readonly<Record<ExtractStudyStatus, MessageKey>> = {
@@ -223,6 +224,8 @@ function renderEstimate(state: AppState, budgetWarningId = 'extract-budget-warni
       // モデル未選択時のダミー値 'unknown' を「画像対応が不明なモデルが選ばれている」と
       // 誤検出しないための切り分け（pilotView.ts の renderEstimate と同じ理由。レビュー指摘）
       modelSelected: state.extract.model !== '',
+      pageImages: state.extract.pageImages,
+      providerOverride: state.llmProviderOverride,
     });
     const cost =
       plan.costEstimateUsd === null
@@ -371,6 +374,13 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
       }),
     );
   }
+  children.push(renderPageImagesToggle({
+    idPrefix: 'extract',
+    enabled: state.extract.pageImages,
+    model: state.extract.model,
+    providerOverride: state.llmProviderOverride,
+    onToggle: (enabled) => ctx.extract.onTogglePageImages(enabled),
+  }));
   children.push(renderEstimate(state));
   if (state.extract.runError !== null) {
     children.push(

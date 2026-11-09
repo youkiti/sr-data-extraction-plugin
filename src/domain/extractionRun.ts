@@ -3,8 +3,8 @@ import type { LlmProviderId } from './llmApiLog';
 
 export type RunType = 'pilot' | 'full' | 'single_study';
 
-/** PDF を直接 LLM へ渡すか、抽出済みテキストのみ渡すか（※Q3） */
-export type InputMode = 'pdf_native' | 'text_only';
+/** 抽出済みテキスト・ページ画像・両者の併用の入力方式（※Q3）。 */
+export type InputMode = 'pdf_native' | 'text_only' | 'text_with_page_images';
 
 export type RunStatus = 'queued' | 'running' | 'done' | 'partial_failure';
 

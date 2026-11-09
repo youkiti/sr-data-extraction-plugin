@@ -1,5 +1,18 @@
 import { renderExtractView } from '../../../../src/app/views/extractView';
 
+test('ページ画像の選択を概算へ反映し、変更を通知する', () => {
+  const off = render(makeState({ extract: { model: 'gemini-2.5-pro', pageImages: false } }));
+  const before = off.root.querySelector('#extract-estimate')!.textContent;
+  const on = render(makeState({ extract: { model: 'gemini-2.5-pro', pageImages: true } }));
+  expect(on.root.querySelector('#extract-estimate')!.textContent).not.toBe(before);
+  expect(planRunMock.mock.calls.at(-1)![0].pageImages).toBe(true);
+  const box = on.root.querySelector<HTMLInputElement>('#extract-page-images')!;
+  expect(box.checked).toBe(true);
+  box.checked = false;
+  box.dispatchEvent(new Event('change'));
+  expect(on.callbacks.onTogglePageImages).toHaveBeenCalledWith(false);
+});
+
 test.each([
   ['anthropic', true, false],
   ['gemini', false, true],
@@ -69,6 +82,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExtractViewCallba
     onToggleField: jest.fn(),
     onToggleFieldSection: jest.fn(),
     onToggleFieldSectionCollapse: jest.fn(),
+    onTogglePageImages: jest.fn(),
     onRequestRun: jest.fn(),
     onConfirmRun: jest.fn(),
     onCancelConfirm: jest.fn(),
@@ -174,6 +188,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExtractViewCallba
         onToggleField: jest.fn(),
         onToggleFieldSection: jest.fn(),
         onToggleFieldSectionCollapse: jest.fn(),
+        onTogglePageImages: jest.fn(),
         onRun: jest.fn(),
         onSelectRun: jest.fn(),
         onReloadHistory: jest.fn(),

@@ -41,7 +41,7 @@ test('送る内容・送り先・扱い・リンクを示し、モーダルと�
   );
   const body = document.getElementById(panel.getAttribute('aria-describedby')!)!;
   expect(body.textContent).toContain('設定した LLM API（Anthropic）');
-  expect(body.textContent).toContain('論文の本文（文字を読み取れない PDF はページの画像）');
+  expect(body.textContent).toContain('論文の本文（文字を読み取れない PDF や「ページ画像も送る」を選んだときは、ページの画像）');
   expect(body.textContent).toContain('研究プロトコルの本文');
   expect(body.textContent).toContain('抽出項目の定義');
   expect(body.textContent).toContain('抽出項目の選択肢を提案するときは、その項目のパイロットの抽出値（最大 30 件）');

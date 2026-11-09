@@ -98,6 +98,7 @@ import {
   runPilot,
   setPilotLayoutMode,
   setPilotModel,
+  setPilotPageImages,
   setPilotPaneLayout,
   togglePilotField,
   togglePilotFieldSection,
@@ -114,6 +115,7 @@ import {
   retryExtractStudy,
   runExtract,
   setExtractModel,
+  setExtractPageImages,
   toggleAllExtractStudies,
   toggleExtractField,
   toggleExtractFieldSection,
@@ -801,6 +803,9 @@ export async function bootstrapApp(
       onToggleFieldSectionCollapse: (section) => {
         togglePilotFieldSectionCollapse(store, section);
       },
+      onTogglePageImages: (enabled) => {
+        setPilotPageImages(store, enabled);
+      },
       onRun: () => {
         void runPilot(store, deps);
       },
@@ -866,6 +871,9 @@ export async function bootstrapApp(
       },
       onToggleFieldSectionCollapse: (section) => {
         toggleExtractFieldSectionCollapse(store, section);
+      },
+      onTogglePageImages: (enabled) => {
+        setExtractPageImages(store, enabled);
       },
       onRequestRun: () => {
         void requestExtractRun(store, deps);

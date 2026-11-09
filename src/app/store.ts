@@ -366,6 +366,8 @@ export interface ConsultDocState {
 
 /** #/pilot（S6）の画面状態。run の結果と埋め込み検証 UI の素材はタブのセッション内で保持する */
 export interface PilotState {
+  /** 全ページ画像の追加送信。画面に入るたびに false へ戻す。 */
+  pageImages: boolean;
   criteria?: CriteriaState;
   /** 完了 run の表示時に初期化する、保存しない集計素材。 */
   matrix?: PilotMatrixState;
@@ -437,6 +439,10 @@ export interface PilotState {
 
 /** #/extract（S7）の画面状態。run の結果はタブのセッション内で保持する */
 export interface ExtractState {
+  /** 全ページ画像の追加送信。画面に入るたびに false へ戻す。 */
+  pageImages: boolean;
+  /** 再試行で引き継ぐ直近 run の画像選択。 */
+  lastRunPageImages: boolean;
   /** 予算警告用の全 purpose の累積費用。未読込・読込失敗は null */
   budget: { budgetUsd: number | null; spentUsd: number; unknownPriceCalls: number } | null;
   /** 対象 study の選択。初回表示時に「未抽出の全件」を既定選択する（ui-states.md §3・v0.10） */
@@ -945,6 +951,7 @@ export function createInitialState(): AppState {
       transfer: { exportVersion: null, exporting: false, exportError: null, importing: false, importError: null },
     },
     pilot: {
+      pageImages: false,
       selectedStudyIds: [],
       selectionInitialized: false,
       selectionTouched: false,
@@ -978,6 +985,8 @@ export function createInitialState(): AppState {
       collapsedFieldSections: [],
     },
     extract: {
+      pageImages: false,
+      lastRunPageImages: false,
       budget: null,
       selectedStudyIds: [],
       selectionInitialized: false,

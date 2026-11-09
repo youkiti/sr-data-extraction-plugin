@@ -193,6 +193,8 @@ export interface SchemaViewCallbacks {
 
 /** #/pilot（S6）のユーザー操作コールバック */
 export interface PilotViewCallbacks {
+  /** 全ページ画像の追加送信を切り替える。 */
+  onTogglePageImages(enabled: boolean): void;
   onCriteriaDraft?(draft: import('../../features/verification/acceptanceCriteria').CriteriaDraft): void;
   onConfirmCriteria?(confirmed: boolean): void;
   onCancelCriteria?(): void;
@@ -243,6 +245,8 @@ export interface PilotViewCallbacks {
 
 /** #/extract（S7）のユーザー操作コールバック */
 export interface ExtractViewCallbacks {
+  /** 全ページ画像の追加送信を切り替える。 */
+  onTogglePageImages(enabled: boolean): void;
   /** 対象 study チェックボックスの切替（上限なし） */
   onToggleStudy(studyId: string, selected: boolean): void;
   /** study 選択チェックリストの全選択（未抽出のみ）/ 全解除トグル（issue #180） */
