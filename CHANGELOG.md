@@ -17,6 +17,8 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 - 公開ヘルプとプライバシーポリシーに、データの送信先と保存先（ブラウザ・Google Drive / Sheets・共同研究者・選んだ LLM API・ファイル選択のページ。開発者のサーバーは無い）を各社のロゴ付きで示す 1 枚図を日英で追加しました（2026-11-09）。
   Added a one-page diagram, in Japanese and English with each service's logo, to the public help and privacy policy showing where data is sent and stored (your browser, Google Drive / Sheets, collaborators, the LLM API you chose and the file picker page; there is no developer server) (2026-11-09).
+- 古い Chrome（Chrome 140 未満など）で PDF の取り込みが「テキスト抽出に失敗：n.toHex is not a function」で止まる不具合を、PDF.js を古いブラウザ向けの版に替えて直しました。AI の結果には影響しません（2026-11-09）。
+  Fixed PDF import stopping with “Text extraction failed: n.toHex is not a function” on older Chrome versions (such as before Chrome 140) by switching PDF.js to its build for older browsers. AI output is not affected (2026-11-09).
 
 ## v0.30.0（2026-11-09）
 

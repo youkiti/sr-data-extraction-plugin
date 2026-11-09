@@ -113,6 +113,14 @@ module.exports = (env, argv) => {
     },
     resolve: {
       extensions: ['.ts', '.js'],
+      alias: {
+        // 通常版の pdfjs-dist は Uint8Array.prototype.toHex（Chrome 140 で追加）などの新しい
+        // ブラウザ組み込みを前提にしており、古い Chrome では PDF の取り込みが
+        // 「n.toHex is not a function」で失敗する。legacy 版はそれらの代わりの実装を同梱する。
+        // `$` 付きの完全一致なので、`pdfjs-dist/...` の他の参照は変わらない。
+        // worker（下の CopyWebpackPlugin）も必ず同じ legacy 版にそろえること
+        'pdfjs-dist$': path.resolve(__dirname, 'node_modules/pdfjs-dist/legacy/build/pdf.mjs'),
+      },
     },
     module: {
       rules: [
@@ -208,8 +216,10 @@ module.exports = (env, argv) => {
             // PDF.js worker は拡張に同梱する（CDN 不可・MV3 CSP 準拠。architecture.md §3.1）。
             // 実行時は chrome.runtime.getURL('pdf.worker.min.mjs') で解決する。
             // デモビルドだけ、この worker の先頭へ pdfjs upsert ポリフィルを差し込む
-            // （transform 未指定＝通常の dev / production ビルドは 1 バイトも変えない）
-            from: 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs',
+            // （transform 未指定＝通常の dev / production ビルドは 1 バイトも変えない）。
+            // main（resolve.alias）と worker は必ず同じ版・同じ系統（どちらも legacy）にする。
+            // 古い Chrome で toHex などが無くても動くよう、worker も legacy 版を同梱する
+            from: 'node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs',
             to: 'pdf.worker.min.mjs',
             ...(isDemo
               ? {

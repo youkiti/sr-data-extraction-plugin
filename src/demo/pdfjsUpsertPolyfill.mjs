@@ -5,12 +5,12 @@
 // 未対応のまま PDF を開こうとすると `TypeError: map.getOrInsertComputed is not a function` で
 // 描画が失敗する（#/verify のハイライト実演＝本 PR の最重要成果が成立しなくなる）。
 //
-// 【これはデモビルド限定の回避策であり、本番の別課題を消してはいない】
-// 本番ビルド（`npm run build` / `npm run dev`）はこのファイルを一切参照しない
-// （webpack.config.js の isDemo 分岐参照）。そのため「利用者の Chrome が古く
-// getOrInsertComputed 未実装」という状況で本番ビルドの PDF 描画が同様に失敗する問題は、
-// このポリフィルでは解決していない別課題として残る（対応するなら pdfjs-dist の
-// バージョン選定 or 本番ビルドにも同様のポリフィルを常設する、のいずれかを別 issue で検討する）。
+// 【今は保険として残している】
+// 本番ビルドもデモビルドも、古いブラウザ向けの legacy 版 pdfjs-dist を使うようになった
+// （webpack.config.js の resolve.alias と worker の同梱元）。legacy 版自身が
+// getOrInsertComputed などの代わりの実装を持つため、このポリフィルは今は必須ではなく、
+// デモビルドでだけ念のために差し込んでいる。本番ビルド（`npm run build` / `npm run dev`）は
+// このファイルを参照しない（webpack.config.js の isDemo 分岐参照）。
 //
 // 仕様: キーが存在すればその値を返す。無ければ callbackFn(key) の結果を set して返す
 // （TC39 提案の仕様どおり。参照: https://github.com/tc39/proposal-upsert）。
