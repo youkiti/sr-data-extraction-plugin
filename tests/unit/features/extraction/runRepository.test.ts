@@ -652,6 +652,13 @@ describe('readPilotRuns', () => {
     expect(runs[0]?.status).toBe('partial_failure');
   });
 
+  test('画像併用の input_mode を Sheets の保存行から読める', async () => {
+    const runs = await readPilotRuns('sheet-1', readDeps([
+      [...SHEET_HEADERS.ExtractionRuns], pilotRow({ inputMode: 'text_with_page_images' }),
+    ]));
+    expect(runs[0]!.inputMode).toBe('text_with_page_images');
+  });
+
   test('全列を ExtractionRun へパースする（数値・null 許容列を含む）', async () => {
     const values = [
       [...SHEET_HEADERS.ExtractionRuns],

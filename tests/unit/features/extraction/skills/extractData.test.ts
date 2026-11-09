@@ -110,11 +110,42 @@ function makeImageDoc(
 
 const DOCS = [makeDoc()];
 
+describe('本文とページ画像の併用', () => {
+  const doc: ExtractDataDocument = {
+    role: 'article', filename: 'flow.pdf', mode: 'text_with_images', pages: PAGES, imagePages: IMAGE_PAGES,
+  };
+
+  test('本文を保ち、文書順・ページ順のラベル付きで画像を添付する', () => {
+    const content = buildExtractDataUserContent({ fields: [STUDY_FIELD], documents: [makeDoc(), doc, makeImageDoc()] }) as ChatContentPart[];
+    expect(content[0]).toEqual(expect.objectContaining({ text: expect.stringContaining(PAGES[0]!.text) }));
+    expect(content[0]).toEqual(expect.objectContaining({ text: expect.stringContaining('both text and page images') }));
+    expect(content[1]).toEqual({ type: 'text', text: '[Document 2/3 page 1]' });
+    expect(content[3]).toEqual({ type: 'text', text: '[Document 2/3 page 2]' });
+    expect(content[5]).toEqual({ type: 'text', text: '[Document 3/3 page 1]' });
+  });
+
+  test('併用時だけ本文引用優先と画像だけの逐語書き起こし規約を追加する', () => {
+    expect(buildExtractDataSystemPrompt(false, false)).toBe(EXTRACT_DATA_SYSTEM_PROMPT);
+    expect(buildExtractDataSystemPrompt(true, false)).toBe(buildExtractDataSystemPrompt(true));
+    const system = buildExtractDataSystemPrompt(false, true);
+    expect(system).toContain('If the reported value also appears in the supplied text');
+    expect(system).toContain('transcribe the supporting visible text exactly');
+    expect(system).toContain('Never infer or guess an unreadable value');
+    expect(system).toContain('Do not return box_2d');
+    expect(buildExtractDataSystemPrompt(true, true)).toContain('bounding box');
+  });
+
+  test('併用文書の本文または画像が空なら拒否する', () => {
+    expect(() => buildExtractDataUserPrompt({ fields: [STUDY_FIELD], documents: [{ ...doc, pages: [] }] })).toThrow('本文ページ');
+    expect(() => buildExtractDataUserContent({ fields: [STUDY_FIELD], documents: [{ ...doc, imagePages: [] }] })).toThrow('ページ画像');
+  });
+});
+
 describe('extract-data skill 定数', () => {
   it('skill 名とプロンプト版数を公開する（LLMApiLog 記録用）', () => {
     expect(EXTRACT_DATA_SKILL_NAME).toBe('extract-data');
-    // v13: outcome_result の出所をその研究自身の結果に限定
-    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(13);
+    // v14: 本文と全ページ画像の併用時の引用規約を追加
+    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(14);
   });
 
   it('システムプロンプトに verbatim quote の規約（300 文字上限）と document_index の規約を含む', () => {

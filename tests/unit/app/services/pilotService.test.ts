@@ -14,6 +14,7 @@ import {
   setPilotLayoutMode,
   setPilotPaneLayout,
   setPilotModel,
+  setPilotPageImages,
   togglePilotField,
   togglePilotFieldSection,
   togglePilotFieldSectionCollapse,
@@ -466,6 +467,14 @@ describe('initPilotSelection', () => {
 });
 
 describe('togglePilotStudy / setPilotModel', () => {
+  test('ページ画像の選択は画面再入場のリセットで外れる', () => {
+    const store = makeStore({});
+    expect(store.getState().pilot.pageImages).toBe(false);
+    setPilotPageImages(store, true);
+    expect(store.getState().pilot.pageImages).toBe(true);
+    resetPilotFieldSelection(store);
+    expect(store.getState().pilot.pageImages).toBe(false);
+  });
   test('選択・解除・重複追加・4 件目の拒否', () => {
     const store = makeStore({ pilot: { selectedStudyIds: ['s1', 's2'] } });
     togglePilotStudy(store, 's3', true);
@@ -727,6 +736,23 @@ describe('runPilot: 実行', () => {
     await runPilot(store, makeDeps());
     expect(runExtractionMock.mock.calls[0]?.[1].reasoningEffort).toBe('low');
     delete chromeMock.storage.local.data['settings.defaultReasoningEffort'];
+  });
+
+  test('ページ画像の明示選択を runExtraction へ渡す', async () => {
+    const store = makeReadyStore();
+    setPilotPageImages(store, true);
+    runExtractionMock.mockResolvedValue(makeOutcome());
+    await runPilot(store, makeDeps());
+    expect(runExtractionMock.mock.calls[0]![0].pageImages).toBe(true);
+  });
+
+  test('非対応モデルへの変更後は追加画像を効かせない', async () => {
+    const store = makeReadyStore();
+    setPilotModel(store, 'deepseek/deepseek-v4-flash');
+    setPilotPageImages(store, true);
+    runExtractionMock.mockResolvedValue(makeOutcome());
+    await runPilot(store, makeDeps());
+    expect(runExtractionMock.mock.calls[0]![0].pageImages).toBe(false);
   });
 
   test('runExtraction を pilot 設定で呼び、counts と run 結果を反映して検証データを読み込む', async () => {

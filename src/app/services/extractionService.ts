@@ -93,8 +93,8 @@ export interface ExtractionServiceDeps {
    */
   loadDocumentPages: (documentId: string) => Promise<ExtractDataPage[]>;
   /**
-   * no_text_layer 文書のページ画像を読み込む（pdf_native。
-   * handoff-scanned-pdf-native-highlight.md §7.4 PR2）。呼び出し側（pilotService /
+   * no_text_layer 文書、または本文と画像を併用する文書の全ページ画像を読み込む。
+   * 呼び出し側（pilotService /
    * extractService）が features/documents/loadDocumentPageImages.ts の
    * makeLoadDocumentPageImages で注入する。テキストのみの対象文献では executeRun 側が呼ばない
    */
@@ -123,6 +123,8 @@ export interface ExtractionServiceDeps {
 }
 
 export interface RunExtractionParams {
+  /** 本文に加えて全ページ画像を送る（既定 false）。 */
+  pageImages?: boolean;
   fallbackPricing?: ModelPricing;
   spreadsheetId: string;
   /** logs/llm フォルダの Drive ID（LLMApiLog のフル payload 保存先） */
@@ -199,6 +201,8 @@ export async function runExtraction(
     model: params.model,
     protocolContext: params.protocolContext,
     budget: params.budget,
+    pageImages: params.pageImages,
+    providerOverride: deps.provider,
   });
 
   const baseProvider = (deps.buildProvider ?? createProvider)({
@@ -261,7 +265,7 @@ export async function runExtraction(
     studyIds,
     provider: baseProvider.providerId,
     requestedModel: params.model,
-    // planRun が判定した入力形式（image 文書を含めば pdf_native。§7.4 PR2）
+    // 併用文書があれば text_with_page_images を優先した、計画時の入力方式。
     inputMode: plan.inputMode,
     startedAt,
     costEstimate: plan.costEstimateUsd,

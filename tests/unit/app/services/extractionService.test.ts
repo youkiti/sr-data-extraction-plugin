@@ -170,6 +170,15 @@ describe('抽出実行の再現情報', () => {
 });
 
 describe('runExtraction', () => {
+  test('任意のページ画像を添付して新しい入力方式を両方の run 行へ記録する', async () => {
+    const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+    const deps = makeDeps(chat);
+    deps.loadDocumentPageImages = jest.fn().mockResolvedValue([{ page: 1, mimeType: 'image/png', dataBase64: 'QUJD' }]);
+    const outcome = await runExtraction({ ...baseParams(), pageImages: true }, deps);
+    expect(outcome.run.inputMode).toBe('text_with_page_images');
+    expect(deps.loadDocumentPageImages).toHaveBeenCalledWith('doc-1');
+    expect(mockedAppendRun.mock.calls.map((call) => call[1].inputMode)).toEqual(['text_with_page_images', 'text_with_page_images']);
+  });
   test('planRun → executeRun → Evidence 追記 → ai 行転記 → ExtractionRuns 追記を結線する', async () => {
     const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
     const deps = makeDeps(chat);
@@ -313,7 +322,7 @@ describe('runExtraction', () => {
     expect(promptCall?.parentId).toBe('folder-logs');
     expect(promptCall?.mimeType).toBe('application/json');
     expect(promptCall?.name).toMatch(/\.prompt\.json$/);
-    expect(JSON.parse(promptCall?.content ?? '{}').promptVersion).toBe(13); // EXTRACT_DATA_PROMPT_VERSION
+    expect(JSON.parse(promptCall?.content ?? '{}').promptVersion).toBe(14); // EXTRACT_DATA_PROMPT_VERSION
     expect(mockedUpload.mock.calls[1]?.[0].name).toMatch(/\.response\.json$/);
 
     expect(mockedAppendLog).toHaveBeenCalledTimes(1);

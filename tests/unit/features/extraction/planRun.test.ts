@@ -83,6 +83,47 @@ function makeDocument(overrides: Partial<DocumentRecord> & { documentId: string 
 // fieldId 'f_design'（8 文字）+ fieldName 'study_design'（12 文字）。補助情報なし
 const STUDY_FIELD = makeField({ fieldId: 'f_design', fieldName: 'study_design' });
 
+describe('全ページ画像の任意追加', () => {
+  const text = makeDocument({ documentId: 'text', studyId: 's' });
+  const scan = makeDocument({ documentId: 'scan', studyId: 's', textStatus: 'no_text_layer' });
+  const base = { documents: [text], fields: [STUDY_FIELD], model: 'gemini-2.5-pro' };
+
+  test('未選択は既存と同じ計画、選択すると本文と画像を合算する', () => {
+    const off = planRun(base);
+    expect(planRun({ ...base, pageImages: false })).toEqual(off);
+    const on = planRun({ ...base, pageImages: true });
+    expect(on.inputMode).toBe('text_with_page_images');
+    expect(on.batches[0]!.augmentedImageDocumentIds).toEqual(['text']);
+    expect(on.tokensInEstimate).toBeGreaterThan(off.tokensInEstimate + 8 * APPROX_IMAGE_TOKENS_PER_PAGE);
+    expect(on.costEstimateUsd).toBeGreaterThan(off.costEstimateUsd!);
+    const split = planRun({ ...base, pageImages: true, budget: { maxInputTokensPerCall: off.tokensInEstimate } });
+    expect(split.batches[0]!.section).toBe('methods');
+    expect(split.batches[0]!.overBudget).toBe(true);
+  });
+
+  test('混在時は併用を優先し、スキャンだけなら pdf_native を維持する', () => {
+    const mixed = planRun({ ...base, documents: [text, scan], pageImages: true });
+    expect(mixed.inputMode).toBe('text_with_page_images');
+    expect(mixed.batches[0]!.imageDocumentIds).toEqual(['scan']);
+    expect(mixed.batches[0]!.augmentedImageDocumentIds).toEqual(['text']);
+    expect(planRun({ ...base, documents: [scan], pageImages: true })).toEqual(
+      planRun({ ...base, documents: [scan] }),
+    );
+  });
+
+  test('非対応では効かせず、対応不明では警告し接続方式の指定を優先する', () => {
+    const unsupported = { ...base, model: 'deepseek/deepseek-v4-flash' };
+    expect(planRun({ ...unsupported, pageImages: true })).toEqual(planRun(unsupported));
+    const unknown = planRun({ ...unsupported, pageImages: true, providerOverride: 'openai_compatible' });
+    expect(unknown.inputMode).toBe('text_with_page_images');
+    expect(unknown.warnings).toContain(
+      'モデル「deepseek/deepseek-v4-flash」が画像入力に対応しているか分かっていません（カタログ外）。追加で送るページ画像が読まれない可能性があります',
+    );
+    const unselected = planRun({ ...base, model: 'unknown', modelSelected: false, pageImages: true });
+    expect(unselected.warnings.some((warning) => warning.includes('画像対応'))).toBe(false);
+  });
+});
+
 /**
  * テスト側で期待値を組み立てるための最小ミラー（1 バッチの入力トークン。テキスト文書ぶん）。
  * v0.10: 連結する各文書に見出し（DOCUMENT_SEPARATOR_CHARS）が付く。docChars は文書別の本文文字数の配列。

@@ -111,6 +111,7 @@ describe('createInitialState', () => {
         transfer: { exportVersion: null, exporting: false, exportError: null, importing: false, importError: null },
       },
       pilot: {
+        pageImages: false,
         selectedStudyIds: [],
         selectionInitialized: false,
         selectionTouched: false,
@@ -144,6 +145,8 @@ describe('createInitialState', () => {
         collapsedFieldSections: [],
       },
       extract: {
+        pageImages: false,
+        lastRunPageImages: false,
         budget: null,
         selectedStudyIds: [],
         selectionInitialized: false,

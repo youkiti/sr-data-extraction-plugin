@@ -41,6 +41,7 @@ import { missingApiKeyMessage, providerModelMismatchMessage } from '../../lib/ll
 import { confirmAiDataConsent } from '../../lib/llm/aiDataConsent';
 import {
   isRunBlockedByImageUnsupportedModel,
+  resolveEffectivePageImages,
   resolveProviderConfig,
   type ProviderConfig,
 } from '../../lib/llm/providerFactory';
@@ -173,7 +174,13 @@ export function resetExtractFieldSelection(store: Store): void {
   patchExtract(store, {
     selectedFieldIds: null,
     collapsedFieldSections: [],
+    pageImages: false,
   });
+}
+
+/** 本文に全ページ画像を追加するか切り替える。 */
+export function setExtractPageImages(store: Store, enabled: boolean): void {
+  patchExtract(store, { pageImages: enabled });
 }
 
 /** フィールドチェックリストの単一項目切替 */
@@ -361,6 +368,7 @@ async function performRun(
     fieldIds: string[] | null;
     model: string;
     providerConfig: ProviderConfig;
+    pageImages: boolean;
     onStudyRows: (rows: ExtractStudyRow[]) => void;
   },
 ): Promise<RunExtractionOutcome> {
@@ -374,6 +382,8 @@ async function performRun(
     fields: params.fields,
     model: params.model,
     protocolContext,
+    pageImages: params.pageImages,
+    providerOverride: params.providerConfig.provider,
   });
   const tracker = createStudyProgressTracker(params.studyIds, plan.batches);
   params.onStudyRows(tracker.rows());
@@ -388,6 +398,7 @@ async function performRun(
       spreadsheetId: params.spreadsheetId,
       logsLlmFolderId: llmFolder.id,
       runType: params.runType,
+      pageImages: params.pageImages,
       documents: params.targets,
       fields: params.fields,
       model: params.model,
@@ -505,6 +516,7 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
     // 再試行（retryExtractStudy）が同じ選択を引き継げる（A-2）
     const fieldIds = resolveFieldIdsForRun(state.extract.selectedFieldIds);
     const runFields = filterFieldsBySelection(fields, fieldIds);
+    const pageImages = resolveEffectivePageImages(state.extract.pageImages, state.extract.model, providerResolution.provider);
     patchExtract(store, {
       confirming: false,
       running: true,
@@ -515,6 +527,7 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
       armWarnings: [],
       studyRows: [],
       lastRunFieldIds: fieldIds,
+      lastRunPageImages: pageImages,
     });
     const records = await resolveDocuments(store, deps.google, project.spreadsheetId);
     const studies = await resolveStudies(store, deps.google, project.spreadsheetId);
@@ -533,6 +546,7 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
       spreadsheetId: project.spreadsheetId,
       driveFolderId: project.driveFolderId,
       runType: 'full',
+      pageImages,
       studyIds,
       targets,
       fields: runFields,
@@ -663,6 +677,7 @@ export async function retryExtractStudy(
       spreadsheetId: project.spreadsheetId,
       driveFolderId: project.driveFolderId,
       runType: 'single_study',
+      pageImages: state.extract.lastRunPageImages,
       studyIds: [studyId],
       targets,
       fields: runFields,

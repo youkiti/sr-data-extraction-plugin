@@ -34,6 +34,7 @@ import { hasZeroFieldsSelected, renderFieldSelectionChecklist } from './fieldSel
 import type { ViewContext } from './types';
 import { renderCachedVerificationPanel } from './verificationPanel';
 import { renderPilotMatrix } from './pilotMatrixView';
+import { renderPageImagesToggle } from './pageImagesToggle';
 
 // 表示言語に追従させるため、ラベルは描画時に t() で解決する（キー対応表のみ固定。issue #93）
 const DOCUMENT_ROLE_LABEL_KEYS: Readonly<Record<DocumentRecord['documentRole'], MessageKey>> = {
@@ -154,6 +155,8 @@ function renderEstimate(state: AppState): HTMLElement {
       // モデル未選択時のダミー値 'unknown' を「画像対応が不明なモデルが選ばれている」と
       // 誤検出しないための切り分け（extractView.ts の renderEstimate と同じ理由。レビュー指摘）
       modelSelected: state.pilot.model !== '',
+      pageImages: state.pilot.pageImages,
+      providerOverride: state.llmProviderOverride,
     });
     const cost =
       plan.costEstimateUsd === null
@@ -254,6 +257,13 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
         }),
       ]),
     ]),
+    renderPageImagesToggle({
+      idPrefix: 'pilot',
+      enabled: state.pilot.pageImages,
+      model: state.pilot.model,
+      providerOverride: state.llmProviderOverride,
+      onToggle: (enabled) => ctx.pilot.onTogglePageImages(enabled),
+    }),
     renderEstimate(state),
   ];
   if (state.pilot.runError !== null) {

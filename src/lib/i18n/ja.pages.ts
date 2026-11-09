@@ -222,7 +222,7 @@ export const jaPages = {
   // AI へ送る前の告知と同意（app/ui/aiDataConsentDialog.ts + Options の「AI へ送る内容」節。issue #381）
   'aiConsent.title': 'AI へ送る内容の確認',
   'aiConsent.intro': 'AI の処理のために送る先は、設定した LLM API（{provider}）だけです。機能に応じて次の内容を送ります。',
-  'aiConsent.itemPaper': '論文の本文（文字を読み取れない PDF はページの画像）',
+  'aiConsent.itemPaper': '論文の本文（文字を読み取れない PDF や「ページ画像も送る」を選んだときは、ページの画像）',
   'aiConsent.itemProtocol': '研究プロトコルの本文',
   'aiConsent.itemSchema': '抽出項目の定義',
   'aiConsent.itemEnumValues': '抽出項目の選択肢を提案するときは、その項目のパイロットの抽出値（最大 30 件）',

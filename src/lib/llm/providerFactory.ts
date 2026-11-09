@@ -93,6 +93,15 @@ export function isRunBlockedByImageUnsupportedModel(
   );
 }
 
+/** ページ画像の追加は、画像非対応と判明しているモデルでは無効にする。 */
+export function resolveEffectivePageImages(
+  enabled: boolean,
+  model: string,
+  providerOverride: LlmProviderId | null = null,
+): boolean {
+  return enabled && !isRunBlockedByImageUnsupportedModel(model, true, providerOverride);
+}
+
 export function createProvider(config: ProviderConfig): LLMProvider {
   const provider = config.provider ?? resolveProviderId(config.model);
   if (provider === 'openai_compatible' || provider === 'local_llm') {

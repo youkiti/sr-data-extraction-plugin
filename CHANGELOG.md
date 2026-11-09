@@ -13,6 +13,11 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
+### AI の結果に影響する変更 / Changes that affect AI output
+
+- パイロット・一括抽出に「ページ画像も送る」を追加しました（既定は未選択）。選択時は本文に全ページ画像を添付し、図だけにある人数なども抽出対象にします。extract-data プロンプトは版数 14。本文にも値があれば本文から逐語で引用し、画像だけの値には見える文字を書き起こして引用します。未選択時の送信内容・プロンプトは変わりません（2026-11-09）。
+  Added “Also send page images” to pilot and bulk extraction (off by default). When selected, every page is attached alongside the text, allowing extraction of values found only in figures, such as participant counts. The extract-data prompt is version 14: quotes use the supplied text when it contains the value, or an exact transcription of visible image text for image-only values. Payloads and prompts are unchanged when the option is off (2026-11-09).
+
 ### その他の変更 / Other changes
 
 - 検証カードに RoB 2・ROBINS-I・QUADAS-3 の SQ の原文・条件と、日本語表示時の参考訳を常時表示し、回答の略号に意味を添えました。保存値と AI の抽出指示は変わりません（2026-11-09）。

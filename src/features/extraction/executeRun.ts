@@ -105,8 +105,7 @@ export interface ExecuteRunDeps {
   /** extracted_texts/{document_id}.txt を読み、ページ別テキストへ復元する */
   loadDocumentPages: (documentId: string) => Promise<ExtractDataPage[]>;
   /**
-   * no_text_layer 文書のページ画像を読み込む（pdf_native。
-   * handoff-scanned-pdf-native-highlight.md §7.4 PR2）。
+   * no_text_layer 文書、または本文と画像を併用する文書の全ページ画像を読み込む。
    * plan のいずれかのバッチが画像入力の文書を含むときのみ必須（冒頭の契約検証で確認する）
    */
   loadDocumentPageImages?: (documentId: string) => Promise<ExtractDataImagePage[]>;
@@ -337,12 +336,22 @@ function buildEvidenceRows(
  * 本文ページの代わりに imagePages を持つ（normalizedPages が無い = アンカリング不可）
  */
 type LoadedDocument =
+  | { kind: 'ok'; mode: 'text_with_images'; pages: ExtractDataPage[]; normalizedPages: NormalizedPage[]; imagePages: ExtractDataImagePage[] }
   | { kind: 'ok'; mode: 'text'; pages: ExtractDataPage[]; normalizedPages: NormalizedPage[] }
   | { kind: 'ok'; mode: 'image'; imagePages: ExtractDataImagePage[] }
   | { kind: 'error'; detail: string };
 
 /** 連結対象として実際にロードできた 1 文書（document_index 順に並ぶ） */
 type ResolvedDocument =
+  | {
+      documentId: string;
+      role: ExtractDataDocument['role'];
+      filename: string;
+      mode: 'text_with_images';
+      pages: ExtractDataPage[];
+      normalizedPages: NormalizedPage[];
+      imagePages: ExtractDataImagePage[];
+    }
   | {
       documentId: string;
       role: ExtractDataDocument['role'];
@@ -440,8 +449,9 @@ export async function executeRun(
       }
     }
   }
-  // 契約検証: 画像入力（pdf_native）の文書を含む plan には loadDocumentPageImages が必須
-  const hasImageDocuments = input.plan.batches.some((batch) => batch.imageDocumentIds.length > 0);
+  // 契約検証: 画像のみ・本文と画像の併用のどちらも画像ローダが必須。
+  const augmentedIds = new Set(input.plan.batches.flatMap((batch) => batch.augmentedImageDocumentIds ?? []));
+  const hasImageDocuments = augmentedIds.size > 0 || input.plan.batches.some((batch) => batch.imageDocumentIds.length > 0);
   if (hasImageDocuments && deps.loadDocumentPageImages === undefined) {
     throw new Error(
       'plan に画像入力（pdf_native）の文書が含まれていますが loadDocumentPageImages が注入されていません',
@@ -493,6 +503,19 @@ export async function executeRun(
             : { kind: 'ok', mode: 'image', imagePages };
         }
         const pages = await deps.loadDocumentPages(documentId);
+        if (augmentedIds.has(documentId) && pages.length > 0) {
+          const imagePages = await deps.loadDocumentPageImages!(documentId);
+          if (imagePages.length === 0) {
+            return { kind: 'error', detail: 'ページ画像が 0 件です（loadDocumentPageImages の取得結果が空）' };
+          }
+          return {
+            kind: 'ok',
+            mode: 'text_with_images',
+            pages,
+            imagePages,
+            normalizedPages: pages.map((page) => ({ page: page.page, text: normalizeText(page.text) })),
+          };
+        }
         return pages.length === 0
           ? { kind: 'error', detail: '本文ページが 0 件です（extracted_texts の取得結果が空）' }
           : {
@@ -660,24 +683,12 @@ export async function executeRun(
       const loaded = loadedList[index] as LoadedDocument;
       if (loaded.kind === 'ok') {
         const doc = documentById.get(documentId) as DocumentRecord;
-        if (loaded.mode === 'image') {
-          resolved.push({
-            documentId,
-            role: doc.documentRole,
-            filename: doc.filename,
-            mode: 'image',
-            imagePages: loaded.imagePages,
-          });
-        } else {
-          resolved.push({
-            documentId,
-            role: doc.documentRole,
-            filename: doc.filename,
-            mode: 'text',
-            pages: loaded.pages,
-            normalizedPages: loaded.normalizedPages,
-          });
-        }
+        resolved.push({
+          ...loaded,
+          documentId,
+          role: doc.documentRole,
+          filename: doc.filename,
+        });
       } else {
         firstLoadError ??= loaded.detail;
       }
@@ -694,7 +705,9 @@ export async function executeRun(
     const promptDocuments: ExtractDataDocument[] = resolved.map((doc) =>
       doc.mode === 'image'
         ? { role: doc.role, filename: doc.filename, mode: 'image', imagePages: doc.imagePages }
-        : { role: doc.role, filename: doc.filename, mode: 'text', pages: doc.pages },
+        : doc.mode === 'text_with_images'
+          ? { role: doc.role, filename: doc.filename, mode: 'text_with_images', pages: doc.pages, imagePages: doc.imagePages }
+          : { role: doc.role, filename: doc.filename, mode: 'text', pages: doc.pages },
     );
     // box_2d（bbox）は Gemini 系 provider ＋ 画像入力文書を含むバッチのときだけ要求する
     // （handoff-scanned-pdf-native-highlight.md §7.4 PR3。OpenRouter 等の他 provider は
@@ -702,7 +715,7 @@ export async function executeRun(
     const requestBox =
       deps.provider.providerId === 'gemini' && resolved.some((doc) => doc.mode === 'image');
     const messages: ChatMessage[] = [
-      { role: 'system', content: buildExtractDataSystemPrompt(requestBox) },
+      { role: 'system', content: buildExtractDataSystemPrompt(requestBox, resolved.some((doc) => doc.mode === 'text_with_images')) },
       {
         role: 'user',
         content: buildExtractDataUserContent({
@@ -799,7 +812,7 @@ export async function executeRun(
         input.runId,
         batch.studyId,
         target.documentId,
-        target.mode === 'text' ? target.normalizedPages : null,
+        target.mode !== 'image' ? target.normalizedPages : null,
         target.mode === 'image',
         lastNormalItemIndex.get(JSON.stringify([item.fieldId, item.entityKey])) === index,
         uuid,

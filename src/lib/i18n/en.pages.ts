@@ -224,7 +224,7 @@ export const enPages: Record<keyof typeof jaPages, string> = {
   'help.openTopic': 'Open help for this item',
   'aiConsent.title': 'What is sent to the AI',
   'aiConsent.intro': 'For AI processing, content is sent only to the LLM API you configured ({provider}). Depending on the feature, this includes the following.',
-  'aiConsent.itemPaper': 'The text of your papers (page images for PDFs without a text layer)',
+  'aiConsent.itemPaper': 'The text of your papers (page images for PDFs without a text layer or when you select “Also send page images”)',
   'aiConsent.itemProtocol': 'The text of your study protocol',
   'aiConsent.itemSchema': 'Your extraction field definitions',
   'aiConsent.itemEnumValues': 'When suggesting choices for a field, that field\'s values from the pilot extraction (up to 30)',

@@ -58,8 +58,10 @@ export const EXTRACT_DATA_SKILL_NAME = 'extract-data';
  * v13（2026-10-26）: 利用者の実データで序論の先行研究の記述がアウトカムに抽出されたため、
  *   outcome_result の出所をその研究自身の結果に限る規則を suffix 末尾へ追加。
  *   outcome_result の項目を含まないバッチのプロンプトは変わらない
+ * v14（2026-11-09）: 本文と全ページ画像の併用を任意で選べるようにし、
+ *   併用時だけ本文の逐語引用を優先し、画像だけの値には可視文字の書き起こしを認める。
  */
-export const EXTRACT_DATA_PROMPT_VERSION = 13;
+export const EXTRACT_DATA_PROMPT_VERSION = 14;
 
 /** text_only モードで LLM へ渡すページ別本文（extracted_texts/{id}.txt 由来） */
 export interface ExtractDataPage {
@@ -87,6 +89,13 @@ export interface ExtractDataImagePage {
  * pdf_native 入力。handoff-scanned-pdf-native-highlight.md §7.4 PR2）
  */
 export type ExtractDataDocument =
+  | {
+      role: DocumentRole;
+      filename: string;
+      mode: 'text_with_images';
+      pages: readonly ExtractDataPage[];
+      imagePages: readonly ExtractDataImagePage[];
+    }
   | {
       /** 見出しに出すロール（DOCUMENT_ROLE_ORDER 順に並べるのは planRun / executeRun の責務） */
       role: DocumentRole;
@@ -165,13 +174,22 @@ Additional rule about "box_2d" (bounding box), for scanned documents only (those
 
 /**
  * システムプロンプトを組み立てる。requestBox=false は EXTRACT_DATA_SYSTEM_PROMPT と
- * 完全一致（text_only 経路は 1 文字も変えない）。true のときだけ box ルールを末尾に追記する
+ * 完全一致（画像併用が無い経路は 1 文字も変えない）。box と画像併用の規則は該当時だけ足す。
  */
-export function buildExtractDataSystemPrompt(requestBox: boolean): string {
-  return requestBox
+export function buildExtractDataSystemPrompt(requestBox: boolean, pageImages = false): string {
+  const base = requestBox
     ? `${EXTRACT_DATA_SYSTEM_PROMPT}\n\n${EXTRACT_DATA_BOX_RULES}`
     : EXTRACT_DATA_SYSTEM_PROMPT;
+  return pageImages ? `${base}\n\n${EXTRACT_DATA_PAGE_IMAGES_RULE}` : base;
 }
+
+/** 本文とページ画像を併用する文書があるときだけ追加する引用規約。 */
+export const EXTRACT_DATA_PAGE_IMAGES_RULE = `
+For documents provided as both text and page images:
+- If the reported value also appears in the supplied text, copy the supporting quote VERBATIM from that text so it can be matched for highlighting.
+- Only when the value is absent from the supplied text and is visible solely in an attached page image (such as a figure), transcribe the supporting visible text exactly as the quote, in its original language and script. Set "page" to the p in that image's "Document i/N page p" label.
+- Never infer or guess an unreadable value. Follow the existing not_reported rules when the value cannot be read. Do not return box_2d for these documents.
+`.trim();
 
 /** entity_key の構成規約（requirements.md §3.3 / utils/entityKey.ts と同一規則） */
 const ENTITY_KEY_RULES: Record<EntityLevel, string> = {
@@ -276,7 +294,10 @@ function renderDocument(doc: ExtractDataDocument, index: number, total: number):
     );
   }
   const body = doc.pages.map((page) => `[PAGE ${page.page}]\n${page.text}`).join('\n\n');
-  return `${header}\n\n${body}`;
+  const note = doc.mode === 'text_with_images'
+    ? `\n\nThis document is provided as both text and page images. All pages are attached after the Documents section, labeled "Document ${index}/${total} page p".`
+    : '';
+  return `${header}\n\n${body}${note}`;
 }
 
 /** buildExtractDataUserPrompt / buildExtractDataUserContent 共通の入力検証 */
@@ -287,10 +308,10 @@ function assertValidPromptInput(input: ExtractDataPromptInput): void {
   if (input.documents.length === 0) {
     throw new Error('extract-data skill に文書が 1 件も渡されていません');
   }
-  if (input.documents.some((doc) => doc.mode === 'text' && doc.pages.length === 0)) {
+  if (input.documents.some((doc) => doc.mode !== 'image' && doc.pages.length === 0)) {
     throw new Error('extract-data skill に本文ページが 1 件も無い文書が含まれています');
   }
-  if (input.documents.some((doc) => doc.mode === 'image' && doc.imagePages.length === 0)) {
+  if (input.documents.some((doc) => doc.mode !== 'text' && doc.imagePages.length === 0)) {
     throw new Error('extract-data skill にページ画像が 1 件も無い文書が含まれています');
   }
 }
@@ -389,14 +410,14 @@ export function buildExtractDataUserContent(
   assertValidPromptInput(input);
   const prefixSections = buildPrefixSections(input);
   const suffixSections = buildSuffixSections(input);
-  const hasImageDocument = input.documents.some((doc) => doc.mode === 'image');
+  const hasImageDocument = input.documents.some((doc) => doc.mode !== 'text');
   if (!hasImageDocument) {
     return [...prefixSections, ...suffixSections].join('\n\n');
   }
   const total = input.documents.length;
   const parts: ChatContentPart[] = [{ type: 'text', text: prefixSections.join('\n\n') }];
   input.documents.forEach((doc, i) => {
-    if (doc.mode !== 'image') {
+    if (doc.mode === 'text') {
       return;
     }
     const docIndex = i + 1;
