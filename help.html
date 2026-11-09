@@ -53,8 +53,8 @@
           <span class="en" lang="en">User guide</span>
         </h1>
         <p class="last-updated">
-          <span class="ja" lang="ja">最終更新: 2026-11-09 / 対象バージョン: v0.29.0</span>
-          <span class="en" lang="en">Last updated: 2026-11-09 / Covers v0.29.0</span>
+          <span class="ja" lang="ja">最終更新: 2026-11-09 / 対象バージョン: v0.30.0</span>
+          <span class="en" lang="en">Last updated: 2026-11-09 / Covers v0.30.0</span>
         </p>
 
         <nav class="toc" aria-label="目次" data-en-aria-label="Table of contents">
@@ -1269,6 +1269,10 @@
             </ul>
           </div>
           <p>
+            <span class="ja" lang="ja">実行前に「ページ画像も送る」を選ぶと、本文の文字に加えて全ページを画像で LLM へ送ります。図にしか書かれていない数値（フロー図の人数など）を読めることがあります。入力トークンが約 1.5 倍になり、費用が増えます。既定は未選択で、画面に入るたびに外れます。画像非対応のモデルでは選べず、対応不明のモデルでは概算に警告が出ます。画像だけの引用は本文と照合できない場合があるため、元の図を確認してください。</span>
+            <span class="en" lang="en">Before running, select “Also send page images” to send every page as an image to the LLM alongside the text. This may help read numbers found only in figures, such as participant counts in a flow diagram. Input tokens increase to about 1.5 times the usual amount, increasing the cost. The option is off by default and resets whenever you enter this screen. It is disabled for models known not to support images; models with unknown support show an estimate warning. Quotes transcribed from images may not match the text layer, so check the original figure.</span>
+          </p>
+          <p>
             <span class="ja" lang="ja"
               >いきなり全件を回す前に、2〜3 本の論文で AI 抽出を試します。検証 UI
               がそのまま埋め込まれているので、抽出結果の質をその場で確認し、表のデザインを改訂して再パイロット、という往復ができます。過去のパイロット結果も残ります。</span
@@ -1306,28 +1310,31 @@
                 <span class="en" lang="en">Check whether the pilot meets the criteria</span></li></ul>
           </div>
           <p><span class="ja" lang="ja">パイロットの前に owner が合格基準を決め、「確定する」から確認して保存します。
-            正確度の下限、作り話・欠け・誤った値の率の上限（0〜100%、4 つのうち 1 つ以上）、任意の最小セル数、
+            正確度の下限、偽陽性・偽陰性・誤分類の割合の上限（0〜100%、4 つのうち 1 つ以上）、任意の最小セル数、
             比べる相手（独立の人、裁定後の値、独立抽出者の最終値、AI を見ながら判定した人）、対象レベルを指定します。
-            初期値は空欄です。CESAR の感度 92%、重大な誤り 3% は参考で、自動入力されません。
+            入力欄には前の版の値を、版がなければ CESAR の参考値として正確度 92%、偽陽性の割合 3% を入れます。必要に応じて書き換えてください。編集済みの下書きは上書きしません。
             AI を見ながら判定した人との比較は独立比較ではありません。
             実行中・中断・失敗を含め、一度でもパイロットを始めた後の確定は、開始後に確定した版として記録します。</span>
             <span class="en" lang="en">Before the pilot, the owner sets and confirms acceptance criteria: minimum accuracy,
-            maximum fabrication, omission and wrong-value rates (0–100%; at least one rate), optional minimum compared cells,
+            maximum false-positive, false-negative and misclassification proportions (0–100%; at least one proportion), optional minimum compared cells,
             comparator (independent reviewers, consensus, independent final values, or AI-assisted final values), and entity levels.
-            Inputs start blank. CESAR sensitivity 92% and major errors 3% are references and are not filled in automatically.
+            Inputs start with the previous version’s values, or the CESAR reference values of accuracy 92% and false-positive proportion 3% if no version exists. Adjust them as needed. Edited drafts are preserved.
             AI-assisted review is not an independent comparison.
             Confirmation after any pilot has started, including running, interrupted or failed runs, is recorded as occurring after the pilot began.</span></p>
           <p><span class="ja" lang="ja">「結果を計算」で完了済みパイロットの研究を比較します。基準をすべて満たせば「満たす」、
             いずれかに届かなければ「満たさない」、パイロットなし・比較セル 0・最小数未満なら理由付きで「判定できない」と表示します。
-            表には基準、設定値、パイロットの値、判定が並びます。設定なしの率と計算前の値・判定は「—」で表示します。
+            表には基準、設定値、パイロットの値、判定、数え方が並びます。行名は方向なしの名前で、設定値に「97% 以上」「3% 以下」「50 件以上」と示します。未設定は「設定なし」、計算前の値・判定はダッシュで表示します。
             比べられたセル数の行では、最小数があればその判定も示します。
             版は追記保存され、過去版は消えません。現行の基準と結果は Methods 文案に、各版は R セットの acceptance_criteria.csv に出ます。</span>
             <span class="en" lang="en">Use “Calculate results” to compare completed pilot studies. Results are “Met” if all criteria
             are satisfied, “Not met” if any criterion fails, or “Not evaluable” with a reason if there is no pilot, no compared cells,
-            or too few cells. The table shows each criterion, setting, pilot value and judgment.
-            Unset rates and values and judgments before calculation show “—”. The compared-cell row also evaluates the minimum if set.
+            or too few cells. The table shows each criterion, setting, pilot value, judgment and how it is counted.
+            Row names have no direction; settings show “at least 97%”, “at most 3%” or “at least 50”.
+            Unset thresholds show “Not set”; values and judgments before calculation show a dash. The compared-cell row also evaluates the minimum if set.
             Versions are appended and preserved. The current criteria and result appear in the Methods text;
             every version appears in acceptance_criteria.csv in the R set.</span></p>
+          <p><span class="ja" lang="ja">数え方: 正確度は人と AI の値が一致したセルの割合です。偽陽性は人が「報告なし」なのに AI が値を出した、または値が違い AI の引用が本文に無い場合、偽陰性は人は値を入れたのに AI が報告なし・値なしの場合、誤分類は人と AI の値が違う（引用は本文にある）場合です。比べられたセル数が割合の分母で、人が未判定・AI 未抽出のセルは除きます。</span>
+            <span class="en" lang="en">How it is counted: accuracy is the proportion of cells where human and AI values agree. A false positive means AI supplies a value where the human reports none, or values differ and AI quotes are absent from the text. A false negative means the human entered a value but AI reports none or has no value. Misclassification means values differ with quotes present in the text. Compared cells are the denominator; cells unjudged by humans or not extracted by AI are excluded.</span></p>
           <h3 id="pilot-notes">
             <span class="ja" lang="ja">判定メモと再パイロット</span>
             <span class="en" lang="en">Judgment notes and repeat pilots</span>
@@ -1425,6 +1432,10 @@
             </ul>
           </div>
           <p>
+            <span class="ja" lang="ja">「ページ画像も送る」を選ぶと、本文の文字に加えて全ページを画像で LLM へ送ります。図にしか書かれていない数値（フロー図の人数など）を読めることがあります。入力トークンが約 1.5 倍になり、費用が増えます。概算にも画像ぶんを含めます。既定は未選択で、画面に入るたびに外れます。画像非対応のモデルでは選べず、対応不明なら警告します。失敗した試験の再試行は元の run の選択を引き継ぎます。画像からの引用は本文と照合できない場合があるため、元の図を確認してください。</span>
+            <span class="en" lang="en">Select “Also send page images” to send every page as an image to the LLM alongside the text. This may help read numbers found only in figures, such as participant counts in a flow diagram. Input tokens increase to about 1.5 times the usual amount, increasing the cost; estimates include the images. The option is off by default and resets whenever you enter this screen. It is disabled for models known not to support images; unknown support produces a warning. Retrying a failed study keeps the original run’s choice. Quotes transcribed from images may not match the text layer, so check the original figure.</span>
+          </p>
+          <p>
             <span class="ja" lang="ja"
               >対象試験（既定は未抽出の全件）とモデルを選び、コスト概算を確認してから実行します。進捗バーで状況が見え、失敗した文献は個別に再試行できます。</span
             >
@@ -1493,6 +1504,10 @@
               >A two-pane screen: the PDF viewer on the left, the extraction form on the right. Evidence quotes are
               highlighted on the PDF while you decide each value.</span
             >
+          </p>
+          <p>
+            <span class="ja" lang="ja">RoB 2・ROBINS-I・QUADAS-3 の SQ の判定カードは、英語原文と条件を常に表示し、日本語表示では参考訳（公式の日本語版ではありません）も添えます。回答の y / py / pn / n / ni / na には意味を併記します。</span>
+            <span class="en" lang="en">SQ verification cards always show the English question and any condition for RoB 2, ROBINS-I and QUADAS-3; Japanese UI also shows a reference translation, which is not an official Japanese version. Answers y / py / pn / n / ni / na are displayed with their meanings.</span>
           </p>
           <figure class="shot shot--screen">
             <a href="screenshots/help-08-verify.png" target="_blank" rel="noopener noreferrer">
@@ -1941,8 +1956,8 @@
             </p>
             <ul>
               <li>
-                <span class="ja" lang="ja">AI の作り話・誤った値・欠けの割合を確かめたい</span>
-                <span class="en" lang="en">I want to measure AI fabrications, wrong values and omissions</span>
+                <span class="ja" lang="ja">AI の偽陽性・誤分類・偽陰性の割合を確かめたい</span>
+                <span class="en" lang="en">I want to measure AI false-positive, misclassification and false-negative proportions</span>
               </li>
               <li>
                 <span class="ja" lang="ja">独立の人や最終値との比較を CSV で保存したい</span>
@@ -1951,12 +1966,12 @@
             </ul>
           </div>
           <p>
-            <span class="ja" lang="ja">オーナーと裁定者は「比較を計算」で、AI と人の現在値を比べられます。「一致」は同じ値（複数選択は並びをそろえて比較）、「欠け」は人が値を出したのに AI が報告なし・値なし、「作り話」は人が報告なしとした値を AI が出した場合、または異なる値で全引用が本文で見つからない場合、「誤った値」はそれ以外の異なる値です。値が一致すれば、引用の失敗は別の件数にだけ数えます。</span>
-            <span class="en" lang="en">Owners and adjudicators can calculate a comparison of current AI and human values. A match means equal values (with multiple selections put in canonical order). An omission means the human has a value but AI reports none or has no value. A fabrication means AI supplies a value where the human reports none, or supplies a different value with all quotes failing to match the text. Other differing values are wrong values. Equal values remain matches even if their quotes fail; quote failures are also counted separately.</span>
+            <span class="ja" lang="ja">オーナーと裁定者は「比較を計算」で、AI と人の現在値を比べられます。正確度は人と AI の値が一致したセルの割合です（複数選択は並びをそろえて比較）。「偽陰性」は人が値を出したのに AI が報告なし・値なし、「偽陽性」は人が報告なしとした値を AI が出した場合、または異なる値で全引用が本文で見つからない場合、「誤分類」は人と AI の値が違う（引用は本文にある）場合です。値が一致すれば、引用の失敗は別の件数にだけ数えます。</span>
+            <span class="en" lang="en">Owners and adjudicators can calculate a comparison of current AI and human values. Accuracy is the proportion of cells with equal values (with multiple selections put in canonical order). A false negative means the human has a value but AI reports none or has no value. A false positive means AI supplies a value where the human reports none, or supplies a different value with all quotes failing to match the text. Misclassification means values differ with quotes present in the text. Equal values remain matches even if their quotes fail; quote failures are also counted separately.</span>
           </p>
           <p>
-            <span class="ja" lang="ja">人が未判定、またはその項目が AI の抽出対象外なら「比べられない」として率の分母から外します。両方空も一致にしません。完了した AI 抽出のない研究は別計上します。A は独立の人ごとに比較、B は最終値を裁定値・独立の人・AI を見た人に分けて表示します。AI を見ながら判定した人との比較は独立の比較ではありません。群番号の対応付けは行いません。集計とセル一覧を CSV で保存できます。</span>
-            <span class="en" lang="en">Unjudged human cells and fields outside completed AI extraction runs are incomparable and excluded from rates. Two empty values are not a match. Studies without completed AI extraction are counted separately. A compares each independent reviewer; B separates final consensus values, independent human values, and AI-assisted human values. Comparisons with reviewers who saw AI output are not independent. Arm numbering is not mapped. Summary and cell CSV files are available.</span>
+            <span class="ja" lang="ja">比べられたセル数が割合の分母です。人が未判定、またはその項目が AI の抽出対象外なら「比べられない」として割合の分母から外します。両方空も一致にしません。完了した AI 抽出のない研究は別計上します。A は独立の人ごとに比較、B は最終値を裁定値・独立の人・AI を見た人に分けて表示します。AI を見ながら判定した人との比較は独立の比較ではありません。群番号の対応付けは行いません。集計とセル一覧を CSV で保存できます。</span>
+            <span class="en" lang="en">Compared cells are the denominator for proportions. Unjudged human cells and fields outside completed AI extraction runs are incomparable and excluded. Two empty values are not a match. Studies without completed AI extraction are counted separately. A compares each independent reviewer; B separates final consensus values, independent human values, and AI-assisted human values. Comparisons with reviewers who saw AI output are not independent. Arm numbering is not mapped. Summary and cell CSV files are available.</span>
           </p>
           <h3 id="dashboard-consult">
             <span class="ja" lang="ja">要相談の一覧</span>
