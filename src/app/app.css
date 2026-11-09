@@ -2365,6 +2365,25 @@ section.documents__tiab {
   margin: 6px 0;
 }
 
+.verify__sq-question {
+  margin-block: 0.5rem;
+  color: var(--color-text);
+}
+
+.verify__sq-question > p {
+  margin-block: 0.25rem;
+}
+
+.verify__sq-question-translation,
+.verify__sq-question-condition {
+  color: var(--color-text-muted);
+  font-size: 0.9em;
+}
+
+.verify__sq-question-note {
+  margin-inline-start: 0.5em;
+}
+
 /* 独立入力モード（design §5.2）: AI 値の代わりに出す抽出指示（AI 出力ではないため表示可） */
 .verify__instruction {
   margin: 6px 0;

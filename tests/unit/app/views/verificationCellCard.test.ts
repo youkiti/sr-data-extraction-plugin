@@ -16,6 +16,8 @@ import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { VerificationCell } from '../../../../src/features/verification/cells';
 import { cellKeyOf, emptyCellState } from '../../../../src/features/verification/cellState';
 import { quoteKeyOf } from '../../../../src/features/verification/evidenceBundles';
+import { setUiLanguage } from '../../../../src/lib/i18n';
+import { SQ_TRANSLATIONS_JA } from '../../../../src/lib/rob/sqTranslationsJa';
 
 test('引用一覧はテーマ・全文・引用別ジャンプと失敗時検索を持ち、再特定は出さない', () => {
   const first = makeEvidence({ quoteSeq: 1, quoteTheme: 'テーマ', quote: 'first' });
@@ -222,6 +224,84 @@ async function flush(): Promise<void> {
 
 afterEach(() => {
   document.body.replaceChildren();
+  setUiLanguage('ja');
+});
+
+describe('SQ の設問と回答の表示', () => {
+  const question = 'Was the allocation sequence random?';
+  const instruction = `Review context: trial. RoB 2 signaling question 1.1: "${question}" Answer with exactly one of: y / py / pn / n / ni / na.`;
+  const field = makeField({
+    fieldName: 'rob2_sq1_1', dataType: 'enum',
+    allowedValues: 'y|py|pn|n|ni|na', extractionInstruction: instruction,
+  });
+
+  test('ヘッダ直後に原文・参考訳・条件を出し、抽出指示は畳んだまま残す', () => {
+    const condition = 'SQ 1.1 が y のときのみ回答する';
+    const root = render(makeCell({ field: { ...field, extractionInstruction:
+      `${instruction} この設問は条件付きです（${condition}）。条件を満たさない場合は na と回答してください。`,
+    } }));
+    const block = root.querySelector('.verify__sq-question');
+    expect(root.children[1]).toBe(block);
+    expect(block?.nextElementSibling?.classList.contains('verify__ai')).toBe(true);
+    expect(block?.querySelector('[lang="en"]')?.textContent).toBe(question);
+    expect(block?.querySelector('[lang="ja"]')?.textContent).toContain(SQ_TRANSLATIONS_JA[question]);
+    expect(block?.querySelector('small')?.textContent).toBe('（参考訳。公式の日本語版ではありません）');
+    expect(block?.querySelector('.verify__sq-question-condition')?.textContent).toBe(`条件付き: ${condition}`);
+    expect(root.querySelector<HTMLDetailsElement>('.verify__instruction-toggle')?.open).toBe(false);
+  });
+
+  test('英語 UI では訳を出さず、条件の見出しは英語にする', () => {
+    setUiLanguage('en');
+    const root = render(makeCell({ field: { ...field, extractionInstruction:
+      `${instruction} この設問は条件付きです（条件）。条件を満たさない場合は na`,
+    } }));
+    expect(root.querySelector('.verify__sq-question-original')?.textContent).toBe(question);
+    expect(root.querySelector('.verify__sq-question-translation')).toBeNull();
+    expect(root.querySelector('.verify__sq-question-condition')?.textContent).toBe('Conditional: 条件');
+  });
+
+  test('未知の原文には訳を出さず、条件なしなら条件の行も出さない', () => {
+    const root = render(makeCell({ field: { ...field, extractionInstruction: instruction.replace(question, 'Edited question?') } }));
+    expect(root.querySelector('.verify__sq-question-original')?.textContent).toBe('Edited question?');
+    expect(root.querySelector('.verify__sq-question-translation')).toBeNull();
+    expect(root.querySelector('.verify__sq-question-condition')).toBeNull();
+  });
+
+  test('SQ 以外はブロックも略号の補足も出さない', () => {
+    const root = render(makeCell({ evidence: makeEvidence({ value: 'y' }) }));
+    expect(root.querySelector('.verify__sq-question')).toBeNull();
+    expect(root.querySelector('.verify__ai-value')?.textContent).toBe('y');
+  });
+
+  test.each([
+    ['y', 'はい', 'Yes'], ['py', 'おそらくはい', 'Probably yes'],
+    ['pn', 'おそらくいいえ', 'Probably no'], ['n', 'いいえ', 'No'],
+    ['ni', '情報なし', 'No information'], ['na', '該当なし', 'Not applicable'],
+  ])('AI 値と確定値の %s に両言語の意味を添え、元の値を保持する', (value, ja, en) => {
+    const cell = makeCell({ field, evidence: makeEvidence({ value }), state: { status: 'edit', value, stack: [] } });
+    for (const language of ['ja', 'en'] as const) {
+      setUiLanguage(language);
+      const root = render(cell);
+      const expected = language === 'ja' ? `${value}（${ja}）` : `${value} (${en})`;
+      expect(root.querySelector('.verify__ai-value')?.textContent).toBe(expected);
+      expect(root.querySelector('.verify__current-value')?.textContent).toContain(expected);
+      expect(cell.evidence?.value).toBe(value);
+      expect(cell.state.value).toBe(value);
+    }
+  });
+
+  test.each(['custom', 'toString', null])('SQ でも既定の略号以外は従来の表示: %s', (value) => {
+    const root = render(makeCell({ field, evidence: makeEvidence({ value }) }));
+    expect(root.querySelector('.verify__ai-value')?.textContent).toBe(value ?? '（値なし）');
+  });
+
+  test('独立入力でも設問と全文の指示を表示し、AI 値は出さない', () => {
+    const root = render(makeCell({ field }), makeModel({ mode: 'independent' }));
+    expect(root.querySelector('.verify__sq-question-original')?.textContent).toBe(question);
+    expect(root.querySelector('.verify__sq-question-translation')?.textContent).toContain(SQ_TRANSLATIONS_JA[question]);
+    expect(root.querySelector('.verify__instruction')?.textContent).toContain(instruction);
+    expect(root.querySelector('.verify__ai')).toBeNull();
+  });
 });
 
 describe('flow 図（mermaid）プレビュートグルの表示条件', () => {

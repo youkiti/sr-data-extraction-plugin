@@ -22,7 +22,9 @@ import {
 import type { RobAlgorithmInfo } from '../../features/verification/robAlgorithm';
 import type { UnanchoredReason } from '../../features/verification/unanchoredAccept';
 import { collectOtherValues } from '../../features/verification/enumOptions';
-import { t, type MessageKey } from '../../lib/i18n';
+import { getUiLanguage, t, type MessageKey } from '../../lib/i18n';
+import { parseSignalingQuestion } from '../../lib/rob/parseSignalingQuestion';
+import { SQ_TRANSLATIONS_JA } from '../../lib/rob/sqTranslationsJa';
 import { el } from '../ui/dom';
 import { renderAllowedValuesNote, renderEnumChoiceEditor } from './enumChoiceEditor';
 
@@ -180,6 +182,51 @@ export function renderStatusChip(status: CellStatus): HTMLElement {
   });
 }
 
+const SQ_ANSWER_KEYS: Readonly<Record<string, MessageKey>> = {
+  y: 'verify.sqAnswerY',
+  py: 'verify.sqAnswerPy',
+  pn: 'verify.sqAnswerPn',
+  n: 'verify.sqAnswerN',
+  ni: 'verify.sqAnswerNi',
+  na: 'verify.sqAnswerNa',
+};
+
+/** 略号の意味はカードの表示だけに添え、保存値や文書の出力には使わない。 */
+function formatCardValue(cell: VerificationCell, value: string | null): string | null {
+  if (value !== null && parseSignalingQuestion(cell.field.extractionInstruction) !== null) {
+    const key = Object.hasOwn(SQ_ANSWER_KEYS, value) ? SQ_ANSWER_KEYS[value] : undefined;
+    if (key !== undefined) return t(key);
+  }
+  return formatFieldValue(cell.field, value);
+}
+
+function renderSqQuestion(cell: VerificationCell): HTMLElement | null {
+  const sq = parseSignalingQuestion(cell.field.extractionInstruction);
+  if (sq === null) return null;
+  const children = [el('p', {
+    className: 'verify__sq-question-original',
+    attributes: { lang: 'en' },
+    text: sq.question,
+  })];
+  const translation = SQ_TRANSLATIONS_JA[sq.question];
+  if (getUiLanguage() === 'ja' && translation !== undefined) {
+    children.push(el('p', {
+      className: 'verify__sq-question-translation',
+      attributes: { lang: 'ja' },
+    }, [
+      el('span', { text: translation }),
+      el('small', { className: 'verify__sq-question-note', text: t('verify.sqReferenceTranslation') }),
+    ]));
+  }
+  if (sq.condition !== null) {
+    children.push(el('p', {
+      className: 'verify__sq-question-condition',
+      text: t('verify.sqCondition', { condition: sq.condition }),
+    }));
+  }
+  return el('div', { className: 'verify__sq-question' }, children);
+}
+
 function renderAiSummary(cell: VerificationCell): HTMLElement {
   const { evidence } = cell;
   if (evidence === null) {
@@ -190,7 +237,7 @@ function renderAiSummary(cell: VerificationCell): HTMLElement {
       className: 'verify__ai-value',
       text: evidence.notReported
         ? t('verify.aiNotReported', { token: NOT_REPORTED_TOKEN })
-        : (formatFieldValue(cell.field, evidence.value) ?? t('verify.aiValueNone')),
+        : (formatCardValue(cell, evidence.value) ?? t('verify.aiValueNone')),
     }),
   ];
   if (evidence.confidence !== null) {
@@ -974,10 +1021,10 @@ export function renderCell(
   // 独立入力モード（design §5.2）: AI 値・AI の引用は一切描画しない
   // （出所文書の分岐に依らず、mode で明示的にゲートする）。代わりにスキーマ由来の
   // extraction_instruction を出す（AI 出力ではないため表示してよい）
-  const children: HTMLElement[] = [
-    header,
-    mode === 'independent' ? renderExtractionInstruction(cell) : renderAiSummary(cell),
-  ];
+  const children: HTMLElement[] = [header];
+  const sqQuestion = renderSqQuestion(cell);
+  if (sqQuestion !== null) children.push(sqQuestion);
+  children.push(mode === 'independent' ? renderExtractionInstruction(cell) : renderAiSummary(cell));
   if (mode === 'review') {
     // with_ai レビューは AI 値が主表示のため、抽出指示は既定で畳んだ折りたたみとして併記する
     // （issue #81）。独立入力モードは既に extraction_instruction を常時表示しているため対象外
@@ -995,7 +1042,7 @@ export function renderCell(
     children.push(
       el('p', {
         className: 'verify__current-value',
-        text: t('verify.decidedValue', { value: formatFieldValue(cell.field, cell.state.value) ?? t('verify.valueEmpty') }),
+        text: t('verify.decidedValue', { value: formatCardValue(cell, cell.state.value) ?? t('verify.valueEmpty') }),
       }),
     );
   }

@@ -1768,7 +1768,7 @@ test('RoB 2 SQ アルゴリズム提案（issue #61）: 提案チップ表示 �
   // （rob_domain 以外の項目が無いため群構成カードは出ず、rob_domain タブが唯一のタブになる）
   const SQ1_1_FIELD_ROW = [
     '1', 'f-sq1-1', '1', 'risk_of_bias_rob2', 'rob2_sq1_1', 'RoB2 SQ1.1', 'rob_domain',
-    'enum', '', 'y|py|pn|n|ni|na', 'FALSE', 'Was the allocation sequence random?', '', 'FALSE', '',
+    'enum', '', 'y|py|pn|n|ni|na', 'FALSE', 'RoB 2 signaling question 1.1: "Was the allocation sequence random?" Answer with exactly one of: y / py / pn / n / ni / na.', '', 'FALSE', '',
   ];
   const SQ1_2_FIELD_ROW = [
     '1', 'f-sq1-2', '2', 'risk_of_bias_rob2', 'rob2_sq1_2', 'RoB2 SQ1.2', 'rob_domain',
@@ -1808,6 +1808,8 @@ test('RoB 2 SQ アルゴリズム提案（issue #61）: 提案チップ表示 �
   // フォーカスモードのマトリクスで RoB2 判定行を選択する
   const matrixButtons = page.locator('#verify-focus-matrix .focus-card__matrix-btn');
   await expect(matrixButtons).toHaveCount(4, { timeout: 15_000 });
+  await page.locator('#verify-focus-matrix tr', { hasText: 'RoB2 SQ1.1' }).locator('.focus-card__matrix-btn').click();
+  await expect(page.locator('#verify-focus-detail .verify__sq-question')).toBeVisible();
   const judgementRow = page.locator('#verify-focus-matrix tr', { hasText: 'RoB2 判定' });
   await judgementRow.locator('.focus-card__matrix-btn').click();
 
