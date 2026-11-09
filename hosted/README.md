@@ -180,6 +180,19 @@ npm run help:shots -- verify    # 名前を指定したシーンだけ撮り直�
 | `export` | `export` | `help-11-export.png` |
 | `options` | `options` | `help-12-options.png` |
 
+### データの流れの図（`data-flow-ja.png` / `data-flow-en.png`）
+
+ヘルプ（`#setup` の注意書きの下）とプライバシーポリシー（「要点」の下）に置く、データの送信先・保存先の 1 枚図。画面の撮影ではなく、`tools/data-flow/generate.mjs` が SVG を組み立てて Playwright の Chromium で PNG に描く（デモビルド不要）。
+
+```
+npm run diagram:data-flow   # hosted/screenshots/data-flow-ja.png と data-flow-en.png を上書きする
+```
+
+- 図の文言の正典は `docs/store/privacy-policy.md`。ポリシーの送信先・保存先・対応プロバイダを変えたら、`generate.mjs` の `TEXT`（日英）を直して描き直し、同じ PR に含める。
+- 脚注の日付（プライバシーポリシーの最終更新日）も合わせて直す。
+- 日本語フォントは実行環境のものを使う。描き直したら PNG を目で確かめる（文字のはみ出し・重なり）。
+- ロゴの入手元とライセンスは `tools/data-flow/logos/README.md`。
+
 ### ヘルプの見出しと画面の対応
 
 - 「?」の吹き出しに出す動画とツアーは、対応表の `tourId` で決まる。画面・カードを足したら、対応するツアーがあれば `tourId` も付ける。
