@@ -308,10 +308,20 @@ delete WeakMap.prototype.getOrInsert;
 delete Math.sumPrecise;
 `;
 
+// 削除した直後の状態を記録するスクリプト（ページ側だけで実行する）。legacy 版 PDF.js は
+// 読み込まれると消した組み込みを補い直すため、画面を開いた後に typeof を見ると、
+// PDF.js の読み込みが先に終わったときに正しい実装でも落ちる。削除の直後に記録しておく
+const RECORD_REMOVAL_SCRIPT = `
+globalThis.__e2eBuiltinsRemoved =
+  typeof Uint8Array.prototype.toHex === 'undefined' &&
+  typeof Map.prototype.getOrInsertComputed === 'undefined' &&
+  typeof Math.sumPrecise === 'undefined';
+`;
+
 test('toHex などの新しい組み込みが無い古い Chrome でも PDF を開ける（pdfjs legacy 版の回帰検知）', async ({
   page,
 }) => {
-  await page.addInitScript(REMOVE_NEW_BUILTINS_SCRIPT);
+  await page.addInitScript(`${REMOVE_NEW_BUILTINS_SCRIPT}\n${RECORD_REMOVAL_SCRIPT}`);
   // worker は module として読まれる。応答の先頭に削除スクリプトを連結する
   await page.route('**/pdf.worker.min.mjs', async (route) => {
     const response = await route.fetch();
@@ -324,13 +334,10 @@ test('toHex などの新しい組み込みが無い古い Chrome でも PDF を�
   await setupCcittRoutes(page);
   await initCcittApp(page);
 
-  // 削除が実際に効いていないと、通常版でも成功して回帰を検知できない
+  // 削除が実際に効いていないと、通常版でも成功して回帰を検知できない。
+  // 判定は削除の直後に記録した値で行う（いまの typeof は legacy 版の補完で変わりうる）
   const builtinsRemoved = await page.evaluate(
-    () =>
-      typeof Uint8Array.prototype.toHex === 'undefined' &&
-      typeof (Map.prototype as unknown as Record<string, unknown>).getOrInsertComputed ===
-        'undefined' &&
-      typeof (Math as unknown as Record<string, unknown>).sumPrecise === 'undefined',
+    () => (globalThis as unknown as Record<string, unknown>).__e2eBuiltinsRemoved,
   );
   expect(builtinsRemoved).toBe(true);
   await expectCcittRendered(page);
