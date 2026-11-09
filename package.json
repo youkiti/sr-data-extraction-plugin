@@ -25,6 +25,7 @@
     "help:gaps": "node tools/help/listHelpGaps.mjs",
     "changelog:check": "node tools/changelog/checkAiChanges.mjs",
     "help:shots": "node tools/help-shots/shoot.mjs",
+    "diagram:data-flow": "node tools/data-flow/generate.mjs",
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
     "lint:css": "stylelint \"src/**/*.css\"",
     "typecheck": "tsc --noEmit",

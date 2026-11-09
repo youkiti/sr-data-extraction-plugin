@@ -13,7 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
-（まだありません / Nothing yet）
+### その他の変更 / Other changes
+
+- 公開ヘルプとプライバシーポリシーに、データの送信先と保存先（ブラウザ・Google Drive / Sheets・共同研究者・選んだ LLM API・ファイル選択のページ。開発者のサーバーは無い）を各社のロゴ付きで示す 1 枚図を日英で追加しました（2026-11-09）。
+  Added a one-page diagram, in Japanese and English with each service's logo, to the public help and privacy policy showing where data is sent and stored (your browser, Google Drive / Sheets, collaborators, the LLM API you chose and the file picker page; there is no developer server) (2026-11-09).
 
 ## v0.30.0（2026-11-09）
 
