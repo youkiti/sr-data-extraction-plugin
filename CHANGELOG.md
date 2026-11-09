@@ -15,6 +15,9 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ### その他の変更 / Other changes
 
+- 検証カードに RoB 2・ROBINS-I・QUADAS-3 の SQ の原文・条件と、日本語表示時の参考訳を常時表示し、回答の略号に意味を添えました。保存値と AI の抽出指示は変わりません（2026-11-09）。
+  Verification cards now always show the original SQ text and conditions for RoB 2, ROBINS-I and QUADAS-3, with reference translations in Japanese UI and meanings for abbreviated answers. Stored values and AI extraction instructions are unchanged (2026-11-09).
+
 - 合格基準と AI・人の比較を偽陽性・偽陰性・誤分類の割合に改称し、数え方と設定値の方向を表示しました。入力欄は前の版、なければ正確度 92%・偽陽性の割合 3% から始まります。CSV 列名は `wrong_value → misclassification`、`fabrication → false_positive`、`omission → false_negative`、`wrong_value_rate → misclassification_proportion`、`fabrication_rate → false_positive_proportion`、`omission_rate → false_negative_proportion` に変更しました。旧列名を読む R コードは更新が必要です。分類と計算方法は変わりません（2026-11-09）。
   Acceptance criteria and AI vs human comparisons now use false-positive, false-negative and misclassification proportions, with counting definitions and threshold directions. Drafts start with the previous version, or accuracy 92% and false-positive proportion 3%. CSV columns were renamed: `wrong_value → misclassification`, `fabrication → false_positive`, `omission → false_negative`, `wrong_value_rate → misclassification_proportion`, `fabrication_rate → false_positive_proportion`, and `omission_rate → false_negative_proportion`. R code reading the old columns needs updating. Classification and arithmetic are unchanged (2026-11-09).
 
