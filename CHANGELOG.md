@@ -15,8 +15,8 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ### その他の変更 / Other changes
 
-- 表のデザイン（S5）のスキーマのファイルで、CSV の書き出しと読み込みができるようになりました。Excel などで 1 行 1 項目として編集・並び替えて、別のプロジェクトで使い回せます。読み込んだ項目は、JSON・CSV ともファイルの行の順に並びます（2026-11-09・PR #PRNUM）。
-  The schema file card in Schema design (S5) can now export and import CSV. Edit and reorder fields one per row in a spreadsheet such as Excel and reuse them in another project. Imported fields, from JSON or CSV, now follow the row order of the file (2026-11-09, PR #PRNUM).
+- 表のデザイン（S5）のスキーマのファイルで、CSV の書き出しと読み込みができるようになりました。Excel などで 1 行 1 項目として編集・並び替えて、別のプロジェクトで使い回せます。読み込んだ項目は、JSON・CSV ともファイルの行の順に並びます（2026-11-09・issue #469）。
+  The schema file card in Schema design (S5) can now export and import CSV. Edit and reorder fields one per row in a spreadsheet such as Excel and reuse them in another project. Imported fields, from JSON or CSV, now follow the row order of the file (2026-11-09, issue #469).
 - 公開ヘルプとプライバシーポリシーに、データの送信先と保存先（ブラウザ・Google Drive / Sheets・共同研究者・選んだ LLM API・ファイル選択のページ。開発者のサーバーは無い）を各社のロゴ付きで示す 1 枚図を日英で追加しました（2026-11-09）。
   Added a one-page diagram, in Japanese and English with each service's logo, to the public help and privacy policy showing where data is sent and stored (your browser, Google Drive / Sheets, collaborators, the LLM API you chose and the file picker page; there is no developer server) (2026-11-09).
 
