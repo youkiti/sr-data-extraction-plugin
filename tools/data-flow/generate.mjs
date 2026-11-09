@@ -2,7 +2,7 @@
 //
 //   npm run diagram:data-flow
 //
-// 出力: hosted/screenshots/data-flow-ja.png / data-flow-en.png（1280×860、300KB 以下）
+// 出力: hosted/screenshots/data-flow-ja.png / data-flow-en.png（1280×760、300KB 以下）
 // 図の文言の正典は docs/store/privacy-policy.md。ポリシーの送信先・保存先を変えたら、
 // 下の TEXT を直して撮り直す。ロゴは tools/data-flow/logos/ の SVG（入手元は同フォルダの README.md）。
 // 描画は同梱の Playwright（Chromium）で行う。日本語フォントは環境のものを使うため、
@@ -17,7 +17,9 @@ import { resolveChromiumExecutable } from '../../video/scripts/config.mjs';
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..', '..');
 const W = 1280;
-const H = 860;
+const H = 760;
+// 図の要素は y=128 から置いてある。タイトル行を持たないので、全体を上へずらす
+const SHIFT = 100;
 
 const COLOR = {
   ink: '#1f2933',
@@ -37,9 +39,6 @@ const COLOR = {
 
 const TEXT = {
   ja: {
-    title: 'データはどこへ行くか',
-    subtitle:
-      '開発者のサーバーはありません。データは、あなたのブラウザ・あなたの Google アカウント・あなたが選んだ AI の間だけを流れます。',
     browserTitle: 'あなたのブラウザ',
     browserSub: 'SR Data Extraction（Chrome 拡張）',
     browserKeep: 'ブラウザの中に置くもの',
@@ -76,9 +75,6 @@ const TEXT = {
     foot: '各ロゴは各社の商標です。内容はプライバシーポリシー（2026-11-08）に基づきます。',
   },
   en: {
-    title: 'Where your data goes',
-    subtitle:
-      'There is no developer server. Data moves only between your browser, your Google account and the AI you chose.',
     browserTitle: 'Your browser',
     browserSub: 'SR Data Extraction (Chrome extension)',
     browserKeep: 'Kept inside the browser',
@@ -155,14 +151,11 @@ function people(x, y, color) {
 function render(lang) {
   const t = TEXT[lang];
   const parts = [];
-  parts.push(`<rect width="${W}" height="${H}" fill="#ffffff"/>`);
+  parts.push(`<rect width="${W}" height="${H + SHIFT}" fill="#ffffff"/>`);
   parts.push(`<defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="context-stroke"/></marker>
   </defs>`);
 
-  // タイトル
-  parts.push(lines(40, 58, [t.title], { size: 30, weight: 700 }));
-  parts.push(lines(40, 92, [t.subtitle], { size: 16, color: COLOR.sub }));
 
   // 開発者のサーバー（無い）
   parts.push(box(40, 128, 380, 104, COLOR.no, COLOR.noBg, '8 6'));
@@ -269,7 +262,7 @@ function render(lang) {
     lang === 'ja'
       ? "'Noto Sans JP','Hiragino Sans','Yu Gothic','WenQuanYi Zen Hei',sans-serif"
       : "Inter,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif";
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${font}">${parts.join('')}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 ${SHIFT - 8} ${W} ${H}" font-family="${font}">${parts.join('')}</svg>`;
 }
 
 const outDir = join(repoRoot, 'hosted', 'screenshots');
