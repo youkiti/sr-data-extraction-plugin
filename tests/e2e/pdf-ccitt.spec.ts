@@ -7,6 +7,8 @@
 // 作法（chrome スタブ + page.route での Sheets/Drive stub + dist/ 静的配信）を踏襲しつつ、
 // 実 pdf.js（dist/ の実バンドル経由）で CCITT 圧縮画像を実際に canvas へ描画し、
 // 「暗い画素の比率」という広い閾値で白紙化の回帰を検出する。
+// あわせて、toHex などの新しいブラウザ組み込みが無い古い Chrome を模擬し、pdfjs の legacy 版を
+// 使っていれば PDF を開ける（通常版に戻すと「n.toHex is not a function」で失敗する）ことも守る。
 import { expect, test, type Page } from '@playwright/test';
 import { SHEET_HEADERS } from '../../src/domain/sheetsSchema';
 import manifest from '../../src/manifest.json';
@@ -290,6 +292,54 @@ test('manifest と同じ CSP の下で JavaScript 版フォールバックなし
     return win.__cspProbe !== true;
   });
   expect(inlineScriptBlocked).toBe(true);
+  await expectCcittRendered(page);
+});
+
+// 古い Chrome に無い組み込みを消すスクリプト（ページと worker の両方の先頭で実行する）
+const REMOVE_NEW_BUILTINS_SCRIPT = `
+delete Uint8Array.prototype.toHex;
+delete Uint8Array.prototype.toBase64;
+delete Uint8Array.fromHex;
+delete Uint8Array.fromBase64;
+delete Map.prototype.getOrInsertComputed;
+delete Map.prototype.getOrInsert;
+delete WeakMap.prototype.getOrInsertComputed;
+delete WeakMap.prototype.getOrInsert;
+delete Math.sumPrecise;
+`;
+
+// 削除した直後の状態を記録するスクリプト（ページ側だけで実行する）。legacy 版 PDF.js は
+// 読み込まれると消した組み込みを補い直すため、画面を開いた後に typeof を見ると、
+// PDF.js の読み込みが先に終わったときに正しい実装でも落ちる。削除の直後に記録しておく
+const RECORD_REMOVAL_SCRIPT = `
+globalThis.__e2eBuiltinsRemoved =
+  typeof Uint8Array.prototype.toHex === 'undefined' &&
+  typeof Map.prototype.getOrInsertComputed === 'undefined' &&
+  typeof Math.sumPrecise === 'undefined';
+`;
+
+test('toHex などの新しい組み込みが無い古い Chrome でも PDF を開ける（pdfjs legacy 版の回帰検知）', async ({
+  page,
+}) => {
+  await page.addInitScript(`${REMOVE_NEW_BUILTINS_SCRIPT}\n${RECORD_REMOVAL_SCRIPT}`);
+  // worker は module として読まれる。応答の先頭に削除スクリプトを連結する
+  await page.route('**/pdf.worker.min.mjs', async (route) => {
+    const response = await route.fetch();
+    const body = await response.text();
+    await route.fulfill({
+      response,
+      body: `${REMOVE_NEW_BUILTINS_SCRIPT}\n${body}`,
+    });
+  });
+  await setupCcittRoutes(page);
+  await initCcittApp(page);
+
+  // 削除が実際に効いていないと、通常版でも成功して回帰を検知できない。
+  // 判定は削除の直後に記録した値で行う（いまの typeof は legacy 版の補完で変わりうる）
+  const builtinsRemoved = await page.evaluate(
+    () => (globalThis as unknown as Record<string, unknown>).__e2eBuiltinsRemoved,
+  );
+  expect(builtinsRemoved).toBe(true);
   await expectCcittRendered(page);
 });
 
