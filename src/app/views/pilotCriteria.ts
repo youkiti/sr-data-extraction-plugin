@@ -18,6 +18,10 @@ const CRITERIA_LABELS = { min_accuracy: 'criteria.minAccuracy', max_fabrication_
   min_compared_cells: 'criteria.minComparedCells', note: 'criteria.note', met: 'criteria.met', not_met: 'criteria.notMet',
   not_evaluable: 'criteria.notEvaluable', no_pilot: 'criteria.noPilot', no_compared_cells: 'criteria.noComparedCells',
   below_minimum: 'criteria.belowMinimum' } as const;
+const ROW_NAMES = { min_accuracy: 'criteria.accuracy', max_fabrication_rate: 'criteria.falsePositive',
+  max_omission_rate: 'criteria.falseNegative', max_wrong_value_rate: 'criteria.misclassification' } as const;
+const COUNTING = { min_accuracy: 'criteria.countAccuracy', max_fabrication_rate: 'criteria.countFalsePositive',
+  max_omission_rate: 'criteria.countFalseNegative', max_wrong_value_rate: 'criteria.countMisclassification' } as const;
 
 function versionLabel(criteria: AcceptanceCriteria): string {
   return t('criteria.version', { version: criteria.version, date: formatPilotRunDate(criteria.confirmed_at), by: criteria.confirmed_by,
@@ -84,26 +88,27 @@ function renderCurrent(current: AcceptanceCriteria, form: CriteriaState): HTMLEl
     el('p', { text: `${t('criteria.comparator')}: ${t(GROUP_LABELS[current.comparator])}` }),
     el('p', { text: `${t('criteria.levels')}: ${current.entity_levels.map((level) => t(LEVEL_LABELS[level])).join(', ')}` })];
   const result = form.evaluation;
-  const resultKeys = { min_accuracy: 'accuracy', max_fabrication_rate: 'fabrication_rate',
-    max_omission_rate: 'omission_rate', max_wrong_value_rate: 'wrong_value_rate' } as const;
+  const resultKeys = { min_accuracy: 'accuracy', max_fabrication_rate: 'false_positive_proportion',
+    max_omission_rate: 'false_negative_proportion', max_wrong_value_rate: 'misclassification_proportion' } as const;
   const rows: HTMLElement[] = [];
   const judgment = (met: boolean | null): string => met === null ? '—' : t(met ? 'criteria.met' : 'criteria.notMet');
-  const row = (label: string, setting: string, value: string, met: boolean | null): HTMLElement => el('tr', {}, [
+  const row = (label: string, setting: string, value: string, met: boolean | null, counting: string): HTMLElement => el('tr', {}, [
     el('th', { text: label, attributes: { scope: 'row' } }), el('td', { text: setting }),
-    el('td', { text: value }), el('td', { text: judgment(met) }),
+    el('td', { text: value }), el('td', { text: judgment(met) }), el('td', { text: counting }),
   ]);
   for (const key of RATE_KEYS) {
     const value = result?.[resultKeys[key]];
     const threshold = current[key];
     const comparable = threshold !== null && value != null;
-    rows.push(row(t(CRITERIA_LABELS[key]), threshold === null ? t('criteria.unused') : `${threshold}%`,
-      comparable ? `${value.toFixed(1)}%` : '—', result?.checks[key] ?? null));
+    rows.push(row(t(ROW_NAMES[key]), threshold === null ? t('criteria.unused')
+      : t(key === 'min_accuracy' ? 'criteria.atLeastPercent' : 'criteria.atMostPercent', { n: threshold }),
+      comparable ? `${value.toFixed(1)}%` : '—', result?.checks[key] ?? null, t(COUNTING[key])));
   }
   const minimum = current.min_compared_cells;
-  rows.push(row(t('criteria.comparedCells'), minimum === null ? t('criteria.unused') : `≥ ${minimum}`,
-    result === null ? '—' : String(result.compared), result?.checks.min_compared_cells ?? null));
+  rows.push(row(t('criteria.comparedCells'), minimum === null ? t('criteria.unused') : t('criteria.atLeastCells', { n: minimum }),
+    result === null ? '—' : String(result.compared), result?.checks.min_compared_cells ?? null, t('criteria.countCompared')));
   children.push(el('div', { className: 'dashboard__compare-scroll' }, [el('table', {}, [
-    el('thead', {}, [el('tr', {}, ['criteria.criterion', 'criteria.setting', 'criteria.pilotValue', 'criteria.judgment']
+    el('thead', {}, [el('tr', {}, ['criteria.criterion', 'criteria.setting', 'criteria.pilotValue', 'criteria.judgment', 'criteria.counting']
       .map((key) => el('th', { text: t(key as MessageKey), attributes: { scope: 'col' } })))]),
     el('tbody', {}, rows),
   ])]));

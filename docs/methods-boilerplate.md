@@ -15,8 +15,8 @@
 pilot_runs_before が 0 なら前、1 以上なら開始後とする。
 
 基準は設定済みの項目だけを、英語は A, B and C、日本語は読点で並べる。
-英語は “accuracy of at least 90%”, “a fabrication rate of at most 3%”, “an omission rate of at most 8%”, “a wrong-value rate of at most 5%”, “at least 50 compared cells” の形にする。
-日本語は「正確度 90% 以上」「作り話の率 3% 以下」「欠けの率 8% 以下」「誤った値の率 5% 以下」「比べられたセル 50 件以上」の形にする。
+英語は “accuracy of at least 90%”, “a false-positive proportion of at most 3%”, “a false-negative proportion of at most 8%”, “a misclassification proportion of at most 5%”, “at least 50 compared cells” の形にする。
+日本語は「正確度 90% 以上」「偽陽性の割合 3% 以下」「偽陰性の割合 8% 以下」「誤分類の割合 5% 以下」「比べられたセル 50 件以上」の形にする。
 設定値に末尾の 0 を足さない。
 レベルは “study and arm” / 「研究、群」のように列挙し、英語は単一なら level、複数なら levels とする。
 
@@ -28,11 +28,11 @@ pilot_runs_before が 0 なら前、1 以上なら開始後とする。
 | human_with_ai | AI の出力を検証したレビュアーの最終値（独立の比較ではない） | final values from reviewers who verified the AI output, which is not an independent comparison |
 
 判定できた場合の結果文:
-「パイロットの {n} 研究で、AI 抽出はこの基準を満たした / 満たさなかった（正確度 {x}%、作り話の率 {y}%、欠けの率 {z}%、誤った値の率 {w}%、比べられたセル {c} 件）。」
-“In the pilot of {n} studies, AI extraction met / did not meet these criteria (accuracy {x}%, fabrication rate {y}%, omission rate {z}%, wrong-value rate {w}%, {c} compared cells).”
+「パイロットの {n} 研究で、AI 抽出はこの基準を満たした / 満たさなかった（正確度 {x}%、偽陽性の割合 {y}%、偽陰性の割合 {z}%、誤分類の割合 {w}%、比べられたセル {c} 件）。」
+“In the pilot of {n} studies, AI extraction met / did not meet these criteria (accuracy {x}%, false-positive proportion {y}%, false-negative proportion {z}%, misclassification proportion {w}%, {c} compared cells).”
 結果の百分率は小数 1 桁とし、英語の study / studies と cell / cells は数に合わせる。
 
-判定できない場合は率を書かず、理由だけを書く:
+判定できない場合は割合を書かず、理由だけを書く:
 「パイロットでは、{理由}ため、この基準を評価できなかった。」
 “In the pilot, these criteria could not be evaluated because {reason}.”
 理由は「パイロットがなかった」/ “there was no pilot run”、

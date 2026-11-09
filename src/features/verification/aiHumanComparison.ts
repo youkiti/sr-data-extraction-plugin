@@ -13,7 +13,7 @@ import { bundleEvidence, type EvidenceBundle } from './evidenceBundles';
 import { cellKeyOf } from './cellState';
 
 export type ComparisonGroup = 'independent' | 'consensus' | 'human_independent' | 'human_with_ai';
-export type ComparisonCategory = 'match' | 'wrong_value' | 'fabrication' | 'omission' | 'incomparable';
+export type ComparisonCategory = 'match' | 'misclassification' | 'false_positive' | 'false_negative' | 'incomparable';
 export type ComparisonReason = 'human_unjudged' | 'ai_not_extracted' | null;
 
 export interface ComparisonCell {
@@ -75,13 +75,13 @@ export function classifyComparisonCell(
     category = 'incomparable';
     reason = 'ai_not_extracted';
   } else if (human === NOT_REPORTED_TOKEN) {
-    category = hasAiValue ? 'fabrication' : 'match';
+    category = hasAiValue ? 'false_positive' : 'match';
   } else if (!hasAiValue) {
-    category = 'omission';
+    category = 'false_negative';
   } else if (human === ai) {
     category = 'match';
   } else {
-    category = failed ? 'fabrication' : 'wrong_value';
+    category = failed ? 'false_positive' : 'misclassification';
   }
   return { category, reason, aiValue, humanValue, missingQuote: category !== 'incomparable' && hasAiValue && failed };
 }
@@ -149,17 +149,17 @@ export interface ComparisonSummary {
   fieldLabel: string | null;
   compared: number;
   match: number;
-  wrong_value: number;
-  fabrication: number;
-  omission: number;
+  misclassification: number;
+  false_positive: number;
+  false_negative: number;
   incomparable: number;
   humanUnjudged: number;
   aiNotExtracted: number;
   missingQuote: number;
   accuracy: number | null;
-  wrongValueRate: number | null;
-  fabricationRate: number | null;
-  omissionRate: number | null;
+  misclassificationProportion: number | null;
+  falsePositiveProportion: number | null;
+  falseNegativeProportion: number | null;
 }
 
 export interface ComparisonFilter {
@@ -183,9 +183,9 @@ export function summarizeComparison(cells: readonly ComparisonCell[], filter: Co
       if (summary === undefined) {
         summary = { group: cell.group, entityLevel, fieldId, fieldName: scope === 'field' ? cell.fieldName : null,
           fieldLabel: scope === 'field' ? cell.fieldLabel : null,
-          compared: 0, match: 0, wrong_value: 0, fabrication: 0, omission: 0, incomparable: 0,
+          compared: 0, match: 0, misclassification: 0, false_positive: 0, false_negative: 0, incomparable: 0,
           humanUnjudged: 0, aiNotExtracted: 0, missingQuote: 0,
-          accuracy: null, wrongValueRate: null, fabricationRate: null, omissionRate: null };
+          accuracy: null, misclassificationProportion: null, falsePositiveProportion: null, falseNegativeProportion: null };
         summaries.set(key, summary);
       }
       summary[cell.category] += 1;
@@ -205,20 +205,20 @@ export function summarizeComparison(cells: readonly ComparisonCell[], filter: Co
   }
   return [...summaries.values()].map((row) => ({ ...row,
     accuracy: row.compared === 0 ? null : row.match / row.compared,
-    wrongValueRate: row.compared === 0 ? null : row.wrong_value / row.compared,
-    fabricationRate: row.compared === 0 ? null : row.fabrication / row.compared,
-    omissionRate: row.compared === 0 ? null : row.omission / row.compared,
+    misclassificationProportion: row.compared === 0 ? null : row.misclassification / row.compared,
+    falsePositiveProportion: row.compared === 0 ? null : row.false_positive / row.compared,
+    falseNegativeProportion: row.compared === 0 ? null : row.false_negative / row.compared,
   }));
 }
 
-const SUMMARY_KEYS = ['group', 'entityLevel', 'fieldId', 'fieldName', 'fieldLabel', 'compared', 'match', 'wrong_value',
-  'fabrication', 'omission', 'incomparable', 'humanUnjudged', 'aiNotExtracted', 'missingQuote',
-  'accuracy', 'wrongValueRate', 'fabricationRate', 'omissionRate'] as const;
+const SUMMARY_KEYS = ['group', 'entityLevel', 'fieldId', 'fieldName', 'fieldLabel', 'compared', 'match', 'misclassification',
+  'false_positive', 'false_negative', 'incomparable', 'humanUnjudged', 'aiNotExtracted', 'missingQuote',
+  'accuracy', 'misclassificationProportion', 'falsePositiveProportion', 'falseNegativeProportion'] as const;
 const CELL_KEYS = ['studyLabel', 'studyId', 'fieldId', 'fieldName', 'fieldLabel', 'entityLevel', 'entityKey', 'group', 'annotator',
   'annotatorType', 'category', 'reason', 'aiValue', 'humanValue', 'missingQuote'] as const;
-const SUMMARY_COLUMNS = ['group', 'entity_level', 'field_id', 'field_name', 'field_label', 'compared', 'match', 'wrong_value',
-  'fabrication', 'omission', 'incomparable', 'human_unjudged', 'ai_not_extracted', 'missing_quote',
-  'accuracy', 'wrong_value_rate', 'fabrication_rate', 'omission_rate', 'unextracted_studies', 'no_final_studies'] as const;
+const SUMMARY_COLUMNS = ['group', 'entity_level', 'field_id', 'field_name', 'field_label', 'compared', 'match', 'misclassification',
+  'false_positive', 'false_negative', 'incomparable', 'human_unjudged', 'ai_not_extracted', 'missing_quote',
+  'accuracy', 'misclassification_proportion', 'false_positive_proportion', 'false_negative_proportion', 'unextracted_studies', 'no_final_studies'] as const;
 const CELL_COLUMNS = ['study_label', 'study_id', 'field_id', 'field_name', 'field_label', 'entity_level', 'entity_key', 'group',
   'annotator', 'annotator_type', 'category', 'reason', 'ai_value', 'human_value', 'missing_quote'] as const;
 
@@ -229,7 +229,7 @@ function numericCsvCell(value: number | null): string {
 
 export function buildComparisonSummaryCsv(report: ComparisonReport): string {
   const rows = summarizeComparison(report.cells).map((row) => [...SUMMARY_KEYS.map((key) =>
-    key === 'accuracy' || key === 'wrongValueRate' || key === 'fabricationRate' || key === 'omissionRate'
+    key === 'accuracy' || key === 'misclassificationProportion' || key === 'falsePositiveProportion' || key === 'falseNegativeProportion'
       ? numericCsvCell(row[key]) : String(row[key] ?? '')),
     String(report.unextractedStudyIds.length), String(report.noFinalStudyIds.length)]);
   if (rows.length === 0) {

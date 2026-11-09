@@ -572,9 +572,9 @@ owner だけが確定できる。旧プロジェクトでは初回確定時に�
 | comparator | independent / consensus / human_independent / human_with_ai の 1 つ |
 | entity_levels | study,arm,outcome_result,rob_domain の部分集合（カンマ区切り、1 つ以上） |
 | min_accuracy | 正確度の下限（百分率 0〜100、小数可、空欄は不使用） |
-| max_fabrication_rate | 作り話の率の上限（同上） |
-| max_omission_rate | 欠けの率の上限（同上） |
-| max_wrong_value_rate | 誤った値の率の上限（同上） |
+| max_fabrication_rate | 偽陽性の割合の上限（同上） |
+| max_omission_rate | 偽陰性の割合の上限（同上） |
+| max_wrong_value_rate | 誤分類の割合の上限（同上） |
 | min_compared_cells | 比べられたセルの最小数（正の整数、空欄可） |
 | pilot_runs_before | 確定した時点で ExtractionRuns にあったパイロット run の数（状態を問わない、重複する run_id は 1 つ）。0 はパイロット前、1 以上は開始後の確定 |
 | note | 任意の自由記述 |
@@ -702,7 +702,7 @@ S6 は上部に合格基準カードを持つ（owner の入力・確認・追�
 ### 4.4 CSV エクスポート（S10）
 
 R セットに `acceptance_criteria.csv`（1 行 = 1 版、保存列 + result / not_evaluable_reason / compared / accuracy /
-fabrication_rate / omission_rate / wrong_value_rate / pilot_studies）を含める。率は百分率。版なしはヘッダーのみ。
+false_positive_proportion / false_negative_proportion / misclassification_proportion / pilot_studies）を含める。割合は百分率。版なしはヘッダーのみ。
 各版をエクスポート素材の現在値で再判定し、manifest に行数を記録する。データ辞書は SchemaFields の対応表のままとする。
 Methods 文案（英日 × 単一 / 二重）には現行の基準・確定日・版・パイロットの前後と結果を追加する。版なしなら追加しない。
 
@@ -875,7 +875,7 @@ S9 の owner / adjudicator 専用カードから「比較を計算」で全行�
   完了 run のない研究は比較対象から外し「AI 未抽出の研究」として別計上する。
 - 最新確定スキーマの各項目を比較する。study は `STUDY_ENTITY_KEY` の 1 セル。
   他のレベルは、その項目について基準者の ResultsData と AI Evidence の entity_key の和集合を用いる。
-  **群番号の対応付けは行わず、生の entity_key で比較するため、番号の食い違いが不一致・欠けとして計上されうる。**
+  **群番号の対応付けは行わず、生の entity_key で比較するため、番号の食い違いが不一致・偽陰性として計上されうる。**
 
 値を先に見て、次の順で分類する。
 
@@ -884,13 +884,13 @@ S9 の owner / adjudicator 専用カードから「比較を計算」で全行�
 | H が null / trim 後空 | 比べられない（人が未判定）。両方空も一致にしない |
 | AI の対象外の項目 | 比べられない（AI が抽出していない） |
 | H = NR、A が報告なし / 値なし | 一致 |
-| H = NR、A が値 | 作り話 |
-| H が値、A が報告なし / 値なし（Evidence なしを含む） | 欠け |
+| H = NR、A が値 | 偽陽性 |
+| H が値、A が報告なし / 値なし（Evidence なしを含む） | 偽陰性 |
 | H と A が値で完全一致 | 一致（引用が見つからなくても一致） |
-| H と A が値で不一致、全引用が failed | 作り話 |
-| H と A が値で不一致、それ以外 | 誤った値 |
+| H と A が値で不一致、全引用が failed | 偽陽性 |
+| H と A が値で不一致、それ以外 | 誤分類 |
 
-率の分母は「一致 + 誤った値 + 作り話 + 欠け」。正確度は一致 / 分母。
+割合の分母は「一致 + 誤分類 + 偽陽性 + 偽陰性」。正確度は一致 / 分母。
 分母 0 は null（画面は「—」）。比べられない件数とその理由を別計上する。
 AI が値を出して全引用が failed のセルも区分とは別に数える（比べられないセルは除く）。
 
@@ -904,8 +904,8 @@ human_with_ai は AI を見ながら判定した人であり、独立比較で�
 CSV は集計とセル一覧の 2 本（UTF-8 BOM 付き）。
 集計列（順序通り）:
 
-- `group, entity_level, field_id, field_name, field_label, compared, match, wrong_value, fabrication, omission, incomparable`
-- `human_unjudged, ai_not_extracted, missing_quote, accuracy, wrong_value_rate, fabrication_rate, omission_rate, unextracted_studies, no_final_studies`
+- `group, entity_level, field_id, field_name, field_label, compared, match, misclassification, false_positive, false_negative, incomparable`
+- `human_unjudged, ai_not_extracted, missing_quote, accuracy, misclassification_proportion, false_positive_proportion, false_negative_proportion, unextracted_studies, no_final_studies`
 
 セル列（順序通り）:
 
@@ -915,7 +915,7 @@ CSV は集計とセル一覧の 2 本（UTF-8 BOM 付き）。
 ファイル名は `ai_human_comparison_summary_<時刻>.csv` / `ai_human_comparison_cells_<時刻>.csv`。
 group は A が independent、B が最終値の annotator_type。reason は human_unjudged / ai_not_extracted（比較可能なら空）。
 集計の entity_level / field_id が空なら全体、field_id だけ空ならレベル合計。
-率は小数点以下 4 桁に丸め、分母 0 の率は空欄。
+割合は小数点以下 4 桁に丸め、分母 0 の割合は空欄。
 
 - tiab-review の LLM ベンチマーク運用（`experiments/` 配下、採用基準の事前設定、固定バージョン ID 採用）を踏襲し、**抽出精度ベンチマーク**を実施してから既定モデルを確定する
 - 評価指標（案）: 項目レベル正確度（人間ゴールドスタンダード比）、not_reported 判定の感度 / 特異度、quote アンカリング成功率、検証所要時間（AI 支援あり vs なし）
@@ -935,7 +935,12 @@ summarizeComparison の研究集合・entity_levels 絞り込み後の comparato
 - 満たさない（not_met）: 同じセル数条件を満たすが、設定した基準のいずれかに届かない。
 - 判定できない（not_evaluable）: パイロットなし / 比べられたセル 0 / 最小数未満。理由を表示する。
 
-率は百分率で比較し、境界は等号を含む（正確度 ≥、誤りの各率 ≤）。未設定の基準は判定に使わない。
+割合は百分率で比較し、境界は等号を含む（正確度 ≥、偽陽性・偽陰性・誤分類の割合 ≤）。未設定の基準は判定に使わない。
+結果表は基準 / 設定値 / パイロットの値 / 判定 / 数え方の 5 列。行名は正確度・偽陽性の割合・偽陰性の割合・誤分類の割合・比べられたセル数とする。
+設定値に「97% 以上」「3% 以下」「50 件以上」（英語は at least 97%、at most 3%、at least 50）と方向を示す。未設定は「設定なし」。入力ラベルの ≥ (%) / ≤ (%) は維持する。
+数え方は正確度「人と AI の値が一致したセルの割合」、偽陽性「人が『報告なし』なのに AI が値を出した、または値が違い AI の引用が本文に無い」、偽陰性「人は値を入れたのに AI が報告なし・値なし」、誤分類「人と AI の値が違う（引用は本文にある）」、セル数「割合の分母。人が未判定・AI 未抽出のセルは除く」とする。
+読込時に下書きが空の初期状態と一致する場合だけ、現行版の比較相手・対象レベル・4 つの割合・最小セル数を引き継ぎ、メモは空にする。数値は文字列、未設定は空欄。現行版がなければ正確度 92%、偽陽性の割合 3% を参考値として入れ、他は空欄、全レベルを選択する。編集済み下書きは上書きしない。
+保存済みの版を読むため、Sheets と下書きの保存名 `max_fabrication_rate` / `max_omission_rate` / `max_wrong_value_rate` は維持する。表示名は偽陽性 / 偽陰性 / 誤分類。
 判定・CSV・Methods には同じ純粋関数を使う。R セットは各版の結果を出し、Methods は現行版のみを出す。
 
 ## 9. リスクと対応

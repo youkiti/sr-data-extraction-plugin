@@ -1,6 +1,6 @@
 // S6 の合格基準の読込・確定・計算を扱う（issue #382）。
 // 正典は docs/requirements.md §8「合格基準の事前登録」。
-import { confirmCriteria, currentCriteria, emptyCriteriaDraft, evaluateCriteria, validateCriteriaDraft,
+import { confirmCriteria, currentCriteria, emptyCriteriaDraft, initialCriteriaDraft, evaluateCriteria, validateCriteriaDraft,
   type AcceptanceCriteria, type CriteriaDraft, type CriteriaEvaluation } from '../../features/verification/acceptanceCriteria';
 import { appendAcceptanceCriteria, readAcceptanceCriteria } from '../../features/verification/acceptanceCriteriaRepository';
 import { buildComparisonCells } from '../../features/verification/aiHumanComparison';
@@ -79,7 +79,14 @@ export async function loadCriteria(store: Store, deps: VerificationDeps): Promis
   try {
     const [data, pilotCount] = await Promise.all([readAcceptanceCriteria(id, deps.google), countPilotRuns(id, deps.google)]);
     if (store.getState().currentProject?.spreadsheetId === id) {
-      patch(store, { ...data, loading: false, pilotCount, evaluation: null });
+      const draft = criteriaState(store).draft;
+      const empty = emptyCriteriaDraft();
+      const untouched = Object.keys(empty).every((key) => {
+        const field = key as keyof CriteriaDraft;
+        return JSON.stringify(draft[field]) === JSON.stringify(empty[field]);
+      });
+      patch(store, { ...data, loading: false, pilotCount, evaluation: null,
+        ...(untouched ? { draft: initialCriteriaDraft(currentCriteria(data.versions)) } : {}) });
     }
   } catch (err) {
     if (store.getState().currentProject?.spreadsheetId === id) {

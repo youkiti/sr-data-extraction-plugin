@@ -428,8 +428,8 @@ function buildCriteriaSentence(language: MethodsLanguage, fact: NonNullable<Meth
   const join = (items: string[]): string => ja ? items.join('、')
     : items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
   const thresholds: string[] = [];
-  const labels = ja ? ['正確度', '作り話の率', '欠けの率', '誤った値の率']
-    : ['accuracy of at least', 'a fabrication rate of at most', 'an omission rate of at most', 'a wrong-value rate of at most'];
+  const labels = ja ? ['正確度', '偽陽性の割合', '偽陰性の割合', '誤分類の割合']
+    : ['accuracy of at least', 'a false-positive proportion of at most', 'a false-negative proportion of at most', 'a misclassification proportion of at most'];
   [c.min_accuracy, c.max_fabrication_rate, c.max_omission_rate, c.max_wrong_value_rate].forEach((value, index) => {
     if (value !== null) {
       thresholds.push(`${labels[index]} ${value}%${ja ? (index === 0 ? ' 以上' : ' 以下') : ''}`);
@@ -461,11 +461,11 @@ function buildCriteriaSentence(language: MethodsLanguage, fact: NonNullable<Meth
   const percent = (value: number | null): string => value === null ? (ja ? '算出できず' : 'unavailable') : `${value.toFixed(1)}%`;
   if (ja) {
     return criteriaText + `パイロットの ${e.pilot_studies} 研究で、AI 抽出はこの基準を${e.result === 'met' ? '満たした' : '満たさなかった'}（` +
-      `正確度 ${percent(e.accuracy)}、作り話の率 ${percent(e.fabrication_rate)}、欠けの率 ${percent(e.omission_rate)}、` +
-      `誤った値の率 ${percent(e.wrong_value_rate)}、比べられたセル ${e.compared} 件）。`;
+      `正確度 ${percent(e.accuracy)}、偽陽性の割合 ${percent(e.false_positive_proportion)}、偽陰性の割合 ${percent(e.false_negative_proportion)}、` +
+      `誤分類の割合 ${percent(e.misclassification_proportion)}、比べられたセル ${e.compared} 件）。`;
   }
   return criteriaText + `In the pilot of ${e.pilot_studies} ${e.pilot_studies === 1 ? 'study' : 'studies'}, ` +
     `AI extraction ${e.result === 'met' ? 'met' : 'did not meet'} these criteria (accuracy ${percent(e.accuracy)}, ` +
-    `fabrication rate ${percent(e.fabrication_rate)}, omission rate ${percent(e.omission_rate)}, ` +
-    `wrong-value rate ${percent(e.wrong_value_rate)}, ${e.compared} compared ${e.compared === 1 ? 'cell' : 'cells'}).`;
+    `false-positive proportion ${percent(e.false_positive_proportion)}, false-negative proportion ${percent(e.false_negative_proportion)}, ` +
+    `misclassification proportion ${percent(e.misclassification_proportion)}, ${e.compared} compared ${e.compared === 1 ? 'cell' : 'cells'}).`;
 }

@@ -91,7 +91,8 @@ test('合格基準を入力・確認・追記保存し、結果を明示計算�
     await route.fulfill({ json: { values: [] } });
   });
   await initApp(page);
-  await expect(page.locator('#pilot-criteria-min_accuracy')).toHaveValue('');
+  await expect(page.locator('#pilot-criteria-min_accuracy')).toHaveValue('92');
+  await expect(page.locator('#pilot-criteria-max_fabrication_rate')).toHaveValue('3');
   await page.locator('#pilot-criteria-min_accuracy').fill('90');
   await page.locator('#pilot-criteria-confirm').click();
   await expect(page.locator('#pilot-criteria-confirmation')).toBeVisible();
