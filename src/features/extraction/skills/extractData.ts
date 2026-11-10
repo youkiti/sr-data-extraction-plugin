@@ -60,8 +60,11 @@ export const EXTRACT_DATA_SKILL_NAME = 'extract-data';
  *   outcome_result の項目を含まないバッチのプロンプトは変わらない
  * v14（2026-11-09）: 本文と全ページ画像の併用を任意で選べるようにし、
  *   併用時だけ本文の逐語引用を優先し、画像だけの値には可視文字の書き起こしを認める。
+ * v15（2026-11-10）: 同じ study の先行バッチで使った outcome_result の entity_key を
+ *   suffix 末尾に渡し、同じアウトカム・群・時点では文字列をそのまま再利用させる。
+ *   outcome_result の項目を含まないバッチと、study の最初のバッチのプロンプトは変わらない。
  */
-export const EXTRACT_DATA_PROMPT_VERSION = 14;
+export const EXTRACT_DATA_PROMPT_VERSION = 15;
 
 /** text_only モードで LLM へ渡すページ別本文（extracted_texts/{id}.txt 由来） */
 export interface ExtractDataPage {
@@ -124,6 +127,8 @@ export interface ExtractDataPromptInput {
   documents: readonly ExtractDataDocument[];
   /** RQ・PICO 等の要約。項目の解釈を安定させる補助コンテキスト（省略可） */
   protocolContext?: string | null;
+  /** 同じ study の先行バッチで検証済みの outcome_result のキー（出現順）。 */
+  knownOutcomeEntityKeys?: readonly string[];
   /**
    * box_2d（quote の bounding box）の取得を要求するか。省略時 false。
    * true にできるのは「Gemini 系 provider」かつ「バッチに画像文書を含む」ときだけ
@@ -345,7 +350,7 @@ function buildPrefixSections(input: ExtractDataPromptInput): string[] {
 
 /**
  * プロンプト後半（バッチごとに変わる部分）のセクション群: Fields to extract → entity_key rules →
- * Output format → arm の Completeness check → outcome_result の Source of outcome findings。
+ * Output format → arm の Completeness check → outcome_result の Source of outcome findings → 既知の outcome キー。
  * 末尾の各規則は、そのレベルの項目を含むバッチだけに追加する。
  * fields は fieldIndex 順に並べ、entity_key 規約は当該バッチに現れる entity_level のぶんだけ提示する
  */
@@ -376,6 +381,15 @@ function buildSuffixSections(input: ExtractDataPromptInput): string[] {
   }
   if (presentLevels.has('outcome_result')) {
     sections.push(EXTRACT_DATA_OUTCOME_SOURCE_RULE);
+    if (input.knownOutcomeEntityKeys !== undefined && input.knownOutcomeEntityKeys.length > 0) {
+      sections.push(
+        '## Outcome entities already identified\n\n' +
+        'The following entity_key strings have already been used when extracting other field groups from this article. ' +
+        'When a value belongs to the same result (the same outcome, arm and timepoint) as one of these entities, reuse that entity_key exactly, character for character. ' +
+        'Create a new entity_key under the existing rules only for a result, arm or timepoint that does not match any of these entities.\n\n' +
+        input.knownOutcomeEntityKeys.join('\n'),
+      );
+    }
   }
 
   return sections;

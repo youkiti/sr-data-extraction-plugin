@@ -110,6 +110,42 @@ function makeImageDoc(
 
 const DOCS = [makeDoc()];
 
+describe('先行バッチの outcome_result キー', () => {
+  const keys = ['outcome:mortality|arm:2|time:30d', 'outcome:mortality|arm:1|time:30d'];
+  const heading = '## Outcome entities already identified';
+
+  test('既存の出所規則の後に初出順の一覧と再利用規約を追加する', () => {
+    const input = { fields: [OUTCOME_FIELD], documents: DOCS };
+    const before = buildExtractDataUserPrompt(input);
+    const after = buildExtractDataUserPrompt({ ...input, knownOutcomeEntityKeys: keys });
+    expect(after.startsWith(`${before}\n\n${heading}`)).toBe(true);
+    expect(after).toContain('reuse that entity_key exactly, character for character');
+    expect(after).toContain('Create a new entity_key under the existing rules only');
+    expect(after.endsWith(keys.join('\n'))).toBe(true);
+    expect(before.endsWith(EXTRACT_DATA_OUTCOME_SOURCE_RULE)).toBe(true);
+    expect(buildExtractDataUserPrompt({ ...input, knownOutcomeEntityKeys: [] })).toBe(before);
+    expect(before).not.toContain(heading);
+  });
+
+  test('outcome_result 項目が無いバッチの文字列を変えない', () => {
+    const input = { fields: [STUDY_FIELD, ARM_FIELD, ROB_FIELD], documents: DOCS };
+    const before = buildExtractDataUserPrompt(input);
+    expect(buildExtractDataUserPrompt({ ...input, knownOutcomeEntityKeys: keys })).toBe(before);
+    expect(before).not.toContain(heading);
+  });
+
+  test('画像経路でも prefix を保ち、末尾の suffix テキストだけに追加する', () => {
+    const input = { fields: [OUTCOME_FIELD], documents: [makeImageDoc()] };
+    const before = buildExtractDataUserContent(input) as ChatContentPart[];
+    const after = buildExtractDataUserContent({ ...input, knownOutcomeEntityKeys: keys }) as ChatContentPart[];
+    expect(after.slice(0, -1)).toEqual(before.slice(0, -1));
+    const suffix = after[after.length - 1] as { type: 'text'; text: string };
+    expect(suffix.type).toBe('text');
+    expect(suffix.text).toContain(`${EXTRACT_DATA_OUTCOME_SOURCE_RULE}\n\n${heading}`);
+    expect(suffix.text.endsWith(keys.join('\n'))).toBe(true);
+  });
+});
+
 describe('本文とページ画像の併用', () => {
   const doc: ExtractDataDocument = {
     role: 'article', filename: 'flow.pdf', mode: 'text_with_images', pages: PAGES, imagePages: IMAGE_PAGES,
@@ -144,8 +180,8 @@ describe('本文とページ画像の併用', () => {
 describe('extract-data skill 定数', () => {
   it('skill 名とプロンプト版数を公開する（LLMApiLog 記録用）', () => {
     expect(EXTRACT_DATA_SKILL_NAME).toBe('extract-data');
-    // v14: 本文と全ページ画像の併用時の引用規約を追加
-    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(14);
+    // v15: 先行バッチの outcome_result キーを再利用する規約を追加
+    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(15);
   });
 
   it('システムプロンプトに verbatim quote の規約（300 文字上限）と document_index の規約を含む', () => {

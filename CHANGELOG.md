@@ -13,7 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
-（まだありません / Nothing yet）
+### AI の結果に影響する変更 / Changes that affect AI output
+
+- outcome_result の項目が複数の節にまたがるスキーマで、同じ結果が節ごとに別の行に分かれ、確認画面で多くの欄が空に見えていた不具合を修正しました。2 回目以降の呼び出しに、同じ論文ですでに使われた行の名前を渡し、同じ結果では使い回すよう指示します。extract-data プロンプトは版数 15 になりました（2026-11-10）。  
+  Fixed results being split into separate rows across sections in schemas with outcome_result fields in multiple sections, leaving many cells appearing empty in verification. Later calls receive the row names already used for the same article and are instructed to reuse them for the same result. The extract-data prompt is now version 15 (2026-11-10).
 
 ## v0.31.0（2026-11-10）
 
