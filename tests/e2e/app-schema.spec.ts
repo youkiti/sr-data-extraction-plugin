@@ -7,6 +7,19 @@ import AxeBuilder from '@axe-core/playwright';
 import { SHEET_HEADERS } from '../../src/domain/sheetsSchema';
 import { serializeSchemaExport } from '../../src/features/schema/schemaTransfer';
 
+// #/schema への入場で読み込まれるプロトコル（values/Protocol）は、個別の stub を持たない
+// テストでは本物の sheets.googleapis.com へ出て、偽のトークンに 401 が返っていた。応答の
+// 時刻が実行環境ごとに違い、画面の作り直しの時刻が揺れる元になるため、同じ 401 をここで返す。
+// 各テストの page.route は後から登録されるので、こちらより優先される
+test.beforeEach(async ({ page }) => {
+  await page.route(/^https:\/\/[a-z.]*googleapis\.com\//, async (route) => {
+    await route.fulfill({
+      status: 401,
+      json: { error: { code: 401, message: 'E2E: 未 stub の Google API 呼び出し', status: 'UNAUTHENTICATED' } },
+    });
+  });
+});
+
 const SCHEMA_VERSIONS_HEADERS = [
   'schema_version', 'parent_version', 'protocol_version', 'created_by_type',
   'created_at', 'created_by', 'note',
