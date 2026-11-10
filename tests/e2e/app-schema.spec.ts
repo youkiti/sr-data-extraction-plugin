@@ -7,6 +7,19 @@ import AxeBuilder from '@axe-core/playwright';
 import { SHEET_HEADERS } from '../../src/domain/sheetsSchema';
 import { serializeSchemaExport } from '../../src/features/schema/schemaTransfer';
 
+// #/schema への入場で読み込まれるプロトコル（values/Protocol）は、個別の stub を持たない
+// テストでは本物の sheets.googleapis.com へ出て、偽のトークンに 401 が返っていた。応答の
+// 時刻が実行環境ごとに違い、画面の作り直しの時刻が揺れる元になるため、同じ 401 をここで返す。
+// 各テストの page.route は後から登録されるので、こちらより優先される
+test.beforeEach(async ({ page }) => {
+  await page.route(/^https:\/\/[a-z.]*googleapis\.com\//, async (route) => {
+    await route.fulfill({
+      status: 401,
+      json: { error: { code: 401, message: 'E2E: 未 stub の Google API 呼び出し', status: 'UNAUTHENTICATED' } },
+    });
+  });
+});
+
 const SCHEMA_VERSIONS_HEADERS = [
   'schema_version', 'parent_version', 'protocol_version', 'created_by_type',
   'created_at', 'created_by', 'note',
@@ -85,13 +98,11 @@ test('編集表の中でスクロールでき、抽出指示は行高と列幅�
   });
   const wrap = page.locator('.schema__table-wrap--editor');
   await expect.poll(() => wrap.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
-  // 画面の作り直しの途中に外れた古い行を測ると 0 になるため、測る箇所は値が落ち着くまで待つ
+  // 基準の値は、外れた古い要素を測らないよう同じタスク内で引き直して測る（measureEditorLayout の注記）
   const row = page.locator('#schema-editor-table tbody tr').first();
   const instruction = row.locator('.schema__cell-instruction');
-  const rowHeight = await row.evaluate((element) => element.getBoundingClientRect().height);
   const table = page.locator('#schema-editor-table');
-  const tableWidth = await table.evaluate((element) => element.getBoundingClientRect().width);
-  const usualHeight = await instruction.evaluate((element) => element.getBoundingClientRect().height);
+  const { rowHeight, tableWidth, instructionHeight: usualHeight } = await waitForEditorLayout(page);
   await instruction.focus();
   await expect.poll(() => instruction.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThanOrEqual(500);
   await expect.poll(() => row.evaluate((element) => element.getBoundingClientRect().height)).toBe(rowHeight);
@@ -107,12 +118,15 @@ test('編集表の中でスクロールでき、抽出指示は行高と列幅�
   await page.keyboard.press('Tab');
   await expect.poll(() => instruction.evaluate((element) => element.getBoundingClientRect().width)).toBeLessThan(300);
   await expect.poll(() => instruction.evaluate((element) => element.getBoundingClientRect().height)).toBe(usualHeight);
-  await wrap.evaluate((element) => {
-    element.scrollTop = 300;
-  });
-  const wrapTop = await wrap.evaluate((element) => element.getBoundingClientRect().top);
-  const headerTop = await table.locator('thead th').first().evaluate((element) => element.getBoundingClientRect().top);
-  expect(Math.abs(headerTop - wrapTop)).toBeLessThan(2);
+  // スクロールと見出しの位置の測定は、同じ包みに対して同じタスク内で行う
+  await expect.poll(() => page.evaluate(() => {
+    const wrapElement = document.querySelector('.schema__table-wrap--editor');
+    const header = wrapElement?.querySelector('#schema-editor-table thead th');
+    if (!wrapElement || !header) return null;
+    wrapElement.scrollTop = 300;
+    if (wrapElement.scrollTop !== 300) return null;
+    return Math.abs(header.getBoundingClientRect().top - wrapElement.getBoundingClientRect().top);
+  })).toBeLessThan(2);
 });
 
 test('編集表のセルを変更して離れてもスクロール位置を保つ', async ({ page }) => {
@@ -121,13 +135,19 @@ test('編集表のセルを変更して離れてもスクロール位置を保�
     editorRows: Array.from({ length: 50 }, (_, index) => makeEditorRow({ fieldName: `field_${index}` })),
   });
   const wrap = page.locator('.schema__table-wrap--editor');
-  await wrap.evaluate((element) => {
+  // 外れた古い包みへ書いても画面に効かないため、表示中の包みを引き直して書き、効いたことを確かめる
+  await expect.poll(() => page.evaluate(() => {
+    const element = document.querySelector('.schema__table-wrap--editor');
+    if (!element) return 0;
     element.scrollTop = 1500;
-  });
+    return element.scrollTop;
+  })).toBe(1500);
   // fill() は対象の欄が見えるまでスクロールするため、比べる基準は書き込んだ直後の位置にする
   const instruction = page.locator('#schema-editor-table tbody tr').nth(20).locator('.schema__cell-instruction');
   await instruction.fill('変更した指示');
-  const beforeLeave = await wrap.evaluate((element) => element.scrollTop);
+  const beforeLeave = await page.evaluate(
+    () => document.querySelector('.schema__table-wrap--editor')?.scrollTop ?? 0,
+  );
   expect(beforeLeave).toBeGreaterThan(500);
   await page.keyboard.press('Tab');
   await expect(page.locator('#schema-editor-table tbody tr').nth(20).locator('.schema__cell-instruction'))
@@ -136,6 +156,43 @@ test('編集表のセルを変更して離れてもスクロール位置を保�
   await expect.poll(() => wrap.evaluate((element, before) => Math.abs(element.scrollTop - before), beforeLeave))
     .toBeLessThan(200);
 });
+
+interface EditorLayout {
+  rowHeight: number;
+  tableWidth: number;
+  instructionHeight: number;
+}
+
+/**
+ * 編集表の 1 行目の行高・表の幅・抽出指示の欄の高さを測る。
+ * 起動直後の画面は、ストアの更新（担当セット・進捗の件数・プロトコルの読み込みの応答など）の
+ * たびに route 全体が作り直される。locator.evaluate は要素の解決と評価が別の往復なので、
+ * その間に作り直しが入ると外れた古い要素を測り、大きさが 0 になる（CI で行高・欄の高さが 0 と
+ * 記録された）。document から引き直して同じタスク内で測り、まだ描けていなければ null を返す
+ */
+function measureEditorLayout(page: Page): Promise<EditorLayout | null> {
+  return page.evaluate(() => {
+    const table = document.querySelector('#schema-editor-table');
+    const row = table?.querySelector('tbody tr');
+    const instruction = row?.querySelector('.schema__cell-instruction');
+    if (!table || !row || !instruction) return null;
+    const layout = {
+      rowHeight: row.getBoundingClientRect().height,
+      tableWidth: table.getBoundingClientRect().width,
+      instructionHeight: instruction.getBoundingClientRect().height,
+    };
+    return layout.rowHeight > 0 && layout.tableWidth > 0 && layout.instructionHeight > 0 ? layout : null;
+  });
+}
+
+async function waitForEditorLayout(page: Page): Promise<EditorLayout> {
+  let layout: EditorLayout | null = null;
+  await expect.poll(async () => {
+    layout = await measureEditorLayout(page);
+    return layout !== null;
+  }).toBe(true);
+  return layout as unknown as EditorLayout;
+}
 
 async function initApp(
   page: Page,
