@@ -13,6 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
+（まだありません / Nothing yet）
+
+## v0.32.0（2026-11-11）
+
 ### AI の結果に影響する変更 / Changes that affect AI output
 
 - outcome_result の項目が複数の節にまたがるスキーマで、同じ結果が節ごとに別の行に分かれ、確認画面で多くの欄が空に見えていた不具合を修正しました。2 回目以降の呼び出しに、同じ論文ですでに使われた行の名前を渡し、同じ結果では使い回すよう指示します。extract-data プロンプトは版数 15 になりました（2026-11-10・PR #473）。  
