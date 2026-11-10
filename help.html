@@ -3,7 +3,7 @@
      正典はこのファイル（master の hosted/）。デプロイ手順は hosted/README.md を参照。
      内容はワークフローレベルに留める（画面細部はアプリ内のリード文が担う。issue #214 §3）。
      文言は ja / en を両方持ち、表示は lang.js + CSS が片方だけに絞る（併記しない）。
-     version: 2026-11-09 -->
+     version: 2026-11-10 -->
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
@@ -53,8 +53,8 @@
           <span class="en" lang="en">User guide</span>
         </h1>
         <p class="last-updated">
-          <span class="ja" lang="ja">最終更新: 2026-11-09 / 対象バージョン: v0.30.0</span>
-          <span class="en" lang="en">Last updated: 2026-11-09 / Covers v0.30.0</span>
+          <span class="ja" lang="ja">最終更新: 2026-11-10 / 対象バージョン: v0.31.0</span>
+          <span class="en" lang="en">Last updated: 2026-11-10 / Covers v0.31.0</span>
         </p>
 
         <nav class="toc" aria-label="目次" data-en-aria-label="Table of contents">
@@ -574,6 +574,40 @@
               >
             </p>
           </div>
+          <figure class="shot shot--screen">
+            <div class="ja" lang="ja">
+              <a href="screenshots/data-flow-ja.png" target="_blank" rel="noopener noreferrer">
+                <img
+                  src="screenshots/data-flow-ja.png"
+                  alt="データの流れの図。あなたのブラウザ（Chrome 拡張）を中心に、あなたの Google アカウント（Google Drive に論文 PDF・本文テキスト・AI とのやりとりの記録、Google Sheets に抽出表の設計・抽出結果・判定履歴）とはいつも読み書きし、共同研究者にはあなたが Drive で共有した相手だけが見られる。あなたが選んだ AI（Gemini・Anthropic・OpenRouter・Azure OpenAI・OpenAI 互換・ローカル LLM）へは AI 機能を使うときだけ論文本文・プロトコル・質問を送る。開発者のサーバーは無く、ファイルを選ぶときだけ GitHub Pages の静的ページと Google Picker を使う"
+                  data-en-alt="Data flow diagram (Japanese version)"
+                  width="1280"
+                  height="760"
+                  loading="lazy"
+                />
+              </a>
+            </div>
+            <div class="en" lang="en">
+              <a href="screenshots/data-flow-en.png" target="_blank" rel="noopener noreferrer">
+                <img
+                  src="screenshots/data-flow-en.png"
+                  alt="データの流れの図（英語版）"
+                  data-en-alt="Data flow diagram. Your browser (the Chrome extension) always reads and writes your Google account (Google Drive holds paper PDFs, extracted text and the AI request log; Google Sheets holds the extraction form, results and decisions), and only collaborators you invite through Drive sharing can see it. Paper text, protocol and questions go to the AI you chose (Gemini, Anthropic, OpenRouter, Azure OpenAI, OpenAI-compatible or local LLM) only when you use AI features. There is no developer server; a static GitHub Pages page and Google Picker are used only when picking files"
+                  width="1280"
+                  height="760"
+                  loading="lazy"
+                />
+              </a>
+            </div>
+            <figcaption>
+              <span class="ja" lang="ja"
+                >データの流れ。開発者のサーバーは無く、AI へ送るのは AI 機能を使うときだけです。クリックで原寸を開きます。</span
+              >
+              <span class="en" lang="en"
+                >Where your data goes. There is no developer server, and content goes to the AI only when you use AI features. Click to open at full size.</span
+              >
+            </figcaption>
+          </figure>
           <h3 id="setup-ai-data-consent">
             <span class="ja" lang="ja">AI へ送る内容の確認（初回だけ）</span>
             <span class="en" lang="en">What is sent to the AI (shown once)</span>
@@ -1146,15 +1180,19 @@
             </li>
             <li>
               <span class="ja" lang="ja"
-                >確定した版は、確定済みの画面の「スキーマのファイル（JSON）」で JSON ファイルに書き出せます。RoB などの事前設定も含まれ、論文のデータや判定は含まれません。別のプロジェクトでは、同じカード（スキーマがまだ無いときはドラフト前の画面）でそのファイルを読み込みます。スキーマが既にあるプロジェクトでは、最新版との差分（ファイルにだけある項目・設定が違う項目・最新版にだけある項目）を確認してから反映します。最新版にだけある項目は、既定では残ります。同じ名前の項目は、今のプロジェクトの項目として引き継がれます。</span
+                >確定した版は、確定済みの画面の「スキーマのファイル（JSON / CSV）」で JSON か CSV のファイルに書き出せます。RoB などの事前設定も含まれ、論文のデータや判定は含まれません。CSV は Excel などで開くと 1 行が 1 項目になり、行を並べ替えると項目の順も変わります。ガイドラインの作業などで、項目を 1 枚のシートにまとめて管理するときに使えます。保存するときは CSV 形式のまま保存してください（UTF-8 でも、Excel の「CSV（コンマ区切り）」でも読めます）。1 行目の列名は変えないでください。自分用のメモの列は足しても構いません（読み込むときは無視されます）。別のプロジェクトでは、同じカード（スキーマがまだ無いときはドラフト前の画面）でそのファイルを読み込みます。スキーマが既にあるプロジェクトでは、最新版との差分（ファイルにだけある項目・設定が違う項目・最新版にだけある項目）を確認してから反映します。項目はファイルの行の順に並びます。最新版にだけある項目は、既定では残ります。同じ名前の項目は、今のプロジェクトの項目として引き継がれます。</span
               >
               <span class="en" lang="en"
-                >You can export a confirmed version as a JSON file under “Schema file (JSON)” on the confirmed screen. It
-                includes pre-specification settings such as RoB, but not study data or decisions. In another project,
+                >You can export a confirmed version as a JSON or CSV file under “Schema file (JSON / CSV)” on the confirmed
+                screen. It includes pre-specification settings such as RoB, but not study data or decisions. In a
+                spreadsheet such as Excel, the CSV has one field per row, and reordering the rows reorders the fields. This
+                helps when you manage fields in a single sheet, for example for clinical practice guidelines. Save it as CSV
+                (UTF-8 or Excel's “CSV (Comma delimited)” both work). Do not rename the columns in the first row; you may add
+                your own note columns, which are ignored on import. In another project,
                 import the file from the same card (or from the screen before drafting if there is no schema yet). If the
                 project already has a schema, you review the differences from the latest version (fields only in the file,
-                fields with different settings, and fields only in the latest version) before applying them. Fields only in
-                the latest version are kept by default. Fields with the same name are carried over as the project's existing
+                fields with different settings, and fields only in the latest version) before applying them. Fields follow
+                the row order of the file. Fields only in the latest version are kept by default. Fields with the same name are carried over as the project's existing
                 fields.</span
               >
             </li>
