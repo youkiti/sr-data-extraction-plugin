@@ -13,6 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
+（まだありません / Nothing yet）
+
+## v0.31.0（2026-11-10）
+
 ### その他の変更 / Other changes
 
 - 表のデザイン（S5）のスキーマのファイルで、CSV の書き出しと読み込みができるようになりました。Excel などで 1 行 1 項目として編集・並び替えて、別のプロジェクトで使い回せます。読み込んだ項目は、JSON・CSV ともファイルの行の順に並びます（2026-11-09・PR #471）。
