@@ -8,7 +8,7 @@
 | リポジトリの版 | v0.31.0 | `package.json` の `version` |
 | ストアの公開版 | v0.30.0（掲載ページの更新日 2026-11-09。2026-11-10 に確認） | `docs/store/store-status.json`（手で更新する） |
 | 工場出荷の既定モデル | `gemini-3.8-flash` | `src/lib/storage/settingsStore.ts` の `FACTORY_DEFAULT_MODEL` |
-| extract-data プロンプトの版数 | 14 | `src/features/extraction/skills/extractData.ts` の `EXTRACT_DATA_PROMPT_VERSION` |
+| extract-data プロンプトの版数 | 15 | `src/features/extraction/skills/extractData.ts` の `EXTRACT_DATA_PROMPT_VERSION` |
 | 要件定義書の版 | v0.45 | `docs/requirements.md` の見出し |
 
 リポジトリの版がストアの公開版より新しいとき、その差は「zip 作成済み・ストア未反映」を意味する。

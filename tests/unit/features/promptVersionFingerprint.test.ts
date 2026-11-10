@@ -156,6 +156,9 @@ function extractDataFingerprint(): string {
     schemaBox: extractDataResponseSchema(true),
     userText: buildExtractDataUserPrompt(textInput),
     userImage: buildExtractDataUserContent(imageInput),
+    userKnownOutcomes: buildExtractDataUserPrompt({
+      ...textInput, knownOutcomeEntityKeys: ['outcome:mortality|arm:1|time:30d'],
+    }),
   });
 }
 
@@ -250,8 +253,8 @@ const EXPECTED = {
     actual: () => ({ version: HELP_CONSULT_PROMPT_VERSION, hash: helpConsultFingerprint() }),
   },
   'extract-data（EXTRACT_DATA_PROMPT_VERSION）': {
-    version: 14,
-    hash: 'f328ff536d4d18bf1fce39ae10724c70',
+    version: 15,
+    hash: 'eb9293a6d4f9baacd560f35d930b0d59',
     actual: () => ({ version: EXTRACT_DATA_PROMPT_VERSION, hash: extractDataFingerprint() }),
   },
   'draft-schema（DRAFT_SCHEMA_PROMPT_VERSION）': {

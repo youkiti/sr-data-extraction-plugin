@@ -11,6 +11,7 @@ import {
   DEFAULT_MAX_ROWS_PER_FLUSH,
   EXTRACT_DATA_TEMPERATURE,
   MAX_FAILURE_DETAIL_BODY_CHARS,
+  MAX_KNOWN_OUTCOME_ENTITY_KEYS,
   executeRun,
   groupBatchesByStudy,
   type ExecuteRunDeps,
@@ -377,6 +378,80 @@ const NOT_REPORTED_ITEM = {
   document_index: null,
   confidence: null,
 };
+
+describe('study 内での outcome_result キーの再利用', () => {
+  const outcome = makeField({ fieldId: 'f_outcome', fieldName: 'result', entityLevel: 'outcome_result' });
+  const rob = makeField({ fieldId: 'f_rob', fieldName: 'risk', entityLevel: 'rob_domain' });
+  const fields = [...FIELDS, outcome, rob];
+  const key = 'outcome:response|arm:1|time:week_4';
+  const heading = '## Outcome entities already identified';
+  const item = (entityKey: string) => ({ ...DESIGN_ITEM, field_id: outcome.fieldId, entity_key: entityKey });
+  const batch = (studyId: string, fieldIds = fields.map((field) => field.fieldId)) => makeBatch({ studyId, fieldIds });
+  const prompt = (call: ProviderCall) => call.messages[1]!.content as string;
+
+  test('並列 study ごとに分離し、検証済み outcome のみを初出順・重複なしで後続へ渡す', async () => {
+    const secondKey = 'outcome:response|arm:2';
+    const { provider, calls } = providerOf([
+      chatResponse([item(key), item(key), item(secondKey), DESIGN_ITEM, ARM_ITEM,
+        { ...DESIGN_ITEM, field_id: rob.fieldId, entity_key: 'rob:domain_1' },
+        { ...item('outcome:rejected'), field_id: 'unknown' }]),
+      chatResponse([item('outcome:other_study')]),
+      chatResponse([]), chatResponse([]), chatResponse([]),
+    ]);
+    await execute({ runId: 'r', fields, plan: makePlan([
+      batch('a'), batch('a', [STUDY_FIELD.fieldId]), batch('a'), batch('b'), batch('b'),
+    ]) }, { provider, maxConcurrency: 2, loadDocumentPages: async () => PAGES, appendEvidence: async () => {} });
+    const a = calls.filter((call) => call.options?.logContext?.studyId === 'a');
+    const b = calls.filter((call) => call.options?.logContext?.studyId === 'b');
+    expect(prompt(a[0]!)).not.toContain(heading);
+    expect(prompt(b[0]!)).not.toContain(heading);
+    expect(prompt(a[1]!)).not.toContain(heading);
+    const listA = prompt(a[2]!).split(`${heading}\n\n`)[1]!;
+    expect(listA.endsWith(`${key}\n${secondKey}`)).toBe(true);
+    expect(listA.split(key)).toHaveLength(2);
+    expect(listA).not.toContain('outcome:other_study');
+    expect(listA).not.toContain('outcome:rejected');
+    expect(listA).not.toContain('rob:domain_1');
+    expect(listA).not.toContain('\narm:1');
+    expect(listA).not.toContain('\n-');
+    expect(prompt(b[1]!)).toContain('outcome:other_study');
+    expect(prompt(b[1]!)).not.toContain(key);
+  });
+
+  test.each(['load_failed', 'api_error', 'format_error'] as const)('%s のバッチからキーを追加しない', async (reason) => {
+    const failed = batch('a');
+    if (reason === 'load_failed') {
+      failed.documentIds = ['bad'];
+    }
+    const { provider, calls } = providerOf(reason === 'load_failed'
+      ? [chatResponse([])]
+      : [reason === 'api_error' ? new Error(key) : { ...chatResponse([]), text: key }, chatResponse([])]);
+    const result = await execute({ runId: 'r', fields, plan: makePlan([failed, batch('a')]) }, {
+      provider,
+      loadDocumentPages: async (id) => id === 'bad' ? [] : PAGES,
+      appendEvidence: async () => {},
+    });
+    expect(result.batchFailures[0]?.reason).toBe(reason);
+    expect(prompt(calls[calls.length - 1]!)).not.toContain(heading);
+    expect(prompt(calls[calls.length - 1]!)).not.toContain(key);
+  });
+
+  test('上限の先頭100件だけを後続バッチへ渡し、新しいキーでも増やさない', async () => {
+    const keys = Array.from({ length: MAX_KNOWN_OUTCOME_ENTITY_KEYS + 1 }, (_, i) => `outcome:result_${i}`);
+    const { provider, calls } = providerOf([
+      chatResponse(keys.map(item)), chatResponse([item('outcome:later')]), chatResponse([]),
+    ]);
+    await execute({ runId: 'r', fields, plan: makePlan([batch('a'), batch('a'), batch('a')]) }, {
+      provider, loadDocumentPages: async () => PAGES, appendEvidence: async () => {},
+    });
+    for (const call of calls.slice(1)) {
+      const list = prompt(call).split(`${heading}\n\n`)[1]!;
+      expect(list.endsWith(keys.slice(0, MAX_KNOWN_OUTCOME_ENTITY_KEYS).join('\n'))).toBe(true);
+      expect(list).not.toContain(keys[MAX_KNOWN_OUTCOME_ENTITY_KEYS]);
+      expect(list).not.toContain('outcome:later');
+    }
+  });
+});
 
 describe('離れた引用断片の保存', () => {
   const heading = 'Sleep efficiency (%)';

@@ -52,6 +52,9 @@ import type {
 /** 抽出は再現性優先で温度 0 に固定する */
 export const EXTRACT_DATA_TEMPERATURE = 0;
 
+/** 後続バッチのプロンプトと保持メモリが膨らみ続けないよう、初出順の先頭 100 件に限る。 */
+export const MAX_KNOWN_OUTCOME_ENTITY_KEYS = 100;
+
 export type BatchFailureReason =
   | 'load_failed' // 本文（extracted_texts）の取得失敗・空
   | 'api_error' // LLM 呼び出しの失敗（withRetry 消化後）
@@ -670,7 +673,7 @@ export async function executeRun(
   // 1 バッチ（= 1 study）の処理。共有アキュムレータ（evidence / tokens など）を書き込むが、
   // JS は単一スレッドなので各 await 間の同期ブロックは競合しない。加算・push は可換で、
   // 並行実行の設定・モデルは、応答が返った順に記録する。
-  const processBatch = async (batch: PlannedBatch): Promise<void> => {
+  const processBatch = async (batch: PlannedBatch, knownOutcomeEntityKeys: Set<string>): Promise<void> => {
     // study の全文書を document_index 順にロードする。ロードできた文書だけを連結対象にし、
     // その順序が document_index（1 始まり）になる。1 件もロードできなければバッチ失敗
     const resolved: ResolvedDocument[] = [];
@@ -702,6 +705,9 @@ export async function executeRun(
     }
 
     const batchFields = batch.fieldIds.map((fieldId) => fieldById.get(fieldId) as SchemaField);
+    const outcomeFieldIds = new Set(
+      batchFields.filter((field) => field.entityLevel === 'outcome_result').map((field) => field.fieldId),
+    );
     const promptDocuments: ExtractDataDocument[] = resolved.map((doc) =>
       doc.mode === 'image'
         ? { role: doc.role, filename: doc.filename, mode: 'image', imagePages: doc.imagePages }
@@ -723,6 +729,7 @@ export async function executeRun(
           documents: promptDocuments,
           protocolContext: input.protocolContext,
           requestBox,
+          knownOutcomeEntityKeys: outcomeFieldIds.size > 0 ? [...knownOutcomeEntityKeys] : undefined,
         }),
       },
     ];
@@ -762,6 +769,14 @@ export async function executeRun(
     } catch (err) {
       reportProgress(batch, await failBatch(batch, 'format_error', toDetail(err)));
       return;
+    }
+    for (const item of validated.items) {
+      if (knownOutcomeEntityKeys.size >= MAX_KNOWN_OUTCOME_ENTITY_KEYS) {
+        break;
+      }
+      if (outcomeFieldIds.has(item.fieldId)) {
+        knownOutcomeEntityKeys.add(item.entityKey);
+      }
     }
     for (const item of validated.rejected) {
       rejectedItems.push({ ...item, studyId: batch.studyId, section: batch.section });
@@ -839,8 +854,9 @@ export async function executeRun(
     groupBatchesByStudy(input.plan.batches),
     concurrency,
     async (batchesOfStudy) => {
+      const knownOutcomeEntityKeys = new Set<string>();
       for (const batch of batchesOfStudy) {
-        await processBatch(batch);
+        await processBatch(batch, knownOutcomeEntityKeys);
       }
     },
   );
