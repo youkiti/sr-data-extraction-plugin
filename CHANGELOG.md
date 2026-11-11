@@ -13,7 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
-（まだありません / Nothing yet）
+### その他の変更 / Other changes
+
+- 診断精度（DTA）の表のデザインで、治療群ごとの名前・人数の項目に警告を表示し、推定に寄与する治療群・人数のラベルと抽出指示へ書き換えられるようにしました。確定済みの版では新しい版を作る案内を表示します（2026-11-11）。
+  Schema design now warns about treatment arm name and sample size fields in diagnostic accuracy (DTA) schemas and lets users rewrite their labels and extraction instructions to describe the groups and participants contributing to each estimate. Confirmed versions show guidance to create a new version (2026-11-11).
 
 ## v0.32.0（2026-11-11）
 

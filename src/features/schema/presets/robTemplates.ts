@@ -1163,7 +1163,7 @@ export const QUADAS3_SQ_FIELD_NAMES: Readonly<Record<string, readonly string[]>>
   return map;
 })();
 
-const QUADAS3_SECTION = 'risk_of_bias_quadas3';
+export const QUADAS3_SECTION = 'risk_of_bias_quadas3';
 
 function quadas3SqExtractionInstruction(def: Quadas3SqDef): string {
   const conditionNote =
