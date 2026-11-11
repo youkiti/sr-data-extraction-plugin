@@ -1270,8 +1270,9 @@ const QUADAS3_APPLICABILITY_SUPPORT_ROW: SchemaEditorRow = presetRow({
 // プレビューは S8 側 = issue #109 PR5。`quadas3_flow_diagram` は予約 field_name 規約）、
 // Phase 4 = outcome_result レベル 7 項目（Table 5 の記述行と 1:1。1 outcome_result
 // インスタンス = 1 つの 2×2 表 = 1 estimate の対応を流用する。requirements.md §3.3）。
-// section は既存の risk_of_bias_quadas3 に載せ（planRun のセクション分割で RoB 評価と同一
-// バッチになる）、全て text・required=false = 不要なレビューは S5 エディタで行削除できる。
+// section は既存の risk_of_bias_quadas3 に載せる。planRun のセクション分割では study 項目は
+// RoB 評価と同一バッチに残り、estimate 項目は outcome_result のバッチに集められる。
+// 全て text・required=false = 不要なレビューは S5 エディタで行削除できる。
 // 文言は原典（`c:\tmp\rob-prespec\extracted\quadas3.txt` の Phase 3 本文・Table 5 行見出し・
 // Domain 4 記述欄）から転記した。
 

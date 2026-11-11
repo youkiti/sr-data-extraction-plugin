@@ -63,8 +63,9 @@ export const EXTRACT_DATA_SKILL_NAME = 'extract-data';
  * v15（2026-11-10）: 同じ study の先行バッチで使った outcome_result の entity_key を
  *   suffix 末尾に渡し、同じアウトカム・群・時点では文字列をそのまま再利用させる。
  *   outcome_result の項目を含まないバッチと、study の最初のバッチのプロンプトは変わらない。
+ * v16（2026-11-11）: 抄録をその研究自身の結果に含め、設計の項目は方法・抄録から抽出すると明示。
  */
-export const EXTRACT_DATA_PROMPT_VERSION = 15;
+export const EXTRACT_DATA_PROMPT_VERSION = 16;
 
 /** text_only モードで LLM へ渡すページ別本文（extracted_texts/{id}.txt 由来） */
 export interface ExtractDataPage {
@@ -243,7 +244,7 @@ Before returning, verify your JSON array is COMPLETE for arm-level fields: for E
 export const EXTRACT_DATA_OUTCOME_SOURCE_RULE = `
 ## Source of outcome findings (outcome_result-level fields)
 
-For outcome_result-level fields, extract only findings supported by this study's own results: what this study measured, observed or reported about its own participants or data. Do NOT extract statements from the Introduction or Background, findings attributed to previous studies or cited literature, or interpretations and speculations that this study's own results do not support, even when they name the same outcome or use the same terms. If an outcome appears only in such statements, do not create an outcome_result entity for it; if a listed outcome_result field has no support in this study's own results, return it with "not_reported": true.
+For outcome_result-level fields, extract only findings supported by this study's own results: what this study measured, observed or reported about its own participants or data. Do NOT extract statements from the Introduction or Background, findings attributed to previous studies or cited literature, or interpretations and speculations that this study's own results do not support, even when they name the same outcome or use the same terms. If an outcome appears only in such statements, do not create an outcome_result entity for it; if a listed outcome_result field has no support in this study's own results, return it with "not_reported": true. The Abstract and any results summary of this study count as this study's own results. Fields that describe how an outcome or test was defined or measured (for example the index test, reference standard, measurement scale, timing, threshold or target condition) are not findings: extract them from this study's Methods or Abstract even when no Results section is present.
 `.trim();
 
 /** 1 項目ぶんの定義ブロック。null / 空の補助情報は行ごと省略する */

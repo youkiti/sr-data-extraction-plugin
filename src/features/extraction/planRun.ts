@@ -2,6 +2,8 @@
 // - requirements.md §4.3（v0.10）: 1 API 呼び出し = 1 study ×（スキーマ全項目 or section 単位分割。
 //   どちらの粒度にするかをトークン概算で判断するのが本モジュールの責務）。study の全文書を
 //   ロール付き区切りで連結して 1 回で抽出するため、分割閾値は study の全文書合計トークンで評価する
+//   section 分割でも outcome_result 項目は最初の対象項目の section に集め、呼び出し間の
+//   entity_key の違いで同じ結果が複数行に分かれることを防ぐ
 // - 概算値は実行前の確認 UI（S7 のコスト概算表示）と ExtractionRuns.cost_estimate の素材。
 //   実測 tokens_in / tokens_out は実行後に executeRun が LLMApiLog / ExtractionRuns へ記録する
 // - text_status = no_text_layer の文書は除外せず、ページ画像を LLM へ添付する pdf_native 入力として
@@ -302,23 +304,25 @@ function withinBudget(estimate: BatchEstimate, budget: RunTokenBudget): boolean 
   );
 }
 
-/** fieldIndex 順を保ったまま section ごとにグループ化する（出現順） */
+/**
+ * fieldIndex 順の項目を section の初出順でグループ化する。
+ * outcome_result は全て最初の対象項目の section に集め、各バッチ内も fieldIndex 順を保つ。
+ * 移動で空になった section は除く。
+ */
 function groupBySection(fields: readonly SchemaField[]): Map<string, SchemaField[]> {
-  const groups = new Map<string, SchemaField[]>();
+  const groups = new Map<string, SchemaField[]>(fields.map((field) => [field.section, []]));
+  const outcomeSection = fields.find((field) => field.entityLevel === 'outcome_result')?.section;
   for (const field of fields) {
-    const group = groups.get(field.section);
-    if (group === undefined) {
-      groups.set(field.section, [field]);
-    } else {
-      group.push(field);
-    }
+    const section = field.entityLevel === 'outcome_result' ? outcomeSection! : field.section;
+    groups.get(section)!.push(field);
   }
-  return groups;
+  return new Map([...groups].filter(([, group]) => group.length > 0));
 }
 
 /**
  * 一括抽出の実行計画を立てる。
  * 文献ごとに「スキーマ全項目 1 バッチ」を試算し、予算超過なら section 単位分割へフォールバック。
+ * outcome_result 項目は最初の対象項目の section の 1 バッチに集め、予算超過でも再分割しない。
  * section 分割は本文を各バッチへ重複投入するため、入力トークン合計は分割で増える点に注意
  */
 export function planRun(input: PlanRunInput): RunPlan {

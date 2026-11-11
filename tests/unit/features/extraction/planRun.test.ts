@@ -282,6 +282,62 @@ describe('planRun のバッチ分割', () => {
   });
 });
 
+describe('planRun の outcome_result 集約', () => {
+  const fields = [
+    makeField({ fieldId: 'estimate', fieldName: 'estimate', fieldIndex: 6, section: 'risk_of_bias_quadas3', entityLevel: 'outcome_result' }),
+    makeField({ fieldId: 'study', fieldName: 'design', fieldIndex: 0, section: 'identification' }),
+    makeField({ fieldId: 'result', fieldName: 'result', fieldIndex: 4, section: 'outcomes', entityLevel: 'outcome_result' }),
+    makeField({ fieldId: 'group', fieldName: 'group', fieldIndex: 2, section: 'intervention', entityLevel: 'outcome_result' }),
+    makeField({ fieldId: 'rob', fieldName: 'judgement', fieldIndex: 5, section: 'risk_of_bias_quadas3', entityLevel: 'rob_domain' }),
+    makeField({ fieldId: 'arm', fieldName: 'arm', fieldIndex: 3, section: 'intervention', entityLevel: 'arm' }),
+    makeField({ fieldId: 'population', fieldName: 'population', fieldIndex: 1, section: 'risk_of_bias_quadas3' }),
+  ];
+  const input = { documents: [makeDocument({ documentId: 'd1' })], fields, model: 'unknown' };
+
+  it('散在する結果項目を最初の section に順番どおり集め、他レベルは元の section に残す', () => {
+    const plan = planRun({ ...input, budget: { maxOutputTokensPerCall: 1_300 } });
+    expect(plan.batches.map(({ section, fieldIds, overBudget }) => ({ section, fieldIds, overBudget }))).toEqual([
+      { section: 'identification', fieldIds: ['study'], overBudget: false },
+      { section: 'risk_of_bias_quadas3', fieldIds: ['population', 'rob'], overBudget: false },
+      { section: 'intervention', fieldIds: ['group', 'arm', 'result', 'estimate'], overBudget: false },
+    ]);
+  });
+
+  it('予算内なら結果項目が複数 section にあっても全項目 1 バッチのまま', () => {
+    const plan = planRun(input);
+    expect(plan.batches).toHaveLength(1);
+    expect(plan.batches[0]).toMatchObject({
+      section: null,
+      fieldIds: ['study', 'population', 'group', 'arm', 'result', 'rob', 'estimate'],
+      overBudget: false,
+    });
+  });
+
+  it('集約したバッチだけが予算超過でも分割せず警告する', () => {
+    const plan = planRun({ ...input, budget: { maxOutputTokensPerCall: 700 } });
+    expect(plan.batches.map((batch) => batch.overBudget)).toEqual([false, false, true]);
+    expect(plan.batches[2]).toMatchObject({
+      section: 'intervention',
+      fieldIds: ['group', 'arm', 'result', 'estimate'],
+      tokensOutEstimate: Math.ceil(14 * OUTPUT_CHARS_PER_ITEM / APPROX_CHARS_PER_TOKEN),
+    });
+    expect(plan.warnings).toContain('section 分割後もトークン予算を超えるバッチが 1 件あります（応答の欠落・打ち切りに注意）');
+  });
+
+  it('結果項目が無いときは section の初出順と項目順を保つ', () => {
+    const plan = planRun({
+      ...input,
+      fields: fields.filter((field) => field.entityLevel !== 'outcome_result'),
+      budget: { maxOutputTokensPerCall: 200 },
+    });
+    expect(plan.batches.map(({ section, fieldIds, overBudget }) => ({ section, fieldIds, overBudget }))).toEqual([
+      { section: 'identification', fieldIds: ['study'], overBudget: false },
+      { section: 'risk_of_bias_quadas3', fieldIds: ['population', 'rob'], overBudget: false },
+      { section: 'intervention', fieldIds: ['arm'], overBudget: false },
+    ]);
+  });
+});
+
 describe('planRun のトークン概算', () => {
   it.each([false, true])('outcome_result を含むバッチだけ出所の規則ぶんを加算する（arm の併用: %s）', (withArm) => {
     const outcomeField = makeField({ fieldId: 'f_o', fieldName: 'o', entityLevel: 'outcome_result' });
