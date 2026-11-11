@@ -272,7 +272,8 @@ function renderEstimate(state: AppState, budgetWarningId = 'extract-budget-warni
         );
       }
     }
-    for (const warning of [...plan.warnings, ...(state.extract.previewWarnings ?? [])]) {
+    const previewWarnings = (state.extract.previewWarnings ?? []).map((filename) => t('extraction.previewWarning', { filename }));
+    for (const warning of [...plan.warnings, ...previewWarnings]) {
       lines.push(
         el('p', {
           className: 'extract__estimate-warning',

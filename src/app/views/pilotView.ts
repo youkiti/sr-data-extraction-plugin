@@ -176,7 +176,8 @@ function renderEstimate(state: AppState): HTMLElement {
         text: t('extraction.estimateNote'),
       }),
     ];
-    for (const warning of [...plan.warnings, ...(state.pilot.previewWarnings ?? [])]) {
+    const previewWarnings = (state.pilot.previewWarnings ?? []).map((filename) => t('extraction.previewWarning', { filename }));
+    for (const warning of [...plan.warnings, ...previewWarnings]) {
       lines.push(
         el('p', {
           className: 'pilot__estimate-warning',

@@ -367,11 +367,24 @@ function studiesFor(documents: readonly DocumentRecord[]): StudyRecord[] {
 }
 
 test('パイロットの実行前警告と続行の案内を表示する', () => {
-  const state = makeState({ pilot: { previewWarnings: ['preview.pdf はプレビュー版の疑いがあります'] } });
+  const state = makeState({ pilot: { previewWarnings: ['preview.pdf'] } });
   const { ctx } = makeCtx();
   const root = renderPilotView(state, ctx);
   expect(root.querySelector('#pilot-estimate')?.textContent).toContain('preview.pdf');
   expect(root.querySelector('#pilot-estimate')?.textContent).toContain('もう一度');
+});
+
+test('英語表示ではパイロットのプレビュー警告を英語にする', () => {
+  const state = makeState({ pilot: { previewWarnings: ['preview.pdf'] } });
+  const { ctx } = makeCtx();
+  setUiLanguage('en');
+  try {
+    const root = renderPilotView(state, ctx);
+    expect(root.querySelector('#pilot-estimate')?.textContent).toContain('“preview.pdf” may be a preview copy rather than the full text.');
+    expect(root.querySelector('#pilot-estimate')?.textContent).toContain('AI cannot extract values if the results chapter is missing.');
+  } finally {
+    setUiLanguage('ja');
+  }
 });
 
 test('本文確認中は実行ボタンを無効にし確認中の文言を表示する', () => {

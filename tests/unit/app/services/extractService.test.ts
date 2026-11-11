@@ -605,6 +605,38 @@ describe('resetExtractFieldSelection / toggleExtractField / toggleExtractFieldSe
 });
 
 describe('requestExtractRun / cancelExtractConfirm', () => {
+  test.each(['selection', 'project', 'documents'])('本文確認中に対象が変わったら確認を開かない: %s', async (change) => {
+    let finish!: (text: string) => void;
+    let started!: () => void;
+    const loading = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    jest.mocked(getFileText).mockImplementationOnce(() => new Promise((resolve) => {
+      finish = resolve;
+      started();
+    }));
+    const store = makeStore({
+      documents: [makeDocument(), makeDocument({ documentId: 'doc-2' })], fields: [makeField()],
+      extract: { selectedStudyIds: ['study-doc-1'], model: 'gemini-test' },
+    });
+    const request = requestExtractRun(store, makeDeps());
+    await loading;
+    if (change === 'selection') {
+      toggleExtractStudy(store, 'study-doc-1', false);
+      toggleExtractStudy(store, 'study-doc-2', true);
+    } else if (change === 'project') {
+      store.setState({ currentProject: null });
+    } else {
+      store.setState({ documents: { ...store.getState().documents, studies: null, records: null } });
+    }
+    finish('本文\nPREVIEW\f本文\nPREVIEW');
+    await request;
+    expect(store.getState().extract.checkingPreview).toBe(false);
+    expect(store.getState().extract.confirming).toBe(false);
+    expect(store.getState().extract.previewWarnings ?? []).toEqual([]);
+    expect(runExtractionMock).not.toHaveBeenCalled();
+  });
+
   test('プレビュー警告を確認に表示し実行にも同じ本文ローダーを渡す', async () => {
     jest.mocked(getFileText).mockClear().mockResolvedValue('本文\nPREVIEW\f本文\nPREVIEW');
     const store = makeStore({

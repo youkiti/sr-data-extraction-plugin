@@ -15,6 +15,9 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ### その他の変更 / Other changes
 
+- 抽出前の本文確認中に対象文献が変わった場合は確認結果を破棄し、再操作を待つようにしました。実行前のプレビュー警告は表示言語に合わせて表示します（2026-11-11）。
+  Pre-extraction text checks now discard their results and wait for another click if the selected studies change. Preview warnings before extraction now follow the display language (2026-11-11).
+
 - プレビュー版の疑いがある PDF を取り込み直後と抽出前にファイル名付きで警告し、実行記録にも残すようにしました（2026-11-11）。
   Suspected preview PDFs are now listed by filename after import and before extraction, with warnings retained in the extraction run record (2026-11-11).
 

@@ -687,6 +687,37 @@ describe('runPilot: 実行', () => {
     expect(runExtractionMock).toHaveBeenCalledTimes(1);
   });
 
+  test.each(['selection', 'project', 'documents'])('本文確認中に対象が変わったら警告せず実行もしない: %s', async (change) => {
+    let finish!: (text: string) => void;
+    let started!: () => void;
+    const loading = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    getFileTextMock.mockImplementationOnce(() => new Promise((resolve) => {
+      finish = resolve;
+      started();
+    }));
+    const store = makeReadyStore();
+    const ensureAiDataConsent = jest.fn().mockResolvedValue(true);
+    const request = runPilot(store, makeDeps({ ensureAiDataConsent }));
+    await loading;
+    expect(ensureAiDataConsent).toHaveBeenCalledTimes(1);
+    if (change === 'selection') {
+      togglePilotStudy(store, 'study-doc-1', false);
+      togglePilotStudy(store, 'study-doc-2', true);
+    } else if (change === 'project') {
+      store.setState({ currentProject: null });
+    } else {
+      store.setState({ documents: { ...store.getState().documents, studies: null, records: null } });
+    }
+    finish('本文\nPREVIEW\f本文\nPREVIEW');
+    await request;
+    expect(store.getState().pilot.checkingPreview).toBe(false);
+    expect(store.getState().pilot.running).toBe(false);
+    expect(store.getState().pilot.previewWarnings ?? []).toEqual([]);
+    expect(runExtractionMock).not.toHaveBeenCalled();
+  });
+
   test('同意を取り消したら本文確認をせず、画面の状態を保持する', async () => {
     const store = makeReadyStore();
     const before = store.getState();

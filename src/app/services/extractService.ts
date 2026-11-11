@@ -300,7 +300,7 @@ export function setExtractModel(store: Store, model: string): void {
  * 実行自体は confirmExtractRun が行う（確認を経ずに実行は始まらない — ui-states.md §3）
  */
 export async function requestExtractRun(store: Store, deps: ExtractServiceDeps): Promise<void> {
-  const { extract, schema, documents } = store.getState();
+  const { extract, schema, documents, currentProject } = store.getState();
   if (extract.running || extract.checkingPreview || extract.retryingStudyId !== null) {
     return;
   }
@@ -352,14 +352,21 @@ export async function requestExtractRun(store: Store, deps: ExtractServiceDeps):
     return;
   }
   previewChecks.delete(store);
+  const previewKey = JSON.stringify([currentProject?.spreadsheetId, targets]);
   patchExtract(store, { checkingPreview: true });
   try {
     const check = await preparePreviewCheck(targets, makeLoadDocumentPages(targets, deps.google));
-    previewChecks.set(store, { key: JSON.stringify([store.getState().currentProject?.spreadsheetId, targets]), check });
+    const latest = store.getState();
+    const latestCandidates = buildExtractionCandidates(latest.documents.studies ?? [], latest.documents.records ?? []);
+    const latestTargets = documentsForStudies(latestCandidates, effectiveStudyIds(latestCandidates, latest.extract.selectedStudyIds));
+    if (previewKey !== JSON.stringify([latest.currentProject?.spreadsheetId, latestTargets])) {
+      return;
+    }
+    previewChecks.set(store, { key: previewKey, check });
     patchExtract(store, {
       runError: null,
       confirming: true,
-      previewWarnings: check.warnings.map((warning) => warning.message),
+      previewWarnings: check.warnings.map((warning) => warning.filename),
     });
   } finally {
     patchExtract(store, { checkingPreview: false });

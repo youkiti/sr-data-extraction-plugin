@@ -371,6 +371,7 @@ export const jaApp = {
     '採用論文の PDF を取り込みます。Drive から選択するか、この PC から PDF をドラッグ&ドロップ / ファイル選択できます。フォルダを選ぶと直下の PDF をまとめて取り込み、同一試験の複数文書は取り込み後に「統合」でまとめられます。',
   'documents.importDrive': 'Drive から PDF / フォルダを選択',
   'documents.previewWarning': 'プレビュー版の疑いがあります。全文ではない可能性があります。結果の章が無いと AI は値を拾えません。全文の PDF に差し替えてください。',
+  'extraction.previewWarning': '「{filename}」はプレビュー版の疑いがあります。全文ではない可能性があります。結果の章が無いと AI は値を拾えません。全文の PDF に差し替えてください。',
   'extraction.previewConfirm': '警告を確認して続行する場合は、もう一度「実行」を押してください。',
   'extraction.checkingPreview': '本文を確認しています…',
   'documents.localImport': '💻 PC からファイルを選択',

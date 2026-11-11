@@ -376,6 +376,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
     'Import the PDFs of included articles. Choose them from Drive, or drag & drop / select PDFs from this PC. Selecting a folder imports the PDFs directly under it, and multiple documents of the same study can be grouped afterwards with "Merge".',
   'documents.importDrive': 'Choose PDFs / a folder from Drive',
   'documents.previewWarning': 'These PDFs may be preview copies rather than full texts. AI cannot extract values if the results chapter is missing. Please replace them with full-text PDFs.',
+  'extraction.previewWarning': '“{filename}” may be a preview copy rather than the full text. AI cannot extract values if the results chapter is missing. Please replace it with a full-text PDF.',
   'extraction.previewConfirm': 'To continue after checking the warning, press Run again.',
   'extraction.checkingPreview': 'Checking document text…',
   'documents.localImport': '💻 Choose files from this PC',

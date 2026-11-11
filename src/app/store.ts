@@ -369,7 +369,7 @@ export interface ConsultDocState {
 /** #/pilot（S6）の画面状態。run の結果と埋め込み検証 UI の素材はタブのセッション内で保持する */
 export interface PilotState {
   checkingPreview: boolean;
-  /** 実行前に確認したプレビュー版の警告。 */
+  /** 実行前に確認したプレビュー版の疑いがあるファイル名。 */
   previewWarnings?: string[];
   /** 全ページ画像の追加送信。画面に入るたびに false へ戻す。 */
   pageImages: boolean;
@@ -445,7 +445,7 @@ export interface PilotState {
 /** #/extract（S7）の画面状態。run の結果はタブのセッション内で保持する */
 export interface ExtractState {
   checkingPreview: boolean;
-  /** 実行前に確認したプレビュー版の警告。 */
+  /** 実行前に確認したプレビュー版の疑いがあるファイル名。 */
   previewWarnings?: string[];
   /** 全ページ画像の追加送信。画面に入るたびに false へ戻す。 */
   pageImages: boolean;

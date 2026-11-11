@@ -299,9 +299,15 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
       ? pending.check
       : await preparePreviewCheck(targetsForBlockCheck, makeLoadDocumentPages(targetsForBlockCheck, deps.google));
     patchPilot(store, { checkingPreview: false });
+    const latest = store.getState();
+    const latestCandidates = buildExtractionCandidates(latest.documents.studies ?? [], latest.documents.records ?? []);
+    const latestTargets = documentsForStudies(latestCandidates, effectiveStudyIds(latestCandidates, latest.pilot.selectedStudyIds));
+    if (previewKey !== JSON.stringify([latest.currentProject?.spreadsheetId, latestTargets])) {
+      return;
+    }
     if (previewCheck.warnings.length > 0 && pending?.key !== previewKey) {
       previewChecks.set(store, { key: previewKey, check: previewCheck });
-      patchPilot(store, { previewWarnings: previewCheck.warnings.map((warning) => warning.message) });
+      patchPilot(store, { previewWarnings: previewCheck.warnings.map((warning) => warning.filename) });
       return;
     }
     previewChecks.delete(store);
