@@ -7,6 +7,7 @@
 import { multiSelectConfigOf, splitPipeList } from '../../domain/multiSelect';
 import type { EntityLevel, FieldDataType, SchemaField } from '../../domain/schemaField';
 import type { SchemaVersion } from '../../domain/schemaVersion';
+import { checkDtaArmFields, DTA_ARM_FIELD_REPLACEMENTS, type DtaArmFieldInput } from '../../features/schema/dtaArmFieldCheck';
 import type { PresetDialogState } from '../../features/schema/presets/prespecDialog';
 import type {
   RedraftAddedItem,
@@ -1310,6 +1311,40 @@ function renderEnumSuggestion(suggestion: EnumSuggestion, ctx: ViewContext): HTM
   return el('section', { id: 'schema-enum-suggestion', className: 'schema__redraft-form' }, children);
 }
 
+function renderDtaArmWarning(rows: readonly DtaArmFieldInput[], ctx: ViewContext, editable: boolean): HTMLElement[] {
+  const matches = checkDtaArmFields(rows);
+  if (matches.length === 0) {
+    return [];
+  }
+  const children: HTMLElement[] = [el('p', { text: t('schema.dtaArmWarning') })];
+  children.push(el('ul', {}, matches.map(({ index, row, kind }) => {
+    const item = el('li', {}, [el('span', { text: `${row.fieldLabel} (${row.fieldName}) ` })]);
+    if (editable) {
+      const button = el('button', {
+        text: t('schema.dtaArmRewrite'),
+        attributes: { type: 'button', 'data-dta-arm-row': String(index) },
+      });
+      button.addEventListener('click', () => {
+        const replacement = DTA_ARM_FIELD_REPLACEMENTS[kind];
+        ctx.schema.onEditRow(index, {
+          fieldLabel: t(replacement.labelKey),
+          extractionInstruction: replacement.extractionInstruction,
+        });
+      });
+      item.append(button);
+    }
+    return item;
+  })));
+  if (!editable) {
+    children.push(el('p', { text: t('schema.dtaArmConfirmed') }));
+  }
+  return [el('div', {
+    id: 'schema-dta-arm-warning',
+    className: 'schema__stale-banner',
+    attributes: { role: 'status' },
+  }, children)];
+}
+
 /** 編集中: 表形式エディタ + 検証エラー + プリセット挿入 + 版として確定 */
 function renderEditor(
   rows: readonly SchemaEditorRow[],
@@ -1487,6 +1522,7 @@ function renderEditor(
   }
   children.push(
     dataTypeHelp,
+    ...renderDtaArmWarning(rows, ctx, true),
     el('p', { className: 'schema__editor-hint schema__sample-note', text: t('schema.requiredHint') }),
     el('div', {
       className: 'schema__table-wrap schema__table-wrap--editor',
@@ -1540,6 +1576,7 @@ function renderConfirmed(
   const fields = schema.currentFields ?? [];
 
   const children: HTMLElement[] = [];
+  children.push(...renderDtaArmWarning(fields, ctx, false));
   const meta = t('schema.currentMeta', {
     version: latest.schemaVersion,
     createdByType: t(CREATED_BY_TYPE_LABEL_KEYS[latest.createdByType]),

@@ -338,6 +338,21 @@ test('ドラフト生成中: 経過時間つきの進捗表示', async ({ page }
   );
 });
 
+test('DTA の群項目の警告を推定単位への書き換えで解消する', async ({ page }) => {
+  await initApp(page, {
+    ...EMPTY_SCHEMA_STATE,
+    editorRows: [
+      makeEditorRow({ fieldName: 'tp', entityLevel: 'outcome_result', dataType: 'integer' }),
+      makeEditorRow({ fieldName: 'arm_name', fieldLabel: '治療群名', entityLevel: 'outcome_result' }),
+    ],
+  });
+  await expect(page.locator('#schema-dta-arm-warning')).toBeVisible();
+  await page.locator('[data-dta-arm-row="1"]').click();
+  await expect(page.locator('#schema-dta-arm-warning')).toHaveCount(0);
+  await expect(page.locator('#schema-editor-table tbody tr').nth(1).locator('td').nth(3).locator('input'))
+    .toHaveValue('この推定の対象治療群');
+});
+
 test('エディタ: 行操作と検証エラー表示、確定ボタンの無効化', async ({ page }) => {
   await initApp(page, { ...EMPTY_SCHEMA_STATE, editorRows: [makeEditorRow()] });
 

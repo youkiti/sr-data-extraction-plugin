@@ -1,6 +1,57 @@
 // #/schema view の描画テスト（ui-states.md §3 の各状態）。
 // render は純粋関数のため、状態を組み立てて DOM を検証する
 import { focusSchemaField, renderSchemaView } from '../../../../src/app/views/schemaView';
+import { DTA_ARM_FIELD_REPLACEMENTS } from '../../../../src/features/schema/dtaArmFieldCheck';
+import { updateEditorRow } from '../../../../src/app/services/schemaService';
+import { createStore } from '../../../../src/app/store';
+
+test.each(['ja', 'en'] as const)('DTA の警告から編集中のラベルと指示文だけを書き換える（%s）', (language) => {
+  setUiLanguage(language);
+  const rows = [
+    makeEditorRow({ fieldName: 'tp', entityLevel: 'outcome_result', dataType: 'integer' }),
+    makeEditorRow({ fieldName: 'arm_name', fieldLabel: '治療群名', entityLevel: 'outcome_result' }),
+    makeEditorRow({ fieldName: 'arm_sample_size', fieldLabel: '群別解析対象者数', entityLevel: 'outcome_result', dataType: 'integer' }),
+  ];
+  const store = createStore(makeState({ versions: [], editorRows: rows }));
+  const { ctx, callbacks } = makeCtx();
+  callbacks.onEditRow.mockImplementation((index, patch) => updateEditorRow(store, index, patch));
+  let view = renderSchemaView(store.getState(), ctx);
+  expect(view.querySelector('#schema-dta-arm-warning')).not.toBeNull();
+  expect(view.querySelectorAll('[data-dta-arm-row]')).toHaveLength(2);
+  for (const [index, kind] of [[1, 'name'], [2, 'size']] as const) {
+    view.querySelector<HTMLButtonElement>(`[data-dta-arm-row="${index}"]`)!.click();
+    expect(store.getState().schema.editorRows![index]).toEqual({
+      ...rows[index],
+      fieldLabel: t(DTA_ARM_FIELD_REPLACEMENTS[kind].labelKey),
+      extractionInstruction: DTA_ARM_FIELD_REPLACEMENTS[kind].extractionInstruction,
+    });
+    view = renderSchemaView(store.getState(), ctx);
+    expect(view.querySelector(`[data-dta-arm-row="${index}"]`)).toBeNull();
+  }
+  expect(store.getState().schema.editorOrigin).toBe('user_edit');
+  expect(store.getState().schema.versions).toEqual([]);
+  expect(view.querySelector('#schema-dta-arm-warning')).toBeNull();
+  setUiLanguage('ja');
+});
+
+test('DTA の確定済み表示は対象項目と改訂案内を表示し、書き換えボタンを出さない', () => {
+  const { ctx } = makeCtx();
+  const view = renderSchemaView(makeState({
+    versions: [makeVersion(1)],
+    currentFields: [
+      makeField({ fieldName: 'quadas3_bias', dataType: 'enum', multiSelect: { exclusiveValues: ['NA'], freeTextValues: ['Other'] } }),
+      makeField({ fieldName: 'arm_name', fieldLabel: '治療群名', entityLevel: 'outcome_result', dataType: 'text' }),
+      makeField({ fieldName: 'arm_sample_size', fieldLabel: '群別解析対象者数', entityLevel: 'outcome_result', dataType: 'integer' }),
+    ],
+  }), ctx);
+  const warning = view.querySelector('#schema-dta-arm-warning')!;
+  expect(Array.from(warning.querySelectorAll('li'), (item) => item.textContent?.trim())).toEqual([
+    '治療群名 (arm_name)',
+    '群別解析対象者数 (arm_sample_size)',
+  ]);
+  expect(warning.textContent).toContain('新しい版を作ってから書き換えられます。');
+  expect(warning.querySelector('button')).toBeNull();
+});
 
 test('編集表だけにスクロール用の包みを付け、抽出指示の後続要素は欄の包みの外に置く', () => {
   const { ctx } = makeCtx();
