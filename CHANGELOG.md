@@ -22,6 +22,8 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ### その他の変更 / Other changes
 
+- 診断精度（DTA）の表のデザインで、治療群ごとの名前・人数の項目に警告を表示し、推定に寄与する治療群・人数のラベルと抽出指示へ書き換えられるようにしました。確定済みの版では新しい版を作る案内を表示します（2026-11-11・PR #478）。
+  Schema design now warns about treatment arm name and sample size fields in diagnostic accuracy (DTA) schemas and lets users rewrite their labels and extraction instructions to describe the groups and participants contributing to each estimate. Confirmed versions show guidance to create a new version (2026-11-11, PR #478).
 - プレビュー版の疑いがある PDF を取り込み直後と抽出前にファイル名付きで警告し、実行記録にも残すようにしました（2026-11-11・PR #479）。  
   Suspected preview PDFs are now listed by filename after import and before extraction, with warnings retained in the extraction run record (2026-11-11, PR #479).
 
