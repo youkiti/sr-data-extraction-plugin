@@ -13,13 +13,17 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
+### AI の結果に影響する変更 / Changes that affect AI output
+
+- 一括抽出で section ごとに分割するときも、outcome_result の全項目を 1 回の呼び出しにまとめるようにしました。呼び出しごとに同じ結果の entity_key が変わり、確認画面で複数行に分かれることを防ぎます。まとめたバッチが予算を超える場合は、分割せず既存の警告を表示します（2026-11-11・PR #476）。  
+  Batch extraction now keeps all outcome_result fields in one call even when splitting by section. This prevents the same result from receiving different entity_keys across calls and appearing on separate rows in verification. If the combined batch exceeds the budget, it stays together and the existing warning is shown (2026-11-11, PR #476).
+- extract-data プロンプトを版数 16 に更新しました。抄録と研究自身の結果の要約を抽出元の結果に含め、指標検査・参照基準・測定尺度・評価時期・閾値・対象病態などの設計項目は、結果の章が無くても方法または抄録から抽出するよう明示しました（2026-11-11・PR #477）。  
+  Updated the extract-data prompt to version 16. The Abstract and the study's results summaries count as its own results, and design fields such as the index test, reference standard, measurement scale, timing, threshold and target condition are explicitly extracted from Methods or Abstract even without a Results section (2026-11-11, PR #477).
+
 ### その他の変更 / Other changes
 
-- 抽出前の本文確認中に対象文献が変わった場合は確認結果を破棄し、再操作を待つようにしました。実行前のプレビュー警告は表示言語に合わせて表示します（2026-11-11）。
-  Pre-extraction text checks now discard their results and wait for another click if the selected studies change. Preview warnings before extraction now follow the display language (2026-11-11).
-
-- プレビュー版の疑いがある PDF を取り込み直後と抽出前にファイル名付きで警告し、実行記録にも残すようにしました（2026-11-11）。
-  Suspected preview PDFs are now listed by filename after import and before extraction, with warnings retained in the extraction run record (2026-11-11).
+- プレビュー版の疑いがある PDF を取り込み直後と抽出前にファイル名付きで警告し、実行記録にも残すようにしました（2026-11-11・PR #479）。  
+  Suspected preview PDFs are now listed by filename after import and before extraction, with warnings retained in the extraction run record (2026-11-11, PR #479).
 
 ## v0.32.0（2026-11-11）
 
