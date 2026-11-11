@@ -180,8 +180,8 @@ describe('本文とページ画像の併用', () => {
 describe('extract-data skill 定数', () => {
   it('skill 名とプロンプト版数を公開する（LLMApiLog 記録用）', () => {
     expect(EXTRACT_DATA_SKILL_NAME).toBe('extract-data');
-    // v15: 先行バッチの outcome_result キーを再利用する規約を追加
-    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(15);
+    // v16: 抄録を結果に含め、設計の項目を方法・抄録から抽出すると明示
+    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(16);
   });
 
   it('システムプロンプトに verbatim quote の規約（300 文字上限）と document_index の規約を含む', () => {
@@ -276,6 +276,16 @@ describe('extractDataResponseSchema（box_2d 込みスキーマ。§7.4 PR3）',
 });
 
 describe('buildExtractDataUserPrompt', () => {
+  it('抄録の結果と設計項目の出所の補足は outcome_result を含むバッチだけに追加する', () => {
+    const clarification = "The Abstract and any results summary of this study count as this study's own results. Fields that describe how an outcome or test was defined or measured (for example the index test, reference standard, measurement scale, timing, threshold or target condition) are not findings: extract them from this study's Methods or Abstract even when no Results section is present.";
+    const outcomePrompt = buildExtractDataUserPrompt({ fields: [OUTCOME_FIELD], documents: DOCS });
+    expect(outcomePrompt).toContain(`return it with "not_reported": true. ${clarification}`);
+    for (const field of [STUDY_FIELD, ARM_FIELD]) {
+      const prompt = buildExtractDataUserPrompt({ fields: [field], documents: DOCS });
+      expect(prompt).not.toContain(clarification);
+    }
+  });
+
   it.each([
     { fields: [OUTCOME_FIELD] },
     { fields: [ARM_FIELD, OUTCOME_FIELD] },

@@ -13,7 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
-（まだありません / Nothing yet）
+### AI の結果に影響する変更 / Changes that affect AI output
+
+- extract-data プロンプトを版数 16 に更新しました。抄録と研究自身の結果の要約を抽出元の結果に含め、指標検査・参照基準・測定尺度・評価時期・閾値・対象病態などの設計項目は、結果の章が無くても方法または抄録から抽出するよう明示しました（2026-11-11）。  
+  Updated the extract-data prompt to version 16. The Abstract and the study's results summaries count as its own results, and design fields such as the index test, reference standard, measurement scale, timing, threshold and target condition are explicitly extracted from Methods or Abstract even without a Results section (2026-11-11).
 
 ## v0.32.0（2026-11-11）
 
