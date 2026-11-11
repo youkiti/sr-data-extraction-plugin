@@ -13,7 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
-（まだありません / Nothing yet）
+### AI の結果に影響する変更 / Changes that affect AI output
+
+- 一括抽出で section ごとに分割するときも、outcome_result の全項目を 1 回の呼び出しにまとめるようにしました。呼び出しごとに同じ結果の entity_key が変わり、確認画面で複数行に分かれることを防ぎます。まとめたバッチが予算を超える場合は、分割せず既存の警告を表示します（2026-11-11）。  
+  Batch extraction now keeps all outcome_result fields in one call even when splitting by section. This prevents the same result from receiving different entity_keys across calls and appearing on separate rows in verification. If the combined batch exceeds the budget, it stays together and the existing warning is shown (2026-11-11).
 
 ## v0.32.0（2026-11-11）
 
