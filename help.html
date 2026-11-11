@@ -53,8 +53,8 @@
           <span class="en" lang="en">User guide</span>
         </h1>
         <p class="last-updated">
-          <span class="ja" lang="ja">最終更新: 2026-11-11 / 対象バージョン: v0.32.0</span>
-          <span class="en" lang="en">Last updated: 2026-11-11 / Covers v0.32.0</span>
+          <span class="ja" lang="ja">最終更新: 2026-11-11 / 対象バージョン: v0.33.0</span>
+          <span class="en" lang="en">Last updated: 2026-11-11 / Covers v0.33.0</span>
         </p>
 
         <nav class="toc" aria-label="目次" data-en-aria-label="Table of contents">
@@ -970,6 +970,10 @@
             >
           </p>
           <p>
+            <span class="ja" lang="ja">プレビュー版の疑いがある PDF は、取り込み直後と抽出前にファイル名付きで警告します。警告は画面の表示言語に合わせて表示します。本文の確認中に対象文献を変えた場合は処理を止めるので、もう一度実行ボタンを押してください。各ページ末尾の PREVIEW・SAMPLE・EXCERPT の繰り返しを目印にするため、すべての不完全な PDF を検出できるわけではありません。結果の章が無いと AI は値を拾えません。全文の PDF に差し替えてください。パイロットで警告が出た場合、確認後にもう一度「実行」を押すと続行できます。</span>
+            <span class="en" lang="en">Suspected preview PDFs are listed by filename after import and before extraction. Warnings use the selected display language. If you change the selected studies while document text is being checked, processing stops; press Run again. Detection looks for repeated PREVIEW, SAMPLE, or EXCERPT lines at page endings, so it cannot identify every incomplete PDF. AI cannot extract values if the results chapter is missing. Replace the file with a full-text PDF. If a warning appears before a pilot run, press Run again after checking it to continue.</span>
+          </p>
+          <p>
             <span class="ja" lang="ja">tiab-review の採用リストは、フルテキストの最新の裁定を優先します（裁定がなければ通常票の OR 合議）。裁定が maybe の文献は取り込みません。プレビューに「裁定を反映した採用件数（取り込む件数）」と「OR 合議なら採用になる件数」を表示します。裁定で採用対象外になった文献があれば、警告とタイトル一覧が出ます。フルテキスト相では、tiab-review のフルテキスト候補に入らない文献は取り込みません。候補外のため取り込み対象から外した文献は、別の警告で件数とタイトル一覧をプレビューに表示します。取り込みは続行できます。TiAb 相の採用判定は変わりません。再取り込みでも既存 study は自動除外されません。必要に応じて「study の除外」を行ってください。</span>
             <span class="en" lang="en">The tiab-review included list uses the latest full-text adjudication, falling back to OR consensus of regular votes when there is no adjudication. A maybe adjudication is not included. The preview shows the count after adjudication (to import) and the OR consensus count. A warning lists any titles no longer included after adjudication. In the full-text phase, references outside tiab-review’s project full-text candidates are not imported. A separate preview warning shows the count and titles excluded for this reason. You can continue importing. Title/abstract phase inclusion is unchanged. Re-importing does not automatically exclude existing studies. Use “Exclude study” as needed.</span>
           </p>
@@ -1123,6 +1127,10 @@
             <li>
               <span class="ja" lang="ja">はい / いいえの項目（boolean）は、パイロット結果・検証画面・相談用ドキュメントで「はい」「いいえ」と表示します。「いいえ」（FALSE）も有効な結果で、抽出失敗ではありません。保存値と CSV は TRUE / FALSE のままです。</span>
               <span class="en" lang="en">Boolean items appear as “Yes” or “No” in pilot results, verification, and consultation documents. “No” (FALSE) is a valid result, not an extraction failure. Stored values and CSV exports remain TRUE / FALSE.</span>
+            </li>
+            <li>
+              <span class="ja" lang="ja">診断精度（DTA）の表で治療群ごとの名前・人数の項目があると、群の行と精度の結果の行が分かれることがあるため警告します。「書き換える」で、その推定に寄与する治療群・人数を指定するラベルと抽出指示に変更できます。確定済みなら新しい版を作ってから書き換えてください。</span>
+              <span class="en" lang="en">In diagnostic accuracy (DTA) schemas, treatment arm name and sample size fields trigger a warning because they can split groups and accuracy results into separate rows. Use “Rewrite” to change the label and extraction instruction to describe the groups and participants contributing to that estimate. For a confirmed schema, create a new version first.</span>
             </li>
             <li>
               <span class="ja" lang="ja"
