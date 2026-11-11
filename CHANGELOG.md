@@ -13,6 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
+（まだありません / Nothing yet）
+
+## v0.33.0（2026-11-11）
+
 ### AI の結果に影響する変更 / Changes that affect AI output
 
 - 一括抽出で section ごとに分割するときも、outcome_result の全項目を 1 回の呼び出しにまとめるようにしました。呼び出しごとに同じ結果の entity_key が変わり、確認画面で複数行に分かれることを防ぎます。まとめたバッチが予算を超える場合は、分割せず既存の警告を表示します（2026-11-11・PR #476）。  
