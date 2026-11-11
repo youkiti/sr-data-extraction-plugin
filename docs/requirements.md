@@ -678,6 +678,7 @@ S6 は上部に合格基準カードを持つ（owner の入力・確認・追�
 ### 4.3 AI 抽出（extract-data skill）の要件
 
 - 1 API 呼び出し = 1 study ×（スキーマ全項目 or section 単位分割 ※トークン量で判断。複数文書の連結で入力が肥大しやすいため、分割閾値は study の全文書合計トークンで評価する）
+  section 分割でも `outcome_result` 項目は全て、fieldIndex 順で最初の対象項目が属する section の 1 回の呼び出しにまとめ、予算超過でも再分割しない。呼び出しごとに同じ結果の `entity_key` が変わり、確認画面の行が分かれることを防ぐため。
 - **複数文書の入力（v0.10）**: study の全文書をロール付きの区切りで連結して渡す（例: `=== Document 2/3 [registration] NCT01234567.pdf ===`）。文書の並び順は role の固定順（article → registration → protocol → abstract → supplement → other）→ 取り込み順。`pdf_native` モードでは全文書の PDF を添付し、添付順 = document_index とする。**`text_only` run では `text_status = no_text_layer` の文書を連結から除外**し、除外があった旨を UI と run の記録に明示する（当該文書由来の根拠は得られない）。プロンプトには「複数文書は同一試験の報告である。値が文書間で矛盾する場合は本論文（article）を優先しつつ confidence を下げ、quote は実際に値を読み取った文書から取ること」を明示する
 - 出力は構造化 JSON を強制: `{ field_id, entity_key, value, not_reported, quote, page, document_index, confidence }` の配列。**対応付けは `field_id` 基準**: プロンプトに各項目の `field_id` を明示し、応答にそのまま返させる。`field_name` は改名されうる CSV 列名のため、応答に含める場合も補助情報（可読性・自己チェック用）扱いとし、`Evidence` / `StudyData` / `ResultsData` への突合には使わない。応答内の `field_id` が当該 `schema_version` の `SchemaFields` に存在しない場合、その要素は破棄して `partial_failure` として記録する
 - **`document_index`（v0.10）**: プロンプトに列挙した文書一覧の 1 始まり連番。クライアントが `document_id` へ解決して `Evidence.document_id` に記録し、quote アンカリングはその文書の extracted_text に対して行う（§5）。quote があるのに document_index が欠落・範囲外の要素は破棄して `partial_failure` として記録する（field_id 不明時と同じ扱い）。`not_reported = true` の要素は document_index 不要（全文書を見た上での「報告なし」判断のため）
