@@ -39,6 +39,7 @@ import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { StudyRecord } from '../../../../src/domain/study';
 import { readDocuments } from '../../../../src/features/documents/documentRepository';
 import { readStudies } from '../../../../src/features/documents/studyRepository';
+import * as previewCheckModule from '../../../../src/features/documents/preparePreviewCheck';
 import { readEvidenceRows } from '../../../../src/features/extraction/evidenceRepository';
 import { readPilotRuns } from '../../../../src/features/extraction/runRepository';
 import { getSchemaFieldsByVersion } from '../../../../src/features/schema/schemaRepository';
@@ -658,6 +659,91 @@ describe('runPilot: 実行', () => {
       pilot: { selectedStudyIds: ['study-doc-1'], model: 'gemini-test' },
     });
   }
+
+  test('プレビュー版は実行前に警告し、再実行の確認では本文を再取得しない', async () => {
+    const store = makeReadyStore();
+    getFileTextMock.mockClear().mockResolvedValue('本文\nPREVIEW\f本文\nPREVIEW');
+    const ensureAiDataConsent = jest.fn(async () => {
+      expect(getFileTextMock).not.toHaveBeenCalled();
+      return true;
+    });
+    const deps = makeDeps({ ensureAiDataConsent });
+    await runPilot(store, deps);
+    expect(ensureAiDataConsent).toHaveBeenCalledTimes(1);
+    expect(store.getState().pilot.previewWarnings?.[0]).toContain('smith2020.pdf');
+    expect(runExtractionMock).not.toHaveBeenCalled();
+    const before = store.getState();
+    await runPilot(store, { ...deps, ensureAiDataConsent: jest.fn().mockResolvedValue(false) });
+    expect(store.getState()).toBe(before);
+    expect(getFileTextMock).toHaveBeenCalledTimes(1);
+    ensureAiDataConsent.mockResolvedValue(true);
+    runExtractionMock.mockImplementationOnce(async (params, injected) => {
+      expect(params.previewWarnings?.[0]?.filename).toBe('smith2020.pdf');
+      await injected.loadDocumentPages('doc-1');
+      expect(getFileTextMock).toHaveBeenCalledTimes(1);
+      return makeOutcome({ studyIds: [] });
+    });
+    await runPilot(store, deps);
+    expect(runExtractionMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('同意を取り消したら本文確認をせず、画面の状態を保持する', async () => {
+    const store = makeReadyStore();
+    const before = store.getState();
+    getFileTextMock.mockClear();
+    await runPilot(store, makeDeps({ ensureAiDataConsent: jest.fn().mockResolvedValue(false) }));
+    expect(getFileTextMock).not.toHaveBeenCalled();
+    expect(store.getState()).toBe(before);
+  });
+
+  test('本文確認自体が失敗しても確認中の状態とロックを解除する', async () => {
+    const store = makeReadyStore();
+    const check = jest.spyOn(previewCheckModule, 'preparePreviewCheck')
+      .mockRejectedValueOnce(new Error('本文確認失敗'));
+    try {
+      await runPilot(store, makeDeps());
+      expect(store.getState().pilot.checkingPreview).toBe(false);
+      expect(store.getState().pilot.runError).toBe('本文確認失敗');
+      expect(runExtractionMock).not.toHaveBeenCalled();
+      await runPilot(store, makeDeps({ ensureAiDataConsent: jest.fn().mockResolvedValue(false) }));
+      expect(check).toHaveBeenCalledTimes(1);
+    } finally {
+      check.mockRestore();
+    }
+  });
+
+  test('本文確認中の状態を保持し、読込失敗でも実行へ進む', async () => {
+    let fail!: (error: Error) => void;
+    let started!: () => void;
+    const loading = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    getFileTextMock.mockImplementationOnce(() => new Promise((_resolve, reject) => {
+      fail = reject;
+      started();
+    }));
+    const store = makeReadyStore();
+    runExtractionMock.mockResolvedValueOnce(makeOutcome());
+    const request = runPilot(store, makeDeps());
+    await loading;
+    expect(store.getState().pilot.checkingPreview).toBe(true);
+    fail(new Error('本文読込失敗'));
+    await request;
+    expect(store.getState().pilot.checkingPreview).toBe(false);
+    expect(runExtractionMock).toHaveBeenCalled();
+  });
+
+  test('プレビュー確認中に対象を変えたら改めて確認する', async () => {
+    const store = makeReadyStore();
+    getFileTextMock.mockResolvedValue('本文\nPREVIEW\f本文\nPREVIEW');
+    const deps = makeDeps();
+    await runPilot(store, deps);
+    togglePilotStudy(store, 'study-doc-1', false);
+    togglePilotStudy(store, 'study-doc-2', true);
+    await runPilot(store, deps);
+    expect(runExtractionMock).not.toHaveBeenCalled();
+    expect(store.getState().pilot.previewWarnings).toHaveLength(1);
+  });
 
   function makeOutcome(
     overrides: {

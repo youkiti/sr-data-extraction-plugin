@@ -13,7 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
-（まだありません / Nothing yet）
+### その他の変更 / Other changes
+
+- プレビュー版の疑いがある PDF を取り込み直後と抽出前にファイル名付きで警告し、実行記録にも残すようにしました（2026-11-11）。
+  Suspected preview PDFs are now listed by filename after import and before extraction, with warnings retained in the extraction run record (2026-11-11).
 
 ## v0.32.0（2026-11-11）
 

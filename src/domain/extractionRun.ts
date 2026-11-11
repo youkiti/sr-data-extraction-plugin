@@ -48,8 +48,16 @@ export interface EvidenceRowCountRunWarning {
   savedRows: number;
 }
 
-/** run 単位の警告（ExtractionRuns.warnings 列に JSON で保持）。arm completeness / Evidence 行数不一致の 2 種 */
-export type RunWarning = ArmCompletenessRunWarning | EvidenceRowCountRunWarning;
+/** プレビュー版の疑いがある文献の実行前警告。 */
+export interface PreviewPdfRunWarning {
+  kind: 'preview_pdf';
+  documentId: string;
+  filename: string;
+  message: string;
+}
+
+/** run 単位の警告（ExtractionRuns.warnings 列に JSON で保持）。 */
+export type RunWarning = ArmCompletenessRunWarning | EvidenceRowCountRunWarning | PreviewPdfRunWarning;
 
 /**
  * audit.csv の Evidence 結合（buildAuditCsv）と runRepository.readRunAuditInfos が共有する
@@ -82,7 +90,7 @@ export interface ExtractionRun {
    */
   fieldIds: string[] | null;
   /**
-   * run 単位の警告（issue #106: arm completeness チェック）。完了行にのみ書く。
+   * run 単位の警告。プレビュー版の警告は実行開始行と完了行、抽出後の警告は完了行に書く。
    * シート上は JSON 配列。**null = 警告なし**（空配列は使わない。
    * 空セル・列自体が無い旧プロジェクトの行を読むと null になる）
    */

@@ -226,6 +226,8 @@ export interface DocumentsState {
   importing: boolean;
   /** 直近の取り込みの進捗行（次の取り込み開始まで残す） */
   importRows: ImportRow[];
+  /** 直近の取り込みでプレビュー版の疑いがあったファイル名。 */
+  previewFilenames?: string[];
   /** 統合のために選択中の study_id（2 件以上でダイアログを開ける） */
   selectedStudyIds: string[];
   /** 統合確認ダイアログ。null = 非表示 */
@@ -366,6 +368,9 @@ export interface ConsultDocState {
 
 /** #/pilot（S6）の画面状態。run の結果と埋め込み検証 UI の素材はタブのセッション内で保持する */
 export interface PilotState {
+  checkingPreview: boolean;
+  /** 実行前に確認したプレビュー版の警告。 */
+  previewWarnings?: string[];
   /** 全ページ画像の追加送信。画面に入るたびに false へ戻す。 */
   pageImages: boolean;
   criteria?: CriteriaState;
@@ -439,6 +444,9 @@ export interface PilotState {
 
 /** #/extract（S7）の画面状態。run の結果はタブのセッション内で保持する */
 export interface ExtractState {
+  checkingPreview: boolean;
+  /** 実行前に確認したプレビュー版の警告。 */
+  previewWarnings?: string[];
   /** 全ページ画像の追加送信。画面に入るたびに false へ戻す。 */
   pageImages: boolean;
   /** 再試行で引き継ぐ直近 run の画像選択。 */
@@ -951,6 +959,7 @@ export function createInitialState(): AppState {
       transfer: { exportVersion: null, exporting: false, exportError: null, importing: false, importError: null },
     },
     pilot: {
+      checkingPreview: false,
       pageImages: false,
       selectedStudyIds: [],
       selectionInitialized: false,
@@ -985,6 +994,7 @@ export function createInitialState(): AppState {
       collapsedFieldSections: [],
     },
     extract: {
+      checkingPreview: false,
       pageImages: false,
       lastRunPageImages: false,
       budget: null,

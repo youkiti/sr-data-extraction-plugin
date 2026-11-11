@@ -10,6 +10,7 @@ import { GoogleApiError, googleApiErrorReasons, type GoogleApiDeps } from '../..
 import { nowIso8601 } from '../../utils/iso8601';
 import { generateUuid } from '../../utils/uuid';
 import { detectRegistrationId } from './detectRegistrationId';
+import { detectPreviewWatermark } from './detectPreviewWatermark';
 import { appendDocuments } from './documentRepository';
 import { appendStudies } from './studyRepository';
 import { extractTextLayer, type DisposablePdfDocument } from './extractTextLayer';
@@ -72,6 +73,8 @@ export interface ImportDocumentsDeps {
 }
 
 export interface ImportDocumentsResult {
+  /** 取り込み済み文献のうちプレビュー版の疑いがあるファイル名。 */
+  previewFilenames: string[];
   /** Studies タブへ追記済みの自動生成 study（取り込み順。1 PDF = 1 study。§4.5） */
   importedStudies: StudyRecord[];
   /** Documents タブへ追記済みのレコード（取り込み順） */
@@ -100,6 +103,7 @@ export async function importDocuments(
   const now = deps.now ?? nowIso8601;
 
   const importedStudies: StudyRecord[] = [];
+  const previewFilenames: string[] = [];
   const imported: DocumentRecord[] = [];
   // imported と同じ添字で進捗キーを持つ（DocumentRecord は key を持たないため段階 3 の失敗記録に使う）
   const importedKeys: string[] = [];
@@ -160,9 +164,11 @@ export async function importDocuments(
     let charCount: number;
     // 試験登録番号を抽出テキストから検出し、自動生成 study の初期値にする（§4.5）
     let registrationId: string | null = null;
+    let preview = false;
     try {
       const extracted = await extractTextLayer(pdfData, { loadPdf: deps.loadPdf });
       textStatus = extracted.textStatus;
+      preview = textStatus !== 'no_text_layer' && detectPreviewWatermark(extracted.pages);
       pageCount = extracted.pageCount;
       charCount = extracted.charCount;
       if (extracted.serializedText !== null) {
@@ -215,6 +221,9 @@ export async function importDocuments(
       excludedAt: null,
     });
     importedKeys.push(selection.key);
+    if (preview) {
+      previewFilenames.push(selection.filename);
+    }
   }
 
   // 段階 3: Studies → Documents の順で一括追記（Documents.study_id が必ず解決できる不変条件）。
@@ -234,9 +243,9 @@ export async function importDocuments(
           detail: toDetail(err),
         });
       });
-      return { importedStudies: [], imported: [], failures };
+      return { importedStudies: [], imported: [], failures, previewFilenames: [] };
     }
   }
 
-  return { importedStudies, imported, failures };
+  return { importedStudies, imported, failures, previewFilenames };
 }

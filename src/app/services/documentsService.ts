@@ -251,7 +251,7 @@ async function runImportSelections(
     status: 'queued',
     detail: null,
   }));
-  patchDocuments(store, { importing: true, importRows: rows });
+  patchDocuments(store, { importing: true, importRows: rows, previewFilenames: [] });
   // 重複スキップで importDocuments へ渡す選択が行より少なくなりうるため、行番号ではなく key で対応付ける
   const setRowByKey = (key: string, patch: Partial<ImportRow>): void => {
     rows = rows.map((row) => (row.key === key ? { ...row, ...patch } : row));
@@ -288,7 +288,7 @@ async function runImportSelections(
 
     const result: ImportDocumentsResult =
       dedup.accepted.length === 0
-        ? { importedStudies: [], imported: [], failures: [] }
+        ? { importedStudies: [], imported: [], failures: [], previewFilenames: [] }
         : await importDocuments(
             {
               spreadsheetId: project.spreadsheetId,
@@ -319,6 +319,7 @@ async function runImportSelections(
         studies,
         importing: false,
         importRows: rows,
+        previewFilenames: result.previewFilenames,
       },
       counts: { ...after.counts, documents: records.length },
     });

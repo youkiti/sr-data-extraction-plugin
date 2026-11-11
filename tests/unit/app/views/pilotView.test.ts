@@ -366,6 +366,25 @@ function studiesFor(documents: readonly DocumentRecord[]): StudyRecord[] {
   return [...new Set(documents.map((d) => d.studyId))].map((id) => makeStudy(id));
 }
 
+test('パイロットの実行前警告と続行の案内を表示する', () => {
+  const state = makeState({ pilot: { previewWarnings: ['preview.pdf はプレビュー版の疑いがあります'] } });
+  const { ctx } = makeCtx();
+  const root = renderPilotView(state, ctx);
+  expect(root.querySelector('#pilot-estimate')?.textContent).toContain('preview.pdf');
+  expect(root.querySelector('#pilot-estimate')?.textContent).toContain('もう一度');
+});
+
+test('本文確認中は実行ボタンを無効にし確認中の文言を表示する', () => {
+  const state = makeState({ pilot: { checkingPreview: true } });
+  const { ctx } = makeCtx();
+  const root = renderPilotView(state, ctx);
+  const button = root.querySelector<HTMLButtonElement>('#pilot-run')!;
+  expect(button.disabled).toBe(true);
+  expect(button.textContent).toBe('本文を確認しています…');
+  button.click();
+  expect(ctx.pilot.onRun).not.toHaveBeenCalled();
+});
+
 function makeState(options: {
   documents?: DocumentRecord[] | null;
   studies?: StudyRecord[] | null;

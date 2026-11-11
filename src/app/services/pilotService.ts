@@ -16,6 +16,7 @@ import {
   type StudySelectionItem,
 } from '../../features/documents/studySelection';
 import { makeLoadDocumentPages } from '../../features/documents/loadDocumentPages';
+import { preparePreviewCheck, type PreviewCheck } from '../../features/documents/preparePreviewCheck';
 import { makeLoadDocumentPageImages } from '../../features/documents/loadDocumentPageImages';
 import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
 import {
@@ -79,8 +80,14 @@ function toMessage(err: unknown): string {
 
 /** pilot スライスだけを差し替える setState ヘルパ（他スライスは維持） */
 function patchPilot(store: Store, patch: Partial<PilotState>): void {
+  if ('selectedStudyIds' in patch || 'model' in patch || 'selectedFieldIds' in patch || 'pageImages' in patch) {
+    previewChecks.delete(store);
+    patch.previewWarnings = [];
+  }
   store.setState({ pilot: { ...store.getState().pilot, ...patch } });
 }
+
+const previewChecks = new WeakMap<Store, { key: string; check: PreviewCheck }>();
 
 /**
  * 初回表示では未使用のテキスト付き study を最大 3 件選び、皆無なら使用済みに戻す。
@@ -285,6 +292,19 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
     if (!(await confirmAiDataConsent(deps, providerResolution.provider))) {
       return;
     }
+    const previewKey = JSON.stringify([project.spreadsheetId, targetsForBlockCheck]);
+    const pending = previewChecks.get(store);
+    patchPilot(store, { checkingPreview: true });
+    const previewCheck = pending?.key === previewKey
+      ? pending.check
+      : await preparePreviewCheck(targetsForBlockCheck, makeLoadDocumentPages(targetsForBlockCheck, deps.google));
+    patchPilot(store, { checkingPreview: false });
+    if (previewCheck.warnings.length > 0 && pending?.key !== previewKey) {
+      previewChecks.set(store, { key: previewKey, check: previewCheck });
+      patchPilot(store, { previewWarnings: previewCheck.warnings.map((warning) => warning.message) });
+      return;
+    }
+    previewChecks.delete(store);
 
     patchPilot(store, { running: true, runError: null, progress: null });
     // 選択 study の全文書を連結対象にする（study 単位抽出。§4.3）
@@ -304,6 +324,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         runType: 'pilot',
         pageImages: resolveEffectivePageImages(state.pilot.pageImages, model, providerResolution.provider),
         documents: targets,
+        previewWarnings: previewCheck.warnings,
         fields: extractionFields,
         model,
         protocolContext,
@@ -317,7 +338,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         provider: providerResolution.config.provider,
         endpoint: providerResolution.config.endpoint,
         reasoningEffort: providerResolution.config.reasoningEffort,
-        loadDocumentPages: makeLoadDocumentPages(targets, deps.google),
+        loadDocumentPages: previewCheck.loadDocumentPages,
         loadDocumentPageImages: makeLoadDocumentPageImages(targets, deps.google),
         buildProvider: deps.buildProvider,
         resolveRateLimitPolicy: deps.resolveRateLimitPolicy,
@@ -388,8 +409,12 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
     }
     if (store.getState().pilot.matrix?.runId !== outcome.run.runId) await loadPilotMatrix(store, deps);
   } catch (err) {
+    previewChecks.delete(store);
     patchPilot(store, { running: false, progress: null, runError: toMessage(err) });
   } finally {
+    if (store.getState().pilot.checkingPreview) {
+      patchPilot(store, { checkingPreview: false });
+    }
     pilotLocked = false;
   }
 }
