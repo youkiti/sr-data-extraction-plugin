@@ -355,6 +355,7 @@ describe('importPickedSelections（Picker 確定後の共通取り込み処理�
   test('選択を取り込みパイプラインへ渡す（importFromPicker と同じ挙動）。処理に入ったら true を返す', async () => {
     const store = makeStore();
     mockImportDocuments.mockResolvedValue({
+      previewFilenames: [],
       importedStudies: [makeStudy({ studyId: 'study-1' })],
       imported: [makeDoc({ documentId: 'doc-1', studyId: 'study-1' })],
       failures: [],
@@ -442,6 +443,7 @@ describe('importFromPicker', () => {
     mockImportDocuments.mockImplementation(async (_params, deps) => {
       deps.onProgress?.({ key: 'src-1', fileIndex: 0, totalFiles: 1, filename: 'a.pdf', stage: 'copy' });
       return {
+        previewFilenames: [],
         importedStudies: [makeStudy({ studyId: 'study-1' })],
         imported: [makeDoc({ documentId: 'doc-1', studyId: 'study-1' })],
         failures: [],
@@ -468,6 +470,7 @@ describe('importFromPicker', () => {
       // key='src-1' の進捗通知で、2 行のうち 1 行目のみ差し替え（他行は据え置きの分岐）
       deps.onProgress?.({ key: 'src-1', fileIndex: 0, totalFiles: 2, filename: 'a.pdf', stage: 'copy' });
       return {
+        previewFilenames: [],
         importedStudies: [makeStudy({ studyId: 'study-1' })],
         imported: [makeDoc({ documentId: 'doc-1', studyId: 'study-1' })],
         failures: [{ key: 'src-2', filename: 'b.pdf', stage: 'extract', detail: 'parse' }],
@@ -500,7 +503,7 @@ describe('importFromPicker', () => {
       { id: 'src-1', name: 'a.pdf' },
       { id: 'src-2', name: 'b.pdf' },
     ]);
-    mockImportDocuments.mockResolvedValue({ importedStudies: [], imported: [], failures: [] });
+    mockImportDocuments.mockResolvedValue({ previewFilenames: [], importedStudies: [], imported: [], failures: [] });
 
     await importFromPicker(store, makeDeps());
 
@@ -523,7 +526,7 @@ describe('importFromPicker', () => {
       { id: 'src-1', name: 'a.pdf' },
       { id: 'src-3', name: 'c.pdf' },
     ]);
-    mockImportDocuments.mockResolvedValue({ importedStudies: [], imported: [], failures: [] });
+    mockImportDocuments.mockResolvedValue({ previewFilenames: [], importedStudies: [], imported: [], failures: [] });
 
     await importFromPicker(store, makeDeps());
 
@@ -582,6 +585,7 @@ describe('重複スキップ（issue #102）', () => {
       skipped: [{ key: 'src-1', filename: 'a.pdf', reason: 'same_source' }],
     });
     mockImportDocuments.mockResolvedValue({
+      previewFilenames: [],
       importedStudies: [makeStudy({ studyId: 'study-2' })],
       imported: [makeDoc({ documentId: 'doc-2', studyId: 'study-2', sourceFileId: 'src-2' })],
       failures: [],
@@ -644,6 +648,7 @@ describe('重複スキップ（issue #102）', () => {
       skipped: [{ key: 'local:dup.pdf:10', filename: 'dup.pdf', reason: 'same_content' }],
     }));
     mockImportDocuments.mockResolvedValue({
+      previewFilenames: [],
       importedStudies: [makeStudy({ studyId: 'study-1' })],
       imported: [makeDoc({ sourceFileId: null })],
       failures: [{ key: 'local:c.pdf:10', filename: 'c.pdf', stage: 'copy', detail: 'quota' }],
@@ -664,7 +669,7 @@ describe('重複スキップ（issue #102）', () => {
     const store = makeStore();
     mockOpenPdfPicker.mockResolvedValue([{ sourceFileId: 'src-9', filename: 'z.pdf' }]);
     mockReadDocuments.mockResolvedValue([makeDoc()]);
-    mockImportDocuments.mockResolvedValue({ importedStudies: [], imported: [], failures: [] });
+    mockImportDocuments.mockResolvedValue({ previewFilenames: [], importedStudies: [], imported: [], failures: [] });
 
     await importFromPicker(store, makeDeps());
 
@@ -712,7 +717,7 @@ describe('importFromFiles', () => {
 
   test('PDF 以外を除外してトースト、残りは source.kind=local で取り込む', async () => {
     const store = makeStore();
-    mockImportDocuments.mockResolvedValue({ importedStudies: [], imported: [], failures: [] });
+    mockImportDocuments.mockResolvedValue({ previewFilenames: [], importedStudies: [], imported: [], failures: [] });
     const pdf = makeFakeFile('a.pdf', 10);
     const txt = makeFakeFile('notes.txt', 5, 'text/plain');
 
@@ -733,14 +738,14 @@ describe('importFromFiles', () => {
 
   test('MIME 未設定でも .pdf 拡張子なら PDF 扱いする', async () => {
     const store = makeStore();
-    mockImportDocuments.mockResolvedValue({ importedStudies: [], imported: [], failures: [] });
+    mockImportDocuments.mockResolvedValue({ previewFilenames: [], importedStudies: [], imported: [], failures: [] });
     await importFromFiles(store, makeDeps(), [makeFakeFile('scan.pdf', 10, '')]);
     expect(mockImportDocuments).toHaveBeenCalledTimes(1);
   });
 
   test('filename + size が同一のファイルはバッチ内で重複排除する（サイズ違いは別物）', async () => {
     const store = makeStore();
-    mockImportDocuments.mockResolvedValue({ importedStudies: [], imported: [], failures: [] });
+    mockImportDocuments.mockResolvedValue({ previewFilenames: [], importedStudies: [], imported: [], failures: [] });
     const a = makeFakeFile('a.pdf', 10);
     const aDup = makeFakeFile('a.pdf', 10);
     const aOtherSize = makeFakeFile('a.pdf', 20);
@@ -771,6 +776,7 @@ describe('importFromFiles', () => {
     mockImportDocuments.mockImplementation(async (_params, deps) => {
       deps.onProgress?.({ key: 'local:a.pdf:10', fileIndex: 0, totalFiles: 1, filename: 'a.pdf', stage: 'copy' });
       return {
+        previewFilenames: [],
         importedStudies: [makeStudy({ studyId: 'study-1' })],
         imported: [makeDoc({ documentId: 'doc-1', studyId: 'study-1', sourceFileId: null })],
         failures: [],
@@ -788,6 +794,7 @@ describe('importFromFiles', () => {
   test('失敗混在は key 突き合わせで failed 進捗行になる', async () => {
     const store = makeStore();
     mockImportDocuments.mockResolvedValue({
+      previewFilenames: [],
       importedStudies: [],
       imported: [],
       failures: [{ key: 'local:a.pdf:10', filename: 'a.pdf', stage: 'copy', detail: 'quota' }],

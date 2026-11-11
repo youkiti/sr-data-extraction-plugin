@@ -15,6 +15,7 @@ import {
   effectiveStudyIds,
 } from '../../features/documents/studySelection';
 import { makeLoadDocumentPages } from '../../features/documents/loadDocumentPages';
+import { preparePreviewCheck, type PreviewCheck } from '../../features/documents/preparePreviewCheck';
 import { makeLoadDocumentPageImages } from '../../features/documents/loadDocumentPageImages';
 import {
   filterFieldsBySelection,
@@ -63,8 +64,15 @@ function toMessage(err: unknown): string {
 
 /** extract スライスだけを差し替える setState ヘルパ（他スライスは維持） */
 function patchExtract(store: Store, patch: Partial<ExtractState>): void {
+  if ('selectedStudyIds' in patch || 'model' in patch || 'selectedFieldIds' in patch || 'pageImages' in patch) {
+    previewChecks.delete(store);
+    patch.previewWarnings = [];
+    patch.confirming = false;
+  }
   store.setState({ extract: { ...store.getState().extract, ...patch } });
 }
+
+const previewChecks = new WeakMap<Store, { key: string; check: PreviewCheck }>();
 
 /** documents 一覧を解決する（documents スライスに読込済みならそれを使う） */
 async function resolveDocuments(
@@ -292,8 +300,8 @@ export function setExtractModel(store: Store, model: string): void {
  * 実行自体は confirmExtractRun が行う（確認を経ずに実行は始まらない — ui-states.md §3）
  */
 export async function requestExtractRun(store: Store, deps: ExtractServiceDeps): Promise<void> {
-  const { extract, schema, documents } = store.getState();
-  if (extract.running || extract.retryingStudyId !== null) {
+  const { extract, schema, documents, currentProject } = store.getState();
+  if (extract.running || extract.checkingPreview || extract.retryingStudyId !== null) {
     return;
   }
   if (schema.currentFields === null || schema.currentFields.length === 0) {
@@ -343,11 +351,31 @@ export async function requestExtractRun(store: Store, deps: ExtractServiceDeps):
     });
     return;
   }
-  patchExtract(store, { runError: null, confirming: true });
+  previewChecks.delete(store);
+  const previewKey = JSON.stringify([currentProject?.spreadsheetId, targets]);
+  patchExtract(store, { checkingPreview: true });
+  try {
+    const check = await preparePreviewCheck(targets, makeLoadDocumentPages(targets, deps.google));
+    const latest = store.getState();
+    const latestCandidates = buildExtractionCandidates(latest.documents.studies ?? [], latest.documents.records ?? []);
+    const latestTargets = documentsForStudies(latestCandidates, effectiveStudyIds(latestCandidates, latest.extract.selectedStudyIds));
+    if (previewKey !== JSON.stringify([latest.currentProject?.spreadsheetId, latestTargets])) {
+      return;
+    }
+    previewChecks.set(store, { key: previewKey, check });
+    patchExtract(store, {
+      runError: null,
+      confirming: true,
+      previewWarnings: check.warnings.map((warning) => warning.filename),
+    });
+  } finally {
+    patchExtract(store, { checkingPreview: false });
+  }
 }
 
 export function cancelExtractConfirm(store: Store): void {
-  patchExtract(store, { confirming: false });
+  previewChecks.delete(store);
+  patchExtract(store, { confirming: false, previewWarnings: [] });
 }
 
 /** 抽出 1 回ぶんの共通実行（full / single_study）。進捗を studyRows へ畳み込む */
@@ -372,6 +400,12 @@ async function performRun(
     onStudyRows: (rows: ExtractStudyRow[]) => void;
   },
 ): Promise<RunExtractionOutcome> {
+  const key = JSON.stringify([params.spreadsheetId, params.targets]);
+  const pending = previewChecks.get(store);
+  previewChecks.delete(store);
+  const previewCheck = pending?.key === key
+    ? pending.check
+    : await preparePreviewCheck(params.targets, makeLoadDocumentPages(params.targets, deps.google));
   const { text: protocolContext } = await resolveProtocol(store, deps, params.spreadsheetId);
 
   // 進捗リストの分母（study 別バッチ数）を実行前に計画しておく。
@@ -400,6 +434,7 @@ async function performRun(
       runType: params.runType,
       pageImages: params.pageImages,
       documents: params.targets,
+      previewWarnings: previewCheck.warnings,
       fields: params.fields,
       model: params.model,
       protocolContext,
@@ -417,7 +452,7 @@ async function performRun(
       provider: params.providerConfig.provider,
       endpoint: params.providerConfig.endpoint,
       reasoningEffort: params.providerConfig.reasoningEffort,
-      loadDocumentPages: makeLoadDocumentPages(params.targets, deps.google),
+      loadDocumentPages: previewCheck.loadDocumentPages,
       loadDocumentPageImages: makeLoadDocumentPageImages(params.targets, deps.google),
       buildProvider: deps.buildProvider,
       resolveRateLimitPolicy: deps.resolveRateLimitPolicy,
@@ -589,6 +624,9 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
   } catch (err) {
     patchExtract(store, { running: false, progress: null, runError: toMessage(err) });
   } finally {
+    if (!store.getState().extract.confirming) {
+      previewChecks.delete(store);
+    }
     extractionLocked = false;
   }
 }

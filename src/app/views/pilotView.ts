@@ -176,13 +176,17 @@ function renderEstimate(state: AppState): HTMLElement {
         text: t('extraction.estimateNote'),
       }),
     ];
-    for (const warning of plan.warnings) {
+    const previewWarnings = (state.pilot.previewWarnings ?? []).map((filename) => t('extraction.previewWarning', { filename }));
+    for (const warning of [...plan.warnings, ...previewWarnings]) {
       lines.push(
         el('p', {
           className: 'pilot__estimate-warning',
           text: t('extraction.estimateWarning', { warning }),
         }),
       );
+    }
+    if ((state.pilot.previewWarnings ?? []).length > 0) {
+      lines.push(el('p', { text: t('extraction.previewConfirm'), attributes: { role: 'status' } }));
     }
     return el('div', { id: 'pilot-estimate', className: 'pilot__estimate' }, lines);
   } catch (err) {
@@ -229,10 +233,10 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
   const runButton = el('button', {
     id: 'pilot-run',
     className: 'pilot__run',
-    text: t('pilot.run'),
+    text: state.pilot.checkingPreview ? t('extraction.checkingPreview') : t('pilot.run'),
     attributes: { type: 'button', 'data-tour': 'pilot-extract-run-pilot' },
   });
-  runButton.disabled = hasZeroFieldsSelected(state.pilot.selectedFieldIds, fields) ||
+  runButton.disabled = state.pilot.checkingPreview || hasZeroFieldsSelected(state.pilot.selectedFieldIds, fields) ||
     findProviderModelMismatch(state.pilot.model, state.llmProviderOverride) !== null;
   runButton.addEventListener('click', () => ctx.pilot.onRun());
 

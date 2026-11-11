@@ -969,6 +969,16 @@ export function renderDocumentsView(state: AppState, ctx: ViewContext): HTMLElem
   if (importRows.length > 0) {
     children.push(renderProgress(importRows));
   }
+  const previewFilenames = state.documents.previewFilenames ?? [];
+  if (previewFilenames.length > 0) {
+    children.push(el('div', {
+      id: 'documents-preview-warning',
+      attributes: { role: 'status' },
+    }, [
+      el('p', { text: t('documents.previewWarning') }),
+      el('ul', {}, previewFilenames.map((filename) => el('li', { text: filename }))),
+    ]));
+  }
   if (hasProject) {
     if (state.documents.tiabHandoff !== null) {
       children.push(renderTiabHandoffPanel(state.documents.tiabHandoff, state, ctx));

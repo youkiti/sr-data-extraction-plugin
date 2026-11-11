@@ -113,6 +113,10 @@ function isRunWarning(value: unknown): value is RunWarning {
   if (candidate.kind === 'evidence_row_count') {
     return typeof candidate.expectedRows === 'number' && typeof candidate.savedRows === 'number';
   }
+  if (candidate.kind === 'preview_pdf') {
+    return typeof candidate.documentId === 'string' &&
+      typeof candidate.filename === 'string' && typeof candidate.message === 'string';
+  }
   return false;
 }
 

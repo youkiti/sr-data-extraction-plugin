@@ -361,6 +361,37 @@ function makeStudyRow(
   return { completedBatches: 0, totalBatches: 1, detail: null, failureKind: null, ...overrides };
 }
 
+test('一括抽出の確認カードにプレビュー警告を表示する', () => {
+  const state = makeState({ extract: { confirming: true, previewWarnings: ['preview.pdf'] } });
+  const { ctx } = makeCtx();
+  const root = renderExtractView(state, ctx);
+  expect(root.querySelector('#extract-confirm')?.textContent).toContain('preview.pdf');
+});
+
+test('英語表示では一括抽出のプレビュー警告を英語にする', () => {
+  const state = makeState({ extract: { confirming: true, previewWarnings: ['preview.pdf'] } });
+  const { ctx } = makeCtx();
+  setUiLanguage('en');
+  try {
+    const root = renderExtractView(state, ctx);
+    expect(root.querySelector('#extract-confirm')?.textContent).toContain('“preview.pdf” may be a preview copy rather than the full text.');
+    expect(root.querySelector('#extract-estimate')?.textContent).toContain('AI cannot extract values if the results chapter is missing.');
+  } finally {
+    setUiLanguage('ja');
+  }
+});
+
+test('本文確認中は実行ボタンを無効にし確認中の文言を表示する', () => {
+  const state = makeState({ extract: { checkingPreview: true } });
+  const { ctx } = makeCtx();
+  const root = renderExtractView(state, ctx);
+  const button = root.querySelector<HTMLButtonElement>('#extract-run')!;
+  expect(button.disabled).toBe(true);
+  expect(button.textContent).toBe('本文を確認しています…');
+  button.click();
+  expect(ctx.extract.onRequestRun).not.toHaveBeenCalled();
+});
+
 function makeState(
   options: {
     documents?: DocumentRecord[] | null;

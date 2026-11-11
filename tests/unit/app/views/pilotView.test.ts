@@ -366,6 +366,38 @@ function studiesFor(documents: readonly DocumentRecord[]): StudyRecord[] {
   return [...new Set(documents.map((d) => d.studyId))].map((id) => makeStudy(id));
 }
 
+test('パイロットの実行前警告と続行の案内を表示する', () => {
+  const state = makeState({ pilot: { previewWarnings: ['preview.pdf'] } });
+  const { ctx } = makeCtx();
+  const root = renderPilotView(state, ctx);
+  expect(root.querySelector('#pilot-estimate')?.textContent).toContain('preview.pdf');
+  expect(root.querySelector('#pilot-estimate')?.textContent).toContain('もう一度');
+});
+
+test('英語表示ではパイロットのプレビュー警告を英語にする', () => {
+  const state = makeState({ pilot: { previewWarnings: ['preview.pdf'] } });
+  const { ctx } = makeCtx();
+  setUiLanguage('en');
+  try {
+    const root = renderPilotView(state, ctx);
+    expect(root.querySelector('#pilot-estimate')?.textContent).toContain('“preview.pdf” may be a preview copy rather than the full text.');
+    expect(root.querySelector('#pilot-estimate')?.textContent).toContain('AI cannot extract values if the results chapter is missing.');
+  } finally {
+    setUiLanguage('ja');
+  }
+});
+
+test('本文確認中は実行ボタンを無効にし確認中の文言を表示する', () => {
+  const state = makeState({ pilot: { checkingPreview: true } });
+  const { ctx } = makeCtx();
+  const root = renderPilotView(state, ctx);
+  const button = root.querySelector<HTMLButtonElement>('#pilot-run')!;
+  expect(button.disabled).toBe(true);
+  expect(button.textContent).toBe('本文を確認しています…');
+  button.click();
+  expect(ctx.pilot.onRun).not.toHaveBeenCalled();
+});
+
 function makeState(options: {
   documents?: DocumentRecord[] | null;
   studies?: StudyRecord[] | null;

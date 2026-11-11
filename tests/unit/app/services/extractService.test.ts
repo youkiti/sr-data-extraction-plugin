@@ -32,7 +32,7 @@ import {
   type CompletedRunStudySummary,
 } from '../../../../src/features/extraction/runRepository';
 import { getSchemaFieldsByVersion } from '../../../../src/features/schema/schemaRepository';
-import { ensureChildFolder } from '../../../../src/lib/google/drive';
+import { ensureChildFolder, getFileText } from '../../../../src/lib/google/drive';
 
 // extractService → makeLoadDocumentPageImages → lib/pdf/loadPdf 経由で
 // pdfjs-dist（ESM 専用）が require されるのを防ぐ（bootstrap.test.ts と同じ対策。
@@ -62,6 +62,7 @@ jest.mock('../../../../src/features/schema/schemaRepository', () => ({
 }));
 jest.mock('../../../../src/lib/google/drive', () => ({
   ensureChildFolder: jest.fn(),
+  getFileText: jest.fn(),
 }));
 
 const runExtractionMock = runExtraction as jest.MockedFunction<typeof runExtraction>;
@@ -286,6 +287,7 @@ function toastTexts(): string[] {
 }
 
 beforeEach(() => {
+  jest.mocked(getFileText).mockResolvedValue('');
   document.body.innerHTML = '';
   resolveProtocolMock.mockResolvedValue({
     protocol: { version: 1 } as never,
@@ -603,6 +605,95 @@ describe('resetExtractFieldSelection / toggleExtractField / toggleExtractFieldSe
 });
 
 describe('requestExtractRun / cancelExtractConfirm', () => {
+  test.each(['selection', 'project', 'documents'])('本文確認中に対象が変わったら確認を開かない: %s', async (change) => {
+    let finish!: (text: string) => void;
+    let started!: () => void;
+    const loading = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    jest.mocked(getFileText).mockImplementationOnce(() => new Promise((resolve) => {
+      finish = resolve;
+      started();
+    }));
+    const store = makeStore({
+      documents: [makeDocument(), makeDocument({ documentId: 'doc-2' })], fields: [makeField()],
+      extract: { selectedStudyIds: ['study-doc-1'], model: 'gemini-test' },
+    });
+    const request = requestExtractRun(store, makeDeps());
+    await loading;
+    if (change === 'selection') {
+      toggleExtractStudy(store, 'study-doc-1', false);
+      toggleExtractStudy(store, 'study-doc-2', true);
+    } else if (change === 'project') {
+      store.setState({ currentProject: null });
+    } else {
+      store.setState({ documents: { ...store.getState().documents, studies: null, records: null } });
+    }
+    finish('本文\nPREVIEW\f本文\nPREVIEW');
+    await request;
+    expect(store.getState().extract.checkingPreview).toBe(false);
+    expect(store.getState().extract.confirming).toBe(false);
+    expect(store.getState().extract.previewWarnings ?? []).toEqual([]);
+    expect(runExtractionMock).not.toHaveBeenCalled();
+  });
+
+  test('プレビュー警告を確認に表示し実行にも同じ本文ローダーを渡す', async () => {
+    jest.mocked(getFileText).mockClear().mockResolvedValue('本文\nPREVIEW\f本文\nPREVIEW');
+    const store = makeStore({
+      documents: [makeDocument()], fields: [makeField()],
+      extract: { selectedStudyIds: ['study-doc-1'], model: 'gemini-test' },
+    });
+    const deps = makeDeps();
+    await requestExtractRun(store, deps);
+    expect(store.getState().extract.previewWarnings?.[0]).toContain('smith2020.pdf');
+    await runExtract(store, { ...deps, ensureAiDataConsent: jest.fn().mockResolvedValue(false) });
+    expect(store.getState().extract.confirming).toBe(true);
+    runExtractionMock.mockResolvedValueOnce(makeOutcome());
+    await runExtract(store, deps);
+    const call = runExtractionMock.mock.calls[runExtractionMock.mock.calls.length - 1]!;
+    expect(call[0].previewWarnings?.[0]?.filename).toBe('smith2020.pdf');
+    await call[1].loadDocumentPages('doc-1');
+    expect(getFileText).toHaveBeenCalledTimes(1);
+  });
+
+  test('本文の読込失敗でも確認を開き、警告もエラーも出さない', async () => {
+    jest.mocked(getFileText).mockRejectedValueOnce(new Error('本文読込失敗'));
+    const store = makeStore({
+      documents: [makeDocument()], fields: [makeField()],
+      extract: { selectedStudyIds: ['study-doc-1'], model: 'gemini-test' },
+    });
+    await requestExtractRun(store, makeDeps());
+    expect(store.getState().extract.confirming).toBe(true);
+    expect(store.getState().extract.runError).toBeNull();
+    expect(store.getState().extract.previewWarnings).toEqual([]);
+    expect(store.getState().extract.checkingPreview).toBe(false);
+  });
+
+  test('本文確認中は状態を保持し、重複した確認を始めない', async () => {
+    let finish!: (text: string) => void;
+    let started!: () => void;
+    const loading = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    jest.mocked(getFileText).mockImplementationOnce(() => new Promise((resolve) => {
+      finish = resolve;
+      started();
+    }));
+    const store = makeStore({
+      documents: [makeDocument()], fields: [makeField()],
+      extract: { selectedStudyIds: ['study-doc-1'], model: 'gemini-test' },
+    });
+    const deps = makeDeps();
+    const request = requestExtractRun(store, deps);
+    await loading;
+    expect(store.getState().extract.checkingPreview).toBe(true);
+    await requestExtractRun(store, deps);
+    finish('本文');
+    await request;
+    expect(store.getState().extract.checkingPreview).toBe(false);
+    expect(store.getState().extract.confirming).toBe(true);
+  });
+
   test('検証を通れば確認カードを開く（runError はクリア）', async () => {
     const store = makeStore({
       documents: [makeDocument()],

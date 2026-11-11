@@ -1131,6 +1131,21 @@ describe('readCompletedRunMetas（issue #80: field 単位合成ビューの素�
     expect(metas[1]).toMatchObject({ runId: 'r2', warnings: null });
   });
 
+  test('プレビュー警告を復元し、不正なプロパティは除く', async () => {
+    const warning = { kind: 'preview_pdf', documentId: 'doc-1', filename: 'preview.pdf', message: 'プレビュー版の疑い' };
+    const values = [
+      [...SHEET_HEADERS.ExtractionRuns],
+      row({ runId: 'r1', warnings: JSON.stringify([
+        warning,
+        { ...warning, documentId: 1 },
+        { ...warning, filename: null },
+        { ...warning, message: null },
+      ]) }),
+    ];
+    const metas = await readCompletedRunMetas('sheet-1', readDeps(values));
+    expect(metas[0]?.warnings).toEqual([warning]);
+  });
+
   test('warnings 列の evidence_row_count（issue #247）を JSON パースする。arm_completeness と混在しても両方拾う', async () => {
     const armWarning = makeWarning({ section: 'outcomes' });
     const rowCountWarning = makeRowCountWarning();

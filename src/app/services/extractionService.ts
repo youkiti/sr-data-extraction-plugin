@@ -16,7 +16,7 @@
 // 未解決時のみ DEFAULT_FLUSH_EVERY_N_STUDIES へフォールバックする
 // （docs/handoff-20260710-sheets-write-batching.md）
 import { getToolVersion as defaultGetToolVersion } from '../../utils/toolVersion';
-import type { ExtractionRun, RunType, RunWarning } from '../../domain/extractionRun';
+import type { ExtractionRun, PreviewPdfRunWarning, RunType, RunWarning } from '../../domain/extractionRun';
 import type { ModelPricing } from '../../lib/llm/pricing';
 import type { LlmProviderId } from '../../domain/llmApiLog';
 import type { DocumentRecord } from '../../domain/document';
@@ -123,6 +123,8 @@ export interface ExtractionServiceDeps {
 }
 
 export interface RunExtractionParams {
+  /** 実行前に検出したプレビュー版の警告。 */
+  previewWarnings?: PreviewPdfRunWarning[];
   /** 本文に加えて全ページ画像を送る（既定 false）。 */
   pageImages?: boolean;
   fallbackPricing?: ModelPricing;
@@ -205,6 +207,7 @@ export async function runExtraction(
     providerOverride: deps.provider,
   });
 
+  plan.warnings.push(...(params.previewWarnings ?? []).map((warning) => warning.message));
   const baseProvider = (deps.buildProvider ?? createProvider)({
     apiKey: deps.apiKey,
     model: params.model,
@@ -308,7 +311,7 @@ export async function runExtraction(
       finishedAt: null,
       tokensIn: null,
       tokensOut: null,
-      warnings: null,
+      warnings: params.previewWarnings?.length ? params.previewWarnings : null,
     },
     deps.google,
   );
@@ -477,6 +480,7 @@ export async function runExtraction(
   // 大量に出て末尾から落ちても evidence_row_count は生き残る）
   const warnings: RunWarning[] = [
     ...(result.evidenceRowCountWarning === null ? [] : [result.evidenceRowCountWarning]),
+    ...(params.previewWarnings ?? []),
     ...result.armWarnings,
   ];
   const run: ExtractionRun = {

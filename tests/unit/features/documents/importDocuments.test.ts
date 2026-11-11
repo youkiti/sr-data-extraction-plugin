@@ -90,6 +90,15 @@ beforeEach(() => {
 });
 
 describe('defaultStudyLabel', () => {
+  test('プレビュー版のファイル名を取り込み結果へ含める', async () => {
+    mockedExtract.mockResolvedValueOnce({
+      pages: [1, 2].map((page) => ({ page, text: '本文\nPREVIEW', width: 600, height: 800, rotation: 0, items: [] })),
+      textStatus: 'ok', pageCount: 2, charCount: 100, serializedText: '本文',
+    });
+    const result = await importDocuments(baseParams([driveSelection('src-1', 'preview.pdf')]), makeDeps());
+    expect(result.previewFilenames).toEqual(['preview.pdf']);
+  });
+
   test('拡張子 .pdf を大文字小文字問わず外す', () => {
     expect(defaultStudyLabel('smith2020.pdf')).toBe('smith2020');
     expect(defaultStudyLabel('SMITH2020.PDF')).toBe('SMITH2020');

@@ -14,6 +14,17 @@ import type { StudyRecord } from '../../../../src/domain/study';
 import type { TiabImportPlan } from '../../../../src/features/documents/tiabReview';
 import { setUiLanguage } from '../../../../src/lib/i18n';
 
+test('取り込み後にプレビュー警告とファイル名を表示する', () => {
+  const state = makeState();
+  state.documents.previewFilenames = ['preview.pdf'];
+  const { ctx } = makeCtx();
+  const view = renderDocumentsView(state, ctx);
+  const warning = view.querySelector('#documents-preview-warning');
+  expect(warning?.getAttribute('role')).toBe('status');
+  expect(warning?.textContent).toContain('preview.pdf');
+  expect(warning?.textContent).toContain('結果の章が無いと AI は値を拾えません');
+});
+
 function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
   return {
     studyId: 'study-1',

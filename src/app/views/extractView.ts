@@ -272,7 +272,8 @@ function renderEstimate(state: AppState, budgetWarningId = 'extract-budget-warni
         );
       }
     }
-    for (const warning of plan.warnings) {
+    const previewWarnings = (state.extract.previewWarnings ?? []).map((filename) => t('extraction.previewWarning', { filename }));
+    for (const warning of [...plan.warnings, ...previewWarnings]) {
       lines.push(
         el('p', {
           className: 'extract__estimate-warning',
@@ -336,10 +337,11 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
   const runButton = el('button', {
     id: 'extract-run',
     className: 'extract__run',
-    text: t('extract.run'),
+    text: state.extract.checkingPreview ? t('extraction.checkingPreview') : t('extract.run'),
     attributes: { type: 'button', 'data-tour': 'pilot-extract-run-full' },
   });
   runButton.disabled =
+    state.extract.checkingPreview ||
     findProviderModelMismatch(state.extract.model, state.llmProviderOverride) !== null ||
     state.extract.confirming ||
     state.extract.retryingStudyId !== null ||

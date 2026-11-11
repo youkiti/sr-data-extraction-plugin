@@ -170,6 +170,14 @@ describe('抽出実行の再現情報', () => {
 });
 
 describe('runExtraction', () => {
+  test('確認時のプレビュー警告を計画と実行記録へ残す', async () => {
+    const warning = { kind: 'preview_pdf' as const, documentId: 'doc-1', filename: 'preview.pdf', message: 'プレビュー版の疑い' };
+    const outcome = await runExtraction({ ...baseParams(), previewWarnings: [warning] }, makeDeps(jest.fn().mockResolvedValue(AI_RESPONSE)));
+    expect(outcome.plan.warnings).toContain(warning.message);
+    expect(outcome.run.warnings).toContainEqual(warning);
+    expect(mockedAppendRun.mock.calls[0]![1].warnings).toEqual([warning]);
+  });
+
   test('任意のページ画像を添付して新しい入力方式を両方の run 行へ記録する', async () => {
     const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
     const deps = makeDeps(chat);
