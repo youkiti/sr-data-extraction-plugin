@@ -13,7 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
-（まだありません / Nothing yet）
+### AI の結果に影響する変更 / Changes that affect AI output
+
+- DTA の表のデザインで治療群名を書き換える抽出指示を修正しました。複数群をまとめた推定では群名を `; ` で区切り、`escitalopram + bupropion` のような併用群を 1 つの名前として保持します。推定は群ごとに分割しません。利用者のスキーマに設定する文言の変更のため、extract-data プロンプトの版数は変更しません（2026-11-13・PR #482）。  
+  Updated the extraction instruction applied when rewriting treatment group names in DTA schema design. Pooled estimates list arm names separated by `; `, keeping a combination arm such as `escitalopram + bupropion` as one name without splitting the estimate by arm. The extract-data prompt version is unchanged because this updates wording in the user's schema (2026-11-13, PR #482).
 
 ## v0.33.0（2026-11-11）
 

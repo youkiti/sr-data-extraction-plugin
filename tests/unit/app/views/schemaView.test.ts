@@ -23,7 +23,9 @@ test.each(['ja', 'en'] as const)('DTA の警告から編集中のラベルと指
     expect(store.getState().schema.editorRows![index]).toEqual({
       ...rows[index],
       fieldLabel: t(DTA_ARM_FIELD_REPLACEMENTS[kind].labelKey),
-      extractionInstruction: DTA_ARM_FIELD_REPLACEMENTS[kind].extractionInstruction,
+      extractionInstruction: kind === 'name'
+        ? 'Extract the treatment group(s) whose participants contribute to this accuracy estimate, as reported (e.g., escitalopram, rTMS 10 Hz). If the estimate pools several arms, list each arm name separated by "; " (keep a combination arm such as "escitalopram + bupropion" as one name) and do not split the estimate by arm.'
+        : DTA_ARM_FIELD_REPLACEMENTS.size.extractionInstruction,
     });
     view = renderSchemaView(store.getState(), ctx);
     expect(view.querySelector(`[data-dta-arm-row="${index}"]`)).toBeNull();

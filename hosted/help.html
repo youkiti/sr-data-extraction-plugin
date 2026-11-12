@@ -1129,8 +1129,8 @@
               <span class="en" lang="en">Boolean items appear as “Yes” or “No” in pilot results, verification, and consultation documents. “No” (FALSE) is a valid result, not an extraction failure. Stored values and CSV exports remain TRUE / FALSE.</span>
             </li>
             <li>
-              <span class="ja" lang="ja">診断精度（DTA）の表で治療群ごとの名前・人数の項目があると、群の行と精度の結果の行が分かれることがあるため警告します。「書き換える」で、その推定に寄与する治療群・人数を指定するラベルと抽出指示に変更できます。確定済みなら新しい版を作ってから書き換えてください。</span>
-              <span class="en" lang="en">In diagnostic accuracy (DTA) schemas, treatment arm name and sample size fields trigger a warning because they can split groups and accuracy results into separate rows. Use “Rewrite” to change the label and extraction instruction to describe the groups and participants contributing to that estimate. For a confirmed schema, create a new version first.</span>
+              <span class="ja" lang="ja">診断精度（DTA）の表で治療群ごとの名前・人数の項目があると、群の行と精度の結果の行が分かれることがあるため警告します。「書き換える」で、その推定に寄与する治療群・人数を指定するラベルと抽出指示に変更できます。複数群をまとめた推定では群名を <code>; </code> で区切り、<code>escitalopram + bupropion</code> のような併用群は 1 つの群名として保持し、推定を群ごとに分けません。確定済みなら新しい版を作ってから書き換えてください。</span>
+              <span class="en" lang="en">In diagnostic accuracy (DTA) schemas, treatment arm name and sample size fields trigger a warning because they can split groups and accuracy results into separate rows. Use “Rewrite” to change the label and extraction instruction to describe the groups and participants contributing to that estimate. For pooled estimates, separate arm names with <code>; </code>, keep a combination arm such as <code>escitalopram + bupropion</code> as one name, and do not split the estimate by arm. For a confirmed schema, create a new version first.</span>
             </li>
             <li>
               <span class="ja" lang="ja"
