@@ -4,7 +4,7 @@ import type { SchemaEditorRow } from './types';
 export const DTA_ARM_FIELD_REPLACEMENTS = {
   name: {
     labelKey: 'schema.dtaEstimateGroups',
-    extractionInstruction: 'Extract the treatment group(s) whose participants contribute to this accuracy estimate, as reported (e.g., escitalopram, rTMS 10 Hz). If the estimate pools several arms, list all of them joined by " + " and do not split the estimate by arm.',
+    extractionInstruction: 'Extract the treatment group(s) whose participants contribute to this accuracy estimate, as reported (e.g., escitalopram, rTMS 10 Hz). If the estimate pools several arms, list each arm name separated by "; " (keep a combination arm such as "escitalopram + bupropion" as one name) and do not split the estimate by arm.',
   },
   size: {
     labelKey: 'schema.dtaEstimateParticipants',

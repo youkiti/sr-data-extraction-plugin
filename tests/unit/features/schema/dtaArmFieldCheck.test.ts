@@ -88,7 +88,10 @@ test('名前型・人数型を振り分け、対象外の型・レベル・単�
   ]);
 });
 
-test.each(Object.values(DTA_ARM_FIELD_REPLACEMENTS))('指定指示文への書き換え後は再警告しない: %o', (replacement) => {
+test.each([
+  { extractionInstruction: 'Extract the treatment group(s) whose participants contribute to this accuracy estimate, as reported (e.g., escitalopram, rTMS 10 Hz). If the estimate pools several arms, list each arm name separated by "; " (keep a combination arm such as "escitalopram + bupropion" as one name) and do not split the estimate by arm.' },
+  DTA_ARM_FIELD_REPLACEMENTS.size,
+])('指定指示文への書き換え後は再警告しない: %o', (replacement) => {
   expect(checkDtaArmFields([quadas, row({
     fieldLabel: 'この推定の対象治療群',
     extractionInstruction: replacement.extractionInstruction,
