@@ -1,7 +1,7 @@
 // Gemini API（generativelanguage.googleapis.com）向け実装
 // （sr-query-builder の lib/llm/GeminiProvider.ts を流用）。
 //
-// - 認証は API キー方式（クエリパラメータ `?key=`）。BYOK（requirements.md §2）
+// - 認証は API キー方式（`x-goog-api-key` ヘッダー）。BYOK（requirements.md §2）
 // - `system` ロールは `systemInstruction` フィールドに分離
 // - `responseFormat: 'json'` で `responseMimeType: application/json` を要求
 // - `responseSchema` を渡すと `generationConfig.responseSchema` で
@@ -123,16 +123,14 @@ export class GeminiProvider implements LLMProvider {
   }
 
   async chat(messages: readonly ChatMessage[], options: ChatOptions = {}): Promise<ChatResponse> {
-    const url = `${ENDPOINT_BASE}/${encodeURIComponent(this.model)}:generateContent?key=${encodeURIComponent(
-      this.apiKey,
-    )}`;
+    const url = `${ENDPOINT_BASE}/${encodeURIComponent(this.model)}:generateContent`;
     const body = this.buildRequestBody(messages, options);
     const adjustments: string[] = [];
     let sentSettings = readSentSettings(body, adjustments);
     const fetchFn = this.fetchImpl ?? globalThis.fetch;
     let res = await fetchFn(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey },
       body: JSON.stringify(body),
     });
     if (!res.ok) {
@@ -145,7 +143,7 @@ export class GeminiProvider implements LLMProvider {
         sentSettings = readSentSettings(body, adjustments);
         res = await fetchFn(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey },
           body: JSON.stringify(body),
         });
         if (!res.ok) {

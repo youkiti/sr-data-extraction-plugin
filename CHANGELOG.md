@@ -13,7 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
-（まだありません / Nothing yet）
+### その他の変更 / Other changes
+
+- Gemini の API キーを URL のクエリから `x-goog-api-key` ヘッダーへ移し、要求 URL を含むエラーや診断ログにキーが残ることを防ぎました（2026-11-13・PR #497）。
+  Gemini API keys are now sent in the `x-goog-api-key` header instead of the URL query, preventing keys from appearing in errors and diagnostic logs that contain request URLs (2026-11-13, PR #497).
 
 ## v0.34.0（2026-11-13）
 
