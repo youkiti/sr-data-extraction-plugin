@@ -29,7 +29,7 @@ sr-data-extraction-plugin/
 ├── sr-query-builder-plugin/       # サブモジュール（要件・UI 構成の参照実装）
 ├── tiab-review-plugin/            # サブモジュール（技術スタック・オフライン同期の参照実装）
 ├── .env.example                   # OAUTH_CLIENT_ID のテンプレ
-├── .eslintrc.cjs
+├── eslint.config.mjs
 ├── .gitignore
 ├── .prettierrc
 ├── .stylelintrc.cjs
@@ -206,7 +206,7 @@ lib / domain
 utils
 ```
 
-- 上位は下位を import 可、逆は不可。ESLint の `import/no-restricted-paths` で機械的に強制
+- 上位は下位を import 可、逆は不可。ESLint の `no-restricted-imports`（`eslint.config.mjs` のディレクトリ別 `patterns`）で機械的に強制。相対パスはディレクトリの深さに応じて照合し、同じレイヤ内の同名ファイルを誤検出しない
 - `domain/` は純粋型のみ。runtime バリデーションは `features/*` 側で zod
 - LLM プロンプトは `features/*/skills/*.ts` の TS 定数として持ち（sr-query-builder の実装方式に合わせる。当初案の `skills/*.md` asset 読み込みは webpack / jest への loader 追加コストに見合わないため不採用）、明示版数（例: `EXTRACT_DATA_PROMPT_VERSION`）を `LLMApiLog` に記録する
 - プロンプトの版数（RAISE 3: 文面を変えたら版を上げる。issue #381）: 4 つの skill（extract-data / draft-schema / relocate-quote / ask-paper）のシステムプロンプト・応答スキーマ・固定入力から作ったユーザープロンプトのハッシュを、版数と組にして `tests/unit/features/promptVersionFingerprint.test.ts` に固定している。文面を変えてこのテストが落ちたら、その skill の `*_PROMPT_VERSION` を 1 上げ、テストの version とハッシュ（失敗メッセージに出る現在値）を同じ PR で更新する（`EXTRACT_DATA_PROMPT_VERSION` を上げたときは `npm run facts` も実行し、版数を固定している skill 側のテストも直す）

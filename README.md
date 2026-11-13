@@ -74,7 +74,7 @@ flowchart LR
 
 ## 開発セットアップ
 
-以下はソースからビルドして動かす開発者向けの手順です。ふだんの利用には不要です。Node.js ≥ 18 が必要です。
+以下はソースからビルドして動かす開発者向けの手順です。ふだんの利用には不要です。Node.js ≥ 22 が必要です。
 
 ```bash
 git clone https://github.com/youkiti/sr-data-extraction-plugin
