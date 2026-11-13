@@ -19,9 +19,9 @@
 
 ## 2. 本拡張特有の設計
 
-### 操作ツアーの通し検証（CI 外）
+### 操作ツアーの通し検証（手元・週次点検）
 
-単体テストの定義・部品検査や通常の E2E で検査しない、デモ拡張上で操作ツアーが最後まで進むことを `tools/guide-tour-check/` で確認する。画面やツアーを変えたら手元で実行する。headed Chromium が必要なため CI には入れず、サンドボックス内では実行しない。実データ・実アカウント・実 API は使わない。
+単体テストの定義・部品検査や通常の E2E で検査しない、デモ拡張上で操作ツアーが最後まで進むことを `tools/guide-tour-check/` で確認する。画面やツアーを変えたら手元で実行する。通常の CI とは別に週次点検でも headed Chromium を Xvfb 上で実行する。サンドボックス内では実行しない。実データ・実アカウント・実 API は使わない。
 
 ```sh
 npm run build:demo
@@ -154,6 +154,32 @@ sr-query-builder（CI なし・ローカル規律運用）とは異なり、本�
 リリース時は `--stamp-help` が自動実行され、現在値の再生成とヘルプの対象バージョン更新を行う。
 ヘルプの最終更新と冒頭の `version:` はデプロイ時に日付を入れる。
 `tests/unit/projectFacts.test.ts` は `__DEPLOY_DATE__` がちょうど 3 件あり、日英の最終更新と `version:` の直後にあることを検査する。
+
+### 4.2 依存更新と週次点検
+
+`.github/dependabot.yml` は npm と GitHub Actions を毎週月曜 09:00（日本時間）に点検する。
+マイナー・パッチ更新は npm の本番依存・開発依存、Actions ごとにまとめ、メジャー更新は個別 PR にする。
+各 ecosystem の同時 Open PR 上限は 10。更新 PR には通常の CI を適用し、移行が必要なら個別に対応する。
+
+`.github/workflows/weekly-check.yml` は毎週月曜 07:17（日本時間）と `workflow_dispatch` で実行する。
+Actions の `weekly-check` → `Run workflow` から手動実行し、次の独立した 3 ジョブを確認する。
+実機不要（CI で完結）。ローカルの検証では実 API を呼ばず、fixture を使う。
+
+| ジョブ | 確認する内容 | 失敗時の対処 |
+|---|---|---|
+| `models` | `npm ci` 後、`npm run check:models` で工場出荷の既定モデル、ヘルプ相談の固定モデル、単価表の ID を収集し、Gemini・Anthropic・OpenRouter のモデル一覧と完全一致で照合する。Gemini と Anthropic は全ページを辿る。推論リクエストは送らない | ログと Step summary のモデル ID・出典を確認する。一覧にない場合は公式の提供終了案内や別名の扱い、キーのアクセス権を確認してから、該当定数・単価表を修正する。提供終了とは即断しない。HTTP 401/403 は secret の権限・有効期限、429/5xx・通信失敗はサービス状況を確認し再実行する。応答形式・ページ送りの異常はスクリプトと fixture を更新する |
+| `audit` | lockfile を使って `npm audit --omit=dev --audit-level=high`。本番依存の high / critical で失敗する | audit の依存経路を確認し、直接依存または親パッケージを安全な版へ更新して通常の CI を通す。レジストリへの接続失敗もジョブ失敗になるためログで区別する |
+| `tours` | `npm ci`、Chromium と OS 依存の導入、`npm run video:fixtures`、`npm run build:demo` の後、`LANGUAGE=ja` の Xvfb 上で `npm run check:tours` を実行する | 準備段階の失敗なら依存・デモ生成を確認する。ツアーの失敗ならログのシナリオ・手順・待ち条件と `tour-screenshots` artifact（14 日保存）を確認し、対象セレクタ・ツアー定義・画面の動作を修正する |
+
+モデル確認に使う repository secrets は `GEMINI_API_KEY`・`ANTHROPIC_API_KEY`・`OPENROUTER_API_KEY`。
+各キーが未設定または空なら、その provider は「スキップ」と未確認件数をログと Step summary に残す。
+全キー未設定でもモデル確認ジョブは成功するが、生存確認済みにはならない。手動実行時もスキップの有無を確認する。
+キーがある provider のモデル欠落または一覧取得失敗は終了コード 1。他の provider の確認は続ける。
+OpenRouter もキーがある場合だけ取得する。Azure や利用者の私設 API は組み込み ID の対象に含めない。
+キーはヘッダーで送り、応答本文と通信例外の詳細は出力しない。
+
+収集処理は TypeScript の構文木を読み、定数の書式が変わって読めなくなった場合は失敗させる。
+`tools/weekly/checkModelIds.test.mjs` は `npm run test:tools` に含め、収集・照合・ページング・スキップ・エラー処理を fixture と注入した fetch で検証する。
 
 ## 5. 未決定・実装フェーズで判断する点
 
