@@ -42,7 +42,8 @@ sr-data-extraction-plugin/
 ├── README.md                      # データフロー図 + KAKENHI 25K13585 funding 表記
 ├── README.en.md                   # 英語版 README（日本語版の要約。正典は README.md。「なにをするツールか」「データフロー」「利用者向けセットアップ」を変える PR は対応節も更新する。issue #259）
 ├── THIRD_PARTY_NOTICES.md
-└── CLAUDE.md
+├── AGENTS.md                      # 作業規則の正典
+└── CLAUDE.md                      # AGENTS.md を読み込むポインタ
 ```
 
 ## 2. `src/` 配下
