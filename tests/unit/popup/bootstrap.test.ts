@@ -18,7 +18,7 @@ import {
 import { loadTiabHandoff } from '../../../src/features/project/tiabHandoffStore';
 import { PICKER_PAGE_URL, type PickerSelection } from '../../../src/lib/google/picker';
 import type { GoogleApiDeps } from '../../../src/lib/google/types';
-import { setUiLanguage } from '../../../src/lib/i18n';
+import { setUiLanguage, t } from '../../../src/lib/i18n';
 import { loadSignInDataConsent } from '../../../src/lib/storage/signInDataConsentStore';
 
 function installConsentedChromeMock(): ChromeMock {
@@ -311,7 +311,7 @@ const TIAB_DEC_HEADER = [
  *（createNewProject が発行する Sheets / Drive API 群）は makeGoogle() の寛容な既定応答へ
  * フォールバックする
  */
-function makeTiabGoogle(options: { includeCount?: number } = {}): GoogleApiDeps {
+function makeTiabGoogle(options: { includeCount?: number; keyOpened?: boolean } = {}): GoogleApiDeps {
   const base = makeGoogle();
   const references = Array.from({ length: options.includeCount ?? 2 }, (_, i) => [
     `r${i}`,
@@ -355,7 +355,7 @@ function makeTiabGoogle(options: { includeCount?: number } = {}): GoogleApiDeps 
         } as Response;
       }
       if (url.includes('/values/Config')) {
-        const json = { values: [] };
+        const json = { values: [['key_opened', String(options.keyOpened ?? true)]] };
         return {
           ok: true,
           status: 200,
@@ -1237,6 +1237,21 @@ describe('bootstrapPopup', () => {
       expect(el('tiab-status').textContent).toBe('');
       expect(el<HTMLFormElement>('tiab-create-form').hidden).toBe(true);
       expect(el('tiab-error').textContent).toBe('');
+    });
+
+    test('キー未開封のシートはフォームを隠し、状態 A へ戻る', async () => {
+      const deps = makeDeps({
+        openTiabSheetPicker: jest.fn(async () => SELECTION),
+        google: makeTiabGoogle({ keyOpened: false }),
+      });
+      await bootstrapPopup(document, deps);
+      el<HTMLButtonElement>('tiab-pick').click();
+      await flush();
+      expect(el('tiab-error').textContent).toBe(t('popup.tiabKeyClosed'));
+      expect(el<HTMLFormElement>('tiab-create-form').hidden).toBe(true);
+      expect(el('tiab-status').textContent).toBe('');
+      expect(el<HTMLButtonElement>('tiab-pick').disabled).toBe(false);
+      expect(deps.openAppTab).not.toHaveBeenCalled();
     });
 
     test('状態 C→D: 検証成功でフォーム表示・タイトル既定値・件数文言', async () => {

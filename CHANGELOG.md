@@ -13,7 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
-（まだありません / Nothing yet）
+### その他の変更 / Other changes
+
+- tiab-review の採用リストの読み込みを tiab-review の判定に揃えました。tiab-review のキーが開封されるまでは採用リストと件数を表示せず、tiab-review で重複として除外した文献は取り込まず、全文の候補は最新の判定と採用中の AI 実行の判定だけで決めます。（2026-11-13、PR #510）
+  The tiab-review included list now follows tiab-review's own rules: it is not shown until the tiab-review key is opened, references removed as duplicates in tiab-review are not imported, and full-text candidates are decided from the latest decisions and the AI run in use only. (2026-11-13, PR #510)
 
 ## v0.34.0（2026-11-13）
 

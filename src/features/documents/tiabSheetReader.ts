@@ -1,7 +1,6 @@
 // tiab-review スプレッドシートの直読み I/O（issue #68・requirements.md §4.5 / ※Q2）。
-// References / Decisions タブを values:batchGet 1 回で読み、Config タブの
-// fulltext_ai_active_round（フルテキスト AI 判定の採用ラウンド）を別途読む。
-// Config はタブ自体が無い旧シートがあるため、読み出し失敗は null として扱う。
+// References / Decisions を一括で読み、Config・LLM_Runs・LLM_Executions は並行で読む。
+// 任意タブの読み出し失敗はキー未開封・設定なし・有効な AI 実行なしとして扱う。
 // パース（列名解決・型変換）は tiabReview.ts の純ロジックに委譲する
 import {
   getBatchValues,
@@ -12,6 +11,7 @@ import {
 import { GoogleApiError, type GoogleApiDeps } from '../../lib/google/types';
 import {
   parseFulltextPoolRule,
+  selectActiveTiabLlmIds,
   type TiabCandidateConfig,
   parseTiabDecisions,
   parseTiabReferences,
@@ -20,6 +20,7 @@ import {
 } from './tiabReview';
 
 export interface TiabSheetData extends TiabCandidateConfig {
+  keyOpened: boolean;
   references: TiabReference[];
   decisions: TiabDecision[];
   /** tiab の Config.fulltext_ai_active_round（未設定・Config 欠落は null） */
@@ -44,7 +45,7 @@ function toFriendlyError(err: unknown): Error {
 }
 
 /**
- * tiab-review シートの References / Decisions / Config を読み、パース済みデータを返す。
+ * tiab-review シートの References / Decisions / Config / LLM_Runs / LLM_Executions を読み、パース済みデータを返す。
  * References / Decisions の読み出し・パース失敗は throw（呼び出し側でエラー表示）。
  *
  * drive.file 未許可（403 権限系 / 404）は SheetsAccessDeniedError として伝播させる（issue #142）。
@@ -79,22 +80,24 @@ export async function readTiabSheet(
   let activeFulltextAiRound: string | null = null;
   let fulltextPoolRule: TiabCandidateConfig['fulltextPoolRule'] = null;
   let fulltextAssignmentStatus: TiabCandidateConfig['fulltextAssignmentStatus'] = 'none';
-  try {
-    const configValues = await getSheetValues(spreadsheetId, 'Config', deps);
-    for (const row of configValues) {
-      const value = (row[1] ?? '').trim();
-      if (row[0] === 'fulltext_ai_active_round') {
-        activeFulltextAiRound = value === '' ? null : value;
-      } else if (row[0] === 'fulltext_pool_rule' && value !== '') {
-        fulltextPoolRule = parseFulltextPoolRule(value);
-      } else if (row[0] === 'fulltext_assignment_status' && (value === 'configured' || value === 'none')) {
-        fulltextAssignmentStatus = value;
-      }
+  const [configValues, runValues, executionValues] = await Promise.all(
+    (['Config', 'LLM_Runs', 'LLM_Executions'] as const).map((tab) =>
+      getSheetValues(spreadsheetId, tab, deps).catch(() => [])),
+  ) as [string[][], string[][], string[][]];
+  const keyOpened = (configValues.find((row) => row[0] === 'key_opened')?.[1] ?? '')
+    .toLowerCase() === 'true';
+  for (const row of configValues) {
+    const value = (row[1] ?? '').trim();
+    if (row[0] === 'fulltext_ai_active_round') {
+      activeFulltextAiRound = value === '' ? null : value;
+    } else if (row[0] === 'fulltext_pool_rule' && value !== '') {
+      fulltextPoolRule = parseFulltextPoolRule(value);
+    } else if (row[0] === 'fulltext_assignment_status' && (value === 'configured' || value === 'none')) {
+      fulltextAssignmentStatus = value;
     }
-  } catch {
-    // Config タブが無い旧シートは採用ラウンド・候補設定なしとして扱う
-    activeFulltextAiRound = null;
   }
+  const activeTiabLlmIds = selectActiveTiabLlmIds(runValues, executionValues);
 
-  return { references, decisions, activeFulltextAiRound, fulltextPoolRule, fulltextAssignmentStatus };
+  return { references, decisions, activeFulltextAiRound, fulltextPoolRule, fulltextAssignmentStatus,
+    keyOpened, activeTiabLlmIds };
 }
