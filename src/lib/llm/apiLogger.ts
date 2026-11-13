@@ -200,6 +200,8 @@ export function withLogging(
             usage?.tokensIn ?? null,
             usage?.tokensOut ?? null,
             usage?.cachedTokensIn ?? null,
+            undefined,
+            Date.parse(startedAt),
           ),
           error: errorMessage,
         };

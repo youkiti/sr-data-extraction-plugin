@@ -214,6 +214,8 @@ OpenAI 互換 / Azure / ローカル LLM では、単価表と同名でも取得
 
 **取得一覧の除外（OpenRouter のみ）**: `GET https://openrouter.ai/api/v1/models` の各モデルのうち、`supported_parameters` に `structured_outputs` を含み、かつ `architecture.input_modalities` に `image` を含むものだけを取得一覧に入れる（2026-10-16 時点で 465 → 272 件）。抽出は JSON スキーマで応答させ、スキャン PDF は画像で送るため。どちらかの項目が応答に無いモデルは除外しない（判定できないものは落とさない）。除外したモデルも直接打てば使える。Anthropic・OpenAI 互換・ローカル LLM の一覧は対応状況を返さないので除外しない。
 
+**日時による単価の切り替え**: Gemini 3.6 / 3.7 / 3.8 Flash は 2027-01-01T00:00:00Z を境に、100 万トークンあたり入力 $0.75 / 出力 $3.75 から入力 $1.50 / 出力 $7.50 へ切り替える。キャッシュ入力は入力単価 × 0.10 の導出値（$0.075 → $0.15）。S6 / S7 と質問パネルの事前見積もりは現在時刻、実績の記録は各 API 呼び出しの開始時刻で単価を選ぶ。保存済みの費用は再計算しない。
+
 **取得した単価で見積もる（OpenRouter のみ。2026-10-16 target spec）**: OpenRouter の一覧の各モデルは `pricing`（1 トークンあたりの米ドル。文字列）を持つ。取得一覧を保存するとき、残したモデルの単価も `settings.fetchedModelPricing.openrouter`（モデル ID → `{ inputPerMillion, outputPerMillion, cachedInputPerMillion? }`。`MODEL_PRICING` と同じ形）に保存する。変換は `pricing.prompt` / `pricing.completion` / `pricing.input_cache_read` を数値にして 1,000,000 倍。`prompt` か `completion` が数値でない・負（`openrouter/auto-beta` 等の振り分けモデルは `-1`。2026-10-16 時点で 7 件）のモデルは単価を保存しない（見積もりは従来どおり「概算不可」）。無料モデル（両方 0。18 件）は $0 として保存する。`input_cache_read` が無い・不正なら `cachedInputPerMillion` を持たない（キャッシュ割引を見込まない）。
 
 - 実行前の見積もり（S6 `#pilot-estimate`・S7 `#extract-estimate`・サービス層の予算チェック〔`planRun` の呼び出し元すべて〕・質問パネルの概算）は、**単価表 `MODEL_PRICING` を優先**し、無いときだけ、保存済みの接続方式が `openrouter` なら保存した単価を使う。接続方式が `openrouter` 以外なら使わない（同じ名前でも別の接続先では単価が違うため）

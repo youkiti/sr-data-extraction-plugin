@@ -8,6 +8,7 @@ import {
   redactMessagesForLog,
   withLogging,
 } from '../../../../src/lib/llm/apiLogger';
+import { aggregateUsage } from '../../../../src/features/usage/aggregateUsage';
 import { OpenRouterProvider } from '../../../../src/lib/llm/OpenRouterProvider';
 import {
   LlmProviderError,
@@ -679,4 +680,32 @@ describe('withLogging の payload 保存失敗', () => {
       studyId: null,
     });
   });
+});
+
+test.each([
+  ['2026-12-31T23:59:59.999Z', 3.825],
+  ['2027-01-01T00:00:00Z', 7.65],
+])('完了が改定後でも呼び出し開始日時 %s の費用を保存し、過去行の集計を維持する', async (startedAt, expected) => {
+  jest.useFakeTimers().setSystemTime(new Date(startedAt));
+  try {
+    const provider = {
+      ...makeProvider(async () => {
+        jest.setSystemTime(new Date('2027-01-02T00:00:00Z'));
+        return { text: 'ok', tokensIn: 1_000_000, tokensOut: 1_000_000,
+          cachedTokensIn: 1_000_000, raw: {} };
+      }),
+      model: 'gemini-3.8-flash',
+    };
+    const { deps, recorded } = makeDeps(startedAt);
+    await withLogging(provider, 'extract_study', deps).chat([]);
+    expect(recorded.entries[0]).toMatchObject({ timestamp: startedAt, costEstimateUsd: expected });
+    const saved: LlmApiLogEntry[] = JSON.parse(JSON.stringify(recorded.entries));
+    const before = aggregateUsage({ logs: saved, runs: [] });
+    jest.setSystemTime(new Date('2028-01-01T00:00:00Z'));
+    const after = aggregateUsage({ logs: saved, runs: [] });
+    expect(after).toEqual(before);
+    expect(after.totals.costUsd).toBe(expected);
+  } finally {
+    jest.useRealTimers();
+  }
 });
