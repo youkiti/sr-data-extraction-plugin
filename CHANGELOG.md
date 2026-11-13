@@ -13,7 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
-（まだありません / Nothing yet）
+### その他の変更 / Other changes
+
+- 値・判定・集計・エクスポート・Methods に影響した既知の不具合を、影響する版・シートでの確認方法・対処とともに日英で公開し、README・ヘルプから案内しました。リリース手順に該当する修正の追記を加えました（2026-11-13・PR #505）。
+  Published known issues affecting values, decisions, aggregates, exports and Methods in Japanese and English, with affected versions, sheet checks and remedies, linked from the READMEs and help. Added issue-list maintenance to the release procedure (2026-11-13, PR #505).
 
 ## v0.34.0（2026-11-13）
 
