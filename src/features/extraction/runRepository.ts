@@ -275,7 +275,7 @@ export async function readRunSchemaVersions(
 
 /**
  * audit.csv の Evidence 結合（buildAuditCsv）が使う run の最小情報
- * （run_id / schema_version / started_at）を全 run ぶん読み込む（S10）
+ * （run_id / schema_version / started_at / extension_version）を全 run ぶん読み込む（S10）
  */
 export async function readRunAuditInfos(
   spreadsheetId: string,
@@ -294,6 +294,7 @@ export async function readRunAuditInfos(
       runId: raw[0] ?? '',
       schemaVersion: version,
       startedAt: startedAt === '' ? null : startedAt,
+      extensionVersion: emptyToNull(raw[20]),
     };
   });
 }

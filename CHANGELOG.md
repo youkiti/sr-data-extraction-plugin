@@ -13,7 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
-（まだありません / Nothing yet）
+### その他の変更 / Other changes
+
+- 判定記録（Decisions）の末尾に、アプリの版 `app_version` を追加しました。古いシートは書き込み前にヘッダだけを拡張し、過去の判定行は空欄のまま保持します。抽出版は既存の ExtractionRuns.extension_version を使用し、audit CSV の末尾には判定の版 `app_version` と抽出版 `run_app_version` を追加します（2026-11-13・PR #501）。
+  Added `app_version` at the end of Decisions records. Existing decision sheet headers are extended before writing, leaving historical decision rows blank. Extraction runs use the existing ExtractionRuns.extension_version column. Audit CSV now appends the decision version as `app_version` and the extraction version as `run_app_version` (2026-11-13, PR #501).
 
 ## v0.34.0（2026-11-13）
 
