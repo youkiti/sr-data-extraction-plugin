@@ -8,9 +8,11 @@
 
 | ライブラリ | 用途 | ライセンス |
 |---|---|---|
-| pdfjs-dist | PDF 描画・テキスト層（worker を同梱） | Apache-2.0 |
+| pdfjs-dist 6.5.438 | PDF 描画・テキスト層（legacy 本体・worker、CMap・標準フォント・wasm・ICC を同梱） | Apache-2.0（同梱資産の表記は下記） |
 | mammoth | docx パース（プロトコル入力） | BSD-2-Clause |
 | zod | AI 出力のランタイムバリデーション | MIT |
+
+pdfjs-dist の画像デコーダ・色変換のライセンス表記は配布物の `wasm/LICENSE_*`、標準フォントは `standard_fonts/LICENSE_*`、CMap は `cmaps/LICENSE`、ICC プロファイル（CC0-1.0）は `iccs/LICENSE` に同梱しています。
 
 ## 開発時のみ使用するツール（配布物に含まれない）
 

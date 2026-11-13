@@ -13,7 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
-（まだありません / Nothing yet）
+### その他の変更 / Other changes
+
+- pdfjs-dist を 6.5.438 に更新し、悪意ある PDF を開いたときに任意の JavaScript が実行される脆弱性（GHSA-hq66-cqwq-w95j）を修正しました。あわせて本番依存のセキュリティ更新を取り込みました（2026-11-13・PR #511）。  
+  Updated pdfjs-dist to 6.5.438 to fix arbitrary JavaScript execution when opening malicious PDFs (GHSA-hq66-cqwq-w95j), and applied security updates to production dependencies (2026-11-13, PR #511).
 
 ## v0.34.0（2026-11-13）
 
