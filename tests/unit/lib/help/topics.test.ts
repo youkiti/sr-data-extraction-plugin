@@ -97,7 +97,7 @@ describe('ヘルプの対応表と公開ページの照合', () => {
 describe('公開ヘルプの「こんなとき」', () => {
   test('全 FAQ に faq- で始まる id がある', () => {
     const faqs = [...help.querySelectorAll('details.faq')];
-    expect(faqs).toHaveLength(8);
+    expect(faqs).toHaveLength(9);
     for (const faq of faqs) expect(faq.id).toMatch(/^faq-[a-z]+(?:-[a-z]+)*$/);
   });
 

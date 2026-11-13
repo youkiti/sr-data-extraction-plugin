@@ -13,7 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
-（まだありません / Nothing yet）
+### その他の変更 / Other changes
+
+- リリース時に版タグと CHANGELOG 本文付きの GitHub Release を作成する処理、版と公開日を更新する CITATION.cff、Zenodo 用の著者・資金メタデータ、README と公開ヘルプの引用案内を追加しました。DOI はオーナーによる Zenodo 連携の有効化と初回リリース後に追記します（2026-11-13・PR #506）。  
+  Added version tags and GitHub Releases with the matching CHANGELOG section, CITATION.cff with automatic version and release-date updates, Zenodo author and funding metadata, and citation guidance in the READMEs and public help. The DOI will be added after the owner enables Zenodo integration and publishes the first release (2026-11-13, PR #506).
 
 ## v0.34.0（2026-11-13）
 

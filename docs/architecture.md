@@ -284,6 +284,8 @@ anchorQuote() ──文字範囲──▶ highlightMap() ──span 座標──
 
 `pack:release`（= `tools/release/pack.ps1`）は Chrome ウェブストア提出用 zip を作る。`npm run build` 済みの `dist/` を入力に、事前検証 → `release/*.zip` の全削除（過去ビルドは残さない）→ manifest からの `key` 除去 → zip 化 → 展開し直しての検証、までを行い、検証 NG なら非 0 終了する。運用手順は `.claude/skills/release-build/SKILL.md` が正典。
 
+`release`（`tools/release/release.ps1`）は版のバンプ時に `CITATION.cff` の版と公開日も更新し、ビルドと zip 検証後に `vX.Y.Z` タグを作る。ブランチとタグを同時に push した後、`gh release create` で `CHANGELOG.md` の該当版の本文を公開する。`-NoPush` はローカルタグまでを作り、push と GitHub Release 作成を省略する。gh が使えない場合や Release 作成が失敗した場合は警告を表示し、手動作成を案内する。Zenodo の GitHub 連携はオーナーが初回に有効化する必要がある。`tools/release/releaseMetadata.mjs` は引用情報の改行を保って更新し、Release の本文を抽出する補助スクリプトで、`npm run test:tools` で検証する。
+
 > sr-query-builder のアルファ配布用 `release:alpha` は踏襲していない（本拡張は Chrome ウェブストア公開を採用）。
 
 ## 4. テスト方針

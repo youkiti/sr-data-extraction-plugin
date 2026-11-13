@@ -136,13 +136,15 @@ All documents below are written in Japanese.
 | [hosted/README.md](hosted/README.md) | Deployment of the public pages (GitHub Pages) |
 | [experiments/anchor-spike/REPORT.md](experiments/anchor-spike/REPORT.md) | Technical spike on quote anchoring (96.2% success) |
 
-## Citation and funding
+## How to cite
 
-A preprint describing the tool and its evaluation is planned (see [issue #258](https://github.com/youkiti/sr-data-extraction-plugin/issues/258)). Until it is available, please cite the repository and the version you used:
+Use the authors and version in [CITATION.cff](CITATION.cff). On GitHub, select **Cite this repository** to copy a formatted citation. A preprint describing the tool and its evaluation is planned (see [issue #258](https://github.com/youkiti/sr-data-extraction-plugin/issues/258)).
 
-> youkiti. sr-data-extraction-plugin (version X.Y.Z) [Chrome extension]. https://github.com/youkiti/sr-data-extraction-plugin
+TODO: add the DOI badge and link after the first Zenodo release. To cite a specific version, use that version's DOI.
 
 The installed version is shown in `chrome://extensions`. The export screen offers an example Methods paragraph; check that its numbers, reviewer counts and procedures match what you actually did, and edit it before use.
+
+## Funding
 
 This work was supported by JSPS KAKENHI Grant Number 25K13585.
 

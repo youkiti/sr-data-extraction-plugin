@@ -97,7 +97,7 @@ npm run dev            # dist/ に開発ビルドを生成
 | `npm test` | jest（`src/` の行・分岐カバレッジ 100% を強制） |
 | `npm run test:e2e` | Playwright E2E（`dist/` を静的配信 + chrome スタブ。詳細: [docs/test-strategy.md](docs/test-strategy.md)） |
 | `npm run build:demo` | 録画用のデモビルド（架空論文 3 本のモックデータで取り込み〜ダッシュボード〜エクスポートを再現） |
-| `npm run release` | 前提チェック → version バンプ → 本番ビルド → zip 化・検証 → push までを一括実行（`tools/release/release.ps1`。PowerShell〔pwsh〕が必要） |
+| `npm run release` | 前提チェック → version バンプ → 本番ビルド → zip 化・検証 → 版タグの作成・push → GitHub Release 作成までを一括実行（`tools/release/release.ps1`。PowerShell〔pwsh〕が必要） |
 | `npm run pack:release` | 既存ビルドの zip 化・検証のみ（`tools/release/pack.ps1`） |
 | `npm run manual:check` | 実機通し確認の Selenium 半自動ハーネス（詳細: [docs/manual-testing.md](docs/manual-testing.md)） |
 | `npm run video:*`（`video:setup` / `video:fixtures` / `video:record` / `video:tts` / `video:assemble`） | 操作解説動画の制作パイプライン（詳細: [video/README.md](video/README.md)） |
@@ -117,6 +117,12 @@ E2E はローカルの chromium を使います。`npx playwright install chromi
 | [docs/manual-testing.md](docs/manual-testing.md) | 実機通し確認のシナリオと結果記録 |
 | [hosted/README.md](hosted/README.md) | 公開ページ（GitHub Pages）のデプロイ手順 |
 | [experiments/anchor-spike/REPORT.md](experiments/anchor-spike/REPORT.md) | quote アンカリングの技術スパイク結果（anchor 成功率 96.2%） |
+
+## 引用方法
+
+[CITATION.cff](CITATION.cff) の著者・版の情報を使って引用してください。GitHub のリポジトリ画面にある「Cite this repository」から引用形式をコピーできます。利用した版は `chrome://extensions` で確認できます。
+
+TODO: 初回の Zenodo リリースで DOI が発行されたら、DOI のバッジとリンクをここに追加します。特定の版を引用するときは、その版の DOI を使用してください。
 
 ## ライセンス・資金
 
