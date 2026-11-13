@@ -3,7 +3,7 @@
 - **作成日**: 2026-07-03（タスク A〜E）/ **更新**: 2026-07-12（v0.1.0 公開後のマイルストーン M1〜M4 を追加）・2026-07-18（#62 実機検証の §7.3 決着 = フォルダ付与不成立 → ファイル単位付与への設計変更〔#138/#139 = PR #140〕と進捗を反映）・2026-07-19（#62 実機通し完了 = 検証 → 裁定 → consensus エクスポートまで全項目 OK。#62 クローズ・#63/#141 の残確認を更新。#142 Picker 許可導線の実機確認完了 → クローズを #68 行へ反映）・2026-07-29（**M1〜M4 表を GitHub issue の実状態と同期**。クローズ済み issue へ ✅ とクローズ日 / 対応 PR を付記し、未消化の作業だけが残るようにした）・2026-07-31（#127 PR5〔reasoning effort の設定化〕マージを反映。残るのは Azure OpenAI 実テナント疎通・Anthropic モデル一覧取得の実機確認・Anthropic 既定値 `low` の妥当性の実データベンチ確認の 3 点のみ）・2026-08-01（**#141 / #127 をクローズ**。実装は全てマージ済みで、残る実機 / 実 API 確認は「実機 / 実 API テストが必要な項目」の表で管理する運用〔実装のマージで issue は閉じる〕に統一）・2026-08-09（#249〔Google API 失敗の診断ログ・`ApiErrorLog` タブ新設〕を実機 / 実 API テスト表へ追加）・2026-08-09（#247〔Sheets 部分書き込みの検知〕の実装完了を反映し、「実機 / 実 API テストが必要な項目」へ行を追加）
 - **対象読者**: 本リポジトリで作業する実装者
 - **構成**: **前半 = 現行の作業指示**（リリース後マイルストーン M1〜M4。GitHub issue の index）。**後半 = 付録**（MVP 完了までの計画タスク A〜E。全消化済み・履歴として保持）。
-- **正典**: 仕様の根拠は必ず [requirements.md](requirements.md)（v0.12）/ [architecture.md](architecture.md) / [test-strategy.md](test-strategy.md) / [ui-states.md](ui-states.md) に当たること。本書は「何をどの順でやるか」の作業指示であり、仕様は複製しない（各 issue が自己完結の作業指示を持つ）。
+- **正典**: 仕様の根拠は必ず [requirements.md](requirements.md)（版は [project-facts.md](project-facts.md) を参照）/ [architecture.md](architecture.md) / [test-strategy.md](test-strategy.md) / [ui-states.md](ui-states.md) に当たること。本書は「何をどの順でやるか」の作業指示であり、仕様は複製しない（各 issue が自己完結の作業指示を持つ）。
 
 ## 0. 作業を始める前に（全タスク共通）
 
@@ -31,7 +31,7 @@
 ## リリース後マイルストーン（M1〜M4・現行の作業指示）
 
 - **位置づけ**: v0.1.0 一般公開（2026-07-12）後の残作業。以降は GitHub issue を作業単位とし、本章がその index。各 issue が自己完結の作業指示（背景・方針・受け入れ条件）を持つため、本書に仕様は複製しない。§0 の共通ルール（ブランチ・日本語・カバレッジ 100%・定型フロー・spec 先行）はそのまま適用する。
-- **設計判断の経緯**: [status-and-roadmap-20260711.md](status-and-roadmap-20260711.md)（レビュー済み）。仕様の正典は [requirements.md](requirements.md)（v0.12）。
+- **設計判断の経緯**: [status-and-roadmap-20260711.md](status-and-roadmap-20260711.md)（レビュー済み）。仕様の正典は [requirements.md](requirements.md)（版は [project-facts.md](project-facts.md) を参照）。
 - **消化状況（2026-08-01 時点）**: **M1〜M4 の issue はすべてクローズ済み**（最後の [#141](https://github.com/youkiti/sr-data-extraction-plugin/issues/141) / [#127](https://github.com/youkiti/sr-data-extraction-plugin/issues/127) は 2026-08-01 にクローズ）。ただし**実装完了 ≠ 検証完了**で、クローズ済み issue でも実機 / 実 API 確認が残っているものがある（後述「実機 / 実 API テストが必要な項目」が正典。未消化の行が「やること」）。
 
 ### M1 リリース品質（公開後の運用担保）
@@ -136,7 +136,7 @@ M1〜M4 のうち、**ローカルの jest / Playwright だけでは完了確認
 | 項目 | 理由 |
 |---|---|
 | RevMan 直結 | R + AI の後工程へ委譲（#60 の CSV 契約で代替） |
-| カスタムモデル一覧管理 UI・任意ヘッダー・独自認証 | OpenAI 互換 + ローカル LLM（localhost）+ 直接入力で実需カバー（requirements v0.12・S11） |
+| カスタムモデル一覧管理 UI・任意ヘッダー・独自認証 | OpenAI 互換 + ローカル LLM（localhost）+ 直接入力で実需カバー（requirements.md S11。版は [project-facts.md](project-facts.md) を参照） |
 | pdf_native の born-digital 画像入力トグル | 入力方式は自動判定で確定・比較は experiments に委譲（requirements Q3） |
 | 検証所要時間のアプリ内計測 / 同項目横断ビュー / R 雛形生成 / プロジェクトバックアップ / PMC OA XML / 表画像認識 | status-and-roadmap §4 提案3・7・9・11 / §3.3 で不要判断（Drive 履歴・pdf_native 等で代替） |
 | 図表の高精度読み取りモード（issue #176） | 実 gold ベンチ（不眠 SR 10 論文・gemini-3.5-flash）で表由来項目正確度 +0.1pp・全体 +0.2pp と効果が誤差範囲、入力トークン +56%・コスト +14%。事前基準に従い実装（PR #178）ごと撤去。記録 = issue #176 コメント（2026-07-29）と非公開ベンチ REPORT-20260729 |
