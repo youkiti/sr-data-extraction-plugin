@@ -78,8 +78,8 @@ async function collectFailedCases(): Promise<SmokeCase[]> {
 }
 
 async function main(): Promise<void> {
-  dotenv.config({ path: path.join(benchRoot, '.env') });
-  dotenv.config({ path: path.join(repoRoot, '.env') });
+  dotenv.config({ path: path.join(benchRoot, '.env'), quiet: true });
+  dotenv.config({ path: path.join(repoRoot, '.env'), quiet: true });
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY が .env にありません');
 
