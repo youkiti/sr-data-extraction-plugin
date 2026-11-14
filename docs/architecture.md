@@ -325,7 +325,8 @@ sr-query-builder と同一（TypeScript strict + `noUncheckedIndexedAccess`、�
 | ランタイムバリデータ | zod | MIT |
 | ID 生成 | uuid | MIT |
 | 編集距離 | 自前実装（準大域アライメント DP。anchor-spike で実用性を検証済み → `features/anchoring/fuzzyMatch.ts`） | — |
-| ビルド | webpack / ts-loader / copy-webpack-plugin / dotenv | MIT |
+| ビルド | webpack / ts-loader / copy-webpack-plugin | MIT |
+| 環境変数の読み込み | dotenv（ルートの開発依存は 18 系） | BSD-2-Clause |
 | テスト | jest / ts-jest / jest-environment-jsdom / @playwright/test / @axe-core/playwright | MIT / Apache-2.0 |
 
 ## 7. 実装フェーズで承認を取るチェックポイント
