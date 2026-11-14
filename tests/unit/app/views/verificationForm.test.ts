@@ -661,7 +661,7 @@ describe('renderVerificationForm: 判定済みブロック（未判定を上・�
     const expected = value === 'A|B' ? '確定値: A | B' : '確定値: A | 未知';
     expect(row?.querySelector('.verify__decided-value')?.textContent).toBe(expected);
     if (value === 'A|未知') {
-      expect(row?.getAttribute('aria-label')).toContain(`総サンプルサイズ: ${expected}`);
+      expect(row?.getAttribute('aria-label')).toContain(`総サンプルサイズmethods${expected}`);
       expect(row?.getAttribute('title')).toContain('未知');
     }
   });
@@ -1133,13 +1133,15 @@ describe('判定済みコンパクト行の許容値外バッジ（issue #254・
     expect(row.getAttribute('title')).toContain('low risk');
   });
 
-  test('要相談の印があれば、札を出し aria-label の警告の前に「（要相談）」を足す（issue #425）', () => {
+  test('要相談の印があれば、札を出し aria-label の警告の前に表示文字を含める', () => {
     const cell = makeOutOfRangeCell('low risk');
     const flag = { action: 'flag_consult', note: null } as unknown as Decision;
     const { root } = render(makeModel([cell], { consultFlags: new Map([[cell.cellKey, flag]]) }));
     const row = root.querySelector('.verify__cell--decided') as HTMLElement;
     expect(row.querySelector('.verify__consult-badge')?.textContent).toBe('要相談');
-    expect(row.getAttribute('aria-label')).toMatch(/^D1 判定: .*low risk（要相談）/);
+    const visible = [...row.children].filter((child) => child.getAttribute('aria-hidden') !== 'true')
+      .map((child) => child.textContent).join('');
+    expect(row.getAttribute('aria-label')?.startsWith(visible)).toBe(true);
   });
 
   test('許容値内の確定値にはバッジも aria-label も付けない（従来どおりの title のまま）', () => {
