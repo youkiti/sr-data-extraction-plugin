@@ -9,7 +9,7 @@
 
 ```
 sr-data-extraction-plugin/
-├── .github/workflows/ci.yml       # CI-1（typecheck + lint + jest + dev ビルド。test-strategy.md §4）
+├── .github/workflows/ci.yml       # CI-1（typecheck + lint + jest + dev ビルド + 本番バンドル予算。test-strategy.md §4）
 ├── docs/
 │   ├── requirements.md
 │   ├── ui-flow.md
@@ -42,7 +42,8 @@ sr-data-extraction-plugin/
 ├── README.md                      # データフロー図 + KAKENHI 25K13585 funding 表記
 ├── README.en.md                   # 英語版 README（日本語版の要約。正典は README.md。「なにをするツールか」「データフロー」「利用者向けセットアップ」を変える PR は対応節も更新する。issue #259）
 ├── THIRD_PARTY_NOTICES.md
-└── CLAUDE.md
+├── AGENTS.md                      # 作業規則の正典
+└── CLAUDE.md                      # AGENTS.md を読み込むポインタ
 ```
 
 ## 2. `src/` 配下
@@ -153,7 +154,7 @@ src/
 │   │                              #   GitHub Pages へデプロイ）+ externally_connectable メッセージングで実装
 │   │                              #   【決定 2026-07-02。トークンは URL に載せず ready 応答で受け渡す】
 │   ├── pdf/
-│   │   ├── loadPdf.ts             # pdfjs-dist 初期化（worker は同梱、CSP 準拠。バージョンは 6.1.200 固定。古い Chrome でも動くよう legacy 版を使う。§3.1）
+│   │   ├── loadPdf.ts             # pdfjs-dist 初期化（worker は同梱、CSP 準拠。バージョンは 6.5.438 固定。古い Chrome でも動くよう legacy 版を使う。§3.1）
 │   │   └── textLayer.ts           # ページ別テキスト + span 座標の取得（anchor-spike の抽出ロジックを正式化）
 │   ├── docx/
 │   │   └── extractDocxText.ts     # mammoth.extractRawText のラッパ（features/protocol の DocxExtractor 実装）
@@ -269,6 +270,7 @@ anchorQuote() ──文字範囲──▶ highlightMap() ──span 座標──
 - `mammoth` / `pdfjs-dist` 本体は dynamic import で `dist/chunks/mammoth.js` / `dist/chunks/pdfjs.js` へ分割し、docx テキスト抽出 / PDF ロードの初回呼び出し時に取得する。ロード中の Promise は共有し、取得失敗時には次回呼び出しで再試行する。
 - mermaid はフロー図に必要なチャンクだけを出力する。動的 import の許可判定は `tools/bundle/mermaidFlowchartOnly.js` に置き、webpack の全ビルドで適用する。
 - `pdfjs-dist` の **worker（`pdf.worker.min.mjs`）は `copy-webpack-plugin` で `dist/` へ同梱**（CDN 参照不可、MV3 CSP 準拠）。`GlobalWorkerOptions.workerSrc` は `chrome.runtime.getURL()` で解決
+- pdfjs-dist 6.5.438 でも、文書の解放は `PDFDocumentProxy.loadingTask.destroy()`、ページ描画は `render({ canvas, viewport })` を使う。任意の描画用 worker（`pdf.renderer.*`）は `GlobalWorkerOptions.rendererSrc` を設定した場合に使われるため、設定していない本拡張では追加同梱しない。
 - **pdfjs-dist は本番も legacy 版を使う**（main は `webpack.config.js` の `resolve.alias`（`pdfjs-dist$` を `legacy/build/pdf.mjs` へ）、worker は `legacy/build/pdf.worker.min.mjs` を同梱。出力名は `pdf.worker.min.mjs` のまま）。通常版は `Uint8Array.prototype.toHex`（Chrome 140 で追加）・`Map.prototype.getOrInsertComputed`・`Math.sumPrecise` などの新しい組み込みを前提にし、PDF の指紋を作る処理で `toHex()` を必ず呼ぶため、古い Chrome ではどの PDF も「n.toHex is not a function」で取り込みに失敗する。legacy 版はその代わりの実装を同梱する。main と worker は必ず同じ系統（両方 legacy）にそろえる。cmaps・wasm・standard_fonts・iccs は legacy 版が持たず通常版と共通なので、コピー元は変えない。回帰は `tests/e2e/pdf-ccitt.spec.ts` が、これらの組み込みを消した状態で描画できることで検知する
 - **既定 CMap（`cmaps/*.bcmap`）も同様に `dist/cmaps/` へ同梱**し、`getDocument` の `cMapUrl` に `chrome.runtime.getURL('cmaps/')` を渡す（issue #95: 和文 PDF の CID フォントは既定 CMap がないとテキスト抽出がほぼ空になる）
 - **画像デコーダの wasm（`dist/wasm/`）・標準 14 フォント（`dist/standard_fonts/`）・既定 ICC プロファイル（`dist/iccs/`）も同梱**し、`getDocument` にそれぞれ `wasmUrl` / `standardFontDataUrl` / `iccUrl` を渡す。pdfjs-dist 6.x は CCITTFax/JBIG2・JPEG2000・ICC のデコーダが wasm 実装になっており、`wasmUrl` 未指定だと `Jbig2Error` 等で初期化に失敗し、スキャン PDF の該当ページ（CCITTFaxDecode 等）が白紙になる（テキスト層は無事なためハイライトだけ出る症状）。`quickjs-eval.*`（PDF 内 JavaScript の隔離実行用）は本拡張が使わないため同梱から除外する。manifest には `content_security_policy.extension_pages` に `'wasm-unsafe-eval'` を追加している。この CSP による wasm の実行許可を前提として、画像デコーダの JavaScript 版フォールバック（`*_nowasm_fallback.js`）は同梱しない。
@@ -278,9 +280,25 @@ anchorQuote() ──文字範囲──▶ highlightMap() ──span 座標──
 
 ### 3.2 npm スクリプト
 
-`dev` / `watch` / `build` / `bundle:report` / `build:demo` / `pack:release` / `lint` / `lint:css` / `typecheck` / `test` / `test:watch` / `test:coverage` / `test:e2e` / `test:e2e:ui` / `manual:check` / `video:setup` / `video:record` / `video:tts` / `video:assemble`。
+`dev` / `watch` / `build` / `bundle:report` / `bundle:check` / `build:demo` / `pack:release` / `lint` / `lint:css` / `typecheck` / `test` / `test:watch` / `test:coverage` / `test:e2e` / `test:e2e:ui` / `manual:check` / `video:setup` / `video:record` / `video:tts` / `video:assemble`。
 
 `bundle:report` は `npm run bundle:report -- /tmp/stats.json` で webpack stats のエントリ資産・チャンク別に npm パッケージと `src/` の寄与を表示する。stats は本番ビルドに `--profile --json=/tmp/stats.json` を追加して生成する（本番用の `WEBAUTH_CLIENT_ID` が必要）。資産サイズは圧縮後、モジュールの寄与は圧縮前の KB（1024 bytes）で、合計値は一致しない。
+
+本番バンドルの上限は `tools/bundle/budget.json` で管理する。上記の stats を使い、
+`npm run bundle:check -- /tmp/stats.json` で検査する。対象は 4 エントリそれぞれの初期 JS の合計
+（共有チャンクを含み、source map と CSS は除外）、`chunks/pdfjs.js`、`pdf.worker.min.mjs`。
+サイズは minify 後、gzip 前の bytes で、上限と同値は成功、超過・対象の欠落・不正なサイズは非 0 終了となる。
+初期予算は実測値に約 12% の余裕を加えて読みやすい整数に切り上げている。
+CI の check ジョブは dev ビルドを維持し、その後に本番ビルドと予算検査を実行する。
+計測専用ビルドでは `WEBAUTH_CLIENT_ID=bundle-budget-check.apps.googleusercontent.com` というダミー値を使う。
+この成果物は配布せず、実 API への接続にも使わない。
+
+上限を引き上げる場合は、本番ビルドと `bundle:report` で増加した資産・依存関係を確認し、
+予算ファイルの対象の `measuredBytes`（実測記録）と `maxBytes`（検査上限）を更新する。
+**PR 本文には実測値、変更前後の上限、増加を許容する理由を書く。**
+検査処理の純粋関数と終了コードは `node --test tools/bundle/checkBudget.test.mjs` で確認でき、
+`npm run test:tools` にも含まれる。実機・実 API での確認は不要。
+リリース zip は PowerShell による `pack:release` が必要なため予算に含めず、通常の本番ビルドが生成する資産のみ検査する。
 
 `pack:release`（= `tools/release/pack.ps1`）は Chrome ウェブストア提出用 zip を作る。`npm run build` 済みの `dist/` を入力に、事前検証 → `release/*.zip` の全削除（過去ビルドは残さない）→ manifest からの `key` 除去 → zip 化 → 展開し直しての検証、までを行い、検証 NG なら非 0 終了する。運用手順は `.claude/skills/release-build/SKILL.md` が正典。
 
@@ -324,7 +342,8 @@ sr-query-builder と同一（TypeScript strict + `noUncheckedIndexedAccess`、�
 | ランタイムバリデータ | zod | MIT |
 | ID 生成 | uuid | MIT |
 | 編集距離 | 自前実装（準大域アライメント DP。anchor-spike で実用性を検証済み → `features/anchoring/fuzzyMatch.ts`） | — |
-| ビルド | webpack / ts-loader / copy-webpack-plugin / dotenv | MIT |
+| ビルド | webpack / ts-loader / copy-webpack-plugin | MIT |
+| 環境変数の読み込み | dotenv（ルートの開発依存は 18 系） | BSD-2-Clause |
 | テスト | jest / ts-jest / jest-environment-jsdom / @playwright/test / @axe-core/playwright | MIT / Apache-2.0 |
 
 ## 7. 実装フェーズで承認を取るチェックポイント

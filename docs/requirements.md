@@ -91,7 +91,7 @@ tiab-review-plugin / sr-query-builder-plugin の構成に準拠。
 | ストレージ | Google Sheets（主 DB）/ Google Drive（PDF 原本・抽出テキスト・LLM ログ実体）/ `chrome.storage`（API キー、ローカルキャッシュ、オフラインキュー） |
 | PDF 描画 | `pdfjs-dist`（PDF.js）: canvas 描画 + テキスト層 + ハイライトオーバーレイ |
 | docx パース | `mammoth.js`（プロトコル入力用） |
-| LLM（MVP） | Gemini API（工場出荷の既定モデル = `gemini-3.8-flash`。実データ抽出ベンチマークで確定 ※Q8。tiab-review の固定バージョン ID 方針を踏襲） |
+| LLM（MVP） | Gemini API（認証は `x-goog-api-key` ヘッダーで送り、URL に API キーを含めない。工場出荷の既定モデル = `gemini-3.8-flash`。実データ抽出ベンチマークで確定 ※Q8。tiab-review の固定バージョン ID 方針を踏襲） |
 | LLM（MVP 追加） | OpenRouter（OpenAI 互換 API。`OpenRouterProvider` を sr-query-builder から移植・2026-07-04）+ 利用者指定の OpenAI 互換 Chat Completions API（Issue #27。HTTPS を原則とし、HTTP は `localhost` / `127.0.0.1` / `[::1]` のみ許可。非標準ポート、loopback の認証なし接続、構造化出力の互換性フォールバックに対応）。モデルセレクタの「その他（直接入力）」で任意モデル ID を指定可。カスタムモデルの一覧管理 UI は P1 |
 | LLM（接続方式・issue #127） | 上記に加え **Anthropic ネイティブ**（Messages API。`AnthropicProvider`。固定エンドポイント `https://api.anthropic.com/v1/messages` + `x-api-key` / `anthropic-version` 認証。PR1 で provider 層のみ実装・PR2 で Options 配線）+ **Azure OpenAI**（PR3 で実装済み。新規 provider クラスは作らず `OpenAICompatibleProvider` を `api-key` 認証で流用。利用者が入力するクエリ文字列付き完全 URL + デプロイメント名をモデル欄に入力）。§10 Q11 のとおり、これらに限って「独自認証は投機実装しない」の不採用宣言を明示的に覆す（実需 — 公開ユーザーが持っているキーの 2 大勢力のため。プロバイダごとに**固定の**認証方式を実装し、利用者が自由にヘッダーを追加できる汎用の任意ヘッダー入力 UI は引き続き不採用） |
 | Node.js | ≥ 22 |
@@ -271,10 +271,12 @@ AI 一括抽出の実行単位。tiab-review の `LLM_Runs` に相当。
 | temperature | string | | 完了行だけに、最終試行の送信温度を現れた順・重複なしのカンマ連結で記録。`none` はその呼び出しでは未送信。空・旧行は不明 |
 | reasoning_effort | string | | 完了行だけに、最終試行の推論の強さを現れた順・重複なしのカンマ連結で記録。`none` はその呼び出しでは未送信。空・旧行は不明 |
 | prompt_version | int | | 抽出に使ったプロンプトの版。旧行は空 = 不明 |
-| extension_version | string | | 実行時の拡張の版。取得不能・旧行は空 = 不明 |
+| extension_version | string | | 既存列。実行時の `chrome.runtime.getManifest().version`（例 `0.34.0`、`v` 接頭辞なし）。取得不能・列導入前の行は空 = 不明。audit CSV の `run_app_version` の出力元 |
 | tokens_in / tokens_out / cost_estimate | int / int / float | | 実行前にコスト概算を UI 表示 |
 | field_ids | string | | 2026-07 追加（issue #80: run 単位のフィールド選択）。対象 `field_id` をカンマ区切りで記録する。**空 = 全項目**（後方互換規約。既存プロジェクトはこの列を持たないため、書き込み前にヘッダを拡張する）。検証・ダッシュボード・エクスポートの表示は、セル（field_id 単位）ごとに「その field を対象に含む最新の完了 run」の `Evidence` を採用する合成ビューへ切り替わる（サブセット run が最新でも、対象外の field は過去 run の値が見え続ける） |
 | warnings | string(json) | | 2026-07 追加（issue #106: arm completeness チェック）。完了行にのみ書く run 単位の警告（`RunWarning[]` の JSON。`kind='arm_completeness'` / `kind='evidence_row_count'`〔issue #247・2026-08〕の 2 種）。`arm_completeness` は応答に `arm:n` が現れる（または `ArmStructures` 確定済み）のに当該 arm の arm レベル項目が揃っていないバッチを機械検出した記録。**warning のみで status は `partial_failure` に倒さない**（正当な not_reported 等の過検出リスクとのバランス）。逆に **`ArmStructures` 未確定で応答に当該 arm が一切現れない場合は検出不能**（応答内の自己整合を基準にする設計上の限界）。`evidence_row_count`（issue #247）は `values.append` が HTTP 2xx を返しつつ実際には要求より少ない行しか書けていなかった「部分書き込み」（`SheetsPartialAppendError`。`src/lib/google/sheets.ts` の `appendRows` がレスポンスの `updates.updatedRows` / `updates.updatedRange` から判別）を、run 終了時に「生成した Evidence 行数 vs 実際に保存できた行数」の突き合わせで二重に検知した記録（`expectedRows` / `savedRows`）。通常は不一致が起きた時点で既に `save_failed` の `BatchFailure` により `partial_failure` になっているため、この警告自体は status を左右しない監査記録。空 = 警告なし。既存プロジェクトはこの列を持たないため field_ids と同じ方式でヘッダを拡張する。直列化は 40,000 字へ切り詰める（Sheets のセル 5 万字制限を超えると完了行の追記自体が失敗し run が「中断」扱いへ転落するため。超過時は各警告の missingItems を先頭 5 件 + 打ち切りマーカー `truncated` / `missingItemsTotal` へ縮約し〔`evidence_row_count` は missingItems を持たないため対象外〕、なお超える間は末尾の警告から削る。それでも完了行の追記に失敗した場合は warnings なしで 1 回だけ再試行し、完了行の成立を警告の記録より優先する）。S7 実行結果・S8 検証画面のバナー表示の素材（`evidence_row_count` の UI 表示は未実装。監査記録のみ） |
+
+抽出実行時の版は既存の `ExtractionRuns.extension_version` に記録する。実行開始時に取得した manifest の版を running 行と完了行の両方に保持する。
 
 `tokens_out` は思考・推論トークンを含む課金対象出力の合計（Gemini は provider で `candidatesTokenCount + thoughtsTokenCount` に正規化）。実行前のコスト概算では応答本文の出力推定にモデル別思考倍率を掛けるが、表示トークン数・バッチ分割は本文のみを使う。倍率は 3.5 Flash = (10,758 + 11,628) / 10,758 ≈ 2.08、3.8 Flash = (12,348 + 2,688) / 12,348 ≈ 1.22、3.1 / 3.5 Flash Lite・2.0 Flash・Qwen Instruct-2507・Haiku 4.5 = 1。未測定モデルは最大実測値（3.5 Flash）を既定とする。出典: issue #261、2026-09-21 の `experiments/extraction-benchmark-real`、プロンプト v9 再実行（不眠 SR 10 論文、テキスト入力、各論文 1 呼び出し、10 回平均）。
 
@@ -436,8 +438,11 @@ AI 抽出の根拠情報。ハイライト表示（§5）と audit.csv の素材
 | seen_ai_value | string | | 2026-11 追加（issue #384。**末尾列**）。判定のときに表示されていた AI の値の全文。AI が not_reported なら `NOT_REPORTED_TOKEN`。AI の根拠が無い・値が空なら空 |
 | consensus_source | enum | | 2026-11 追加（issue #385。**末尾列**）。consensus の出所 `A` / `B` / `third` / `bulk_match` / `not_reported` / `undo`。空は記録なし。consensus 以外は空 |
 | adopted_ai_accept | enum | | 2026-11 追加（issue #385。**末尾列**）。採った側の有効判定が human_with_ai の accept なら `A` / `B` / `A,B`、それ以外は `none`。third・not_reported は `none`、undo・consensus 以外・記録なしは空 |
+| app_version | string | | 末尾列。シートへ追記したアプリの `chrome.runtime.getManifest().version`（例 `0.34.0`、`v` 接頭辞なし）。検証・独立入力・裁定・undo・要相談・インスタンス宣言に共通。オフライン再送は追記時の版を記録する。列導入前の行と取得不能は空欄 |
 
 **古いシート（2026-11）**: 先頭 11 列は厳格に照合し、`seen_evidence_ids` 以降はヘッダにある列だけ名前を照合する。11 列の古いヘッダも読め、最初の追記の前にヘッダを末尾列まで伸ばす（伸ばし済みのシートは、そのセッションでは読み直さない）。
+
+`audit.csv` の末尾に `app_version`（判定の版）と `run_app_version`（添付 Evidence の run の既存 `extension_version`）を出力する。列導入前の行は空欄、対応する判定または run 自体が無い場合は構造的欠損トークン `.` とする。R セットの CSV は判定・run の行を直接出力しない解析用の表なので、これらの列は追加しない。`export_manifest.json` の `app_version` は従来どおりエクスポート時の版を表し、個々の判定・run の版ではない。
 
 **要相談の印**: 値を確定した後、`flag_consult`（付ける）/ `unflag_consult`（外す）を既存列へ追記する。`value` は操作時点の現在値、`note` は相談内容。列追加・ヘッダ移行は不要。study・field・entity・annotator・annotator_type ごとに時刻順（同時刻は行順）で最後の印イベントを採る。値の判定スタックとは独立し、undo・進捗・AI 精度・未検証警告・データ行更新に影響しない。値の再判定・undo 後も印は明示的に外すまで残る。ダッシュボードには有効な印と現在値・メモ・判定者を一覧表示する。レビュアーには自分の印だけ、オーナー・裁定者には全レビュアー（human_with_ai / human_independent）の印を出し、現在値・メモは印を付けたレビュアーの行のものにする（issue #424。他人の印は閲覧のみで、値の修正は担当者が行う）。wide は末尾に `consult_fields` を常設し、確定 annotator の有効な印がある study 項目の `field_name` を表のデザインの項目順（`field_index` 順）に `|` で連結する（印がなければ空欄）。列名が既存項目・展開列と衝突する場合は、既存の列名重複回避と同じく `_2`、`_3` … を付ける。long は `flag` を常設し、確定 annotator の有効な印だけ `consult`（他は空欄）を出力する。audit.csv は付け外しを各 1 行で出力する。
 
@@ -748,6 +753,7 @@ Methods 文案（英日 × 単一 / 二重）には現行の基準・確定日�
 | seen_evidence_ids / seen_ai_value | `Decisions` | 2026-11 追加（issue #384。**末尾列**）。Decisions と同じ書式（記録なしは空、AI の根拠なしは `none`）。プレースホルダ行は `.` |
 | consensus_source / adopted_ai_accept | `Decisions` | 2026-11 追加（issue #385。**末尾列**）。裁定の出所と採った値の AI accept 由来。記録なしは空、プレースホルダ行は `.` |
 | evidence_source_log_id / evidence_source_model / evidence_source_prompt_version | `Evidence` | 2026-11 追加（issue #384。**末尾列**）。添付した代表 Evidence の `source_log_id` / `source_model` / `source_prompt_version`（再特定で作った行だけ値がある）。添付 Evidence が無ければ `.` |
+| app_version / run_app_version | `Decisions.app_version` / `ExtractionRuns.extension_version` | CSV の末尾に追加。判定を追記した版と、添付 Evidence の抽出を実行した版。旧行は空欄、対応レコードなしは `.` |
 
 **結合規則**:
 
