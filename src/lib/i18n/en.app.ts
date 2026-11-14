@@ -446,6 +446,10 @@ export const enApp: Record<keyof typeof jaApp, string> = {
     'Reads the tiab-review spreadsheet directly and applies study_label (author (year)) and DOI / PMID from the finally included references. Import the PDFs from the fulltext folder first so they can be matched.',
   'documents.tiabSheetAria': 'Spreadsheet URL or ID of tiab-review',
   'documents.tiabSheetPlaceholder': 'https://docs.google.com/spreadsheets/d/… or ID',
+  'documents.tiabKeyClosed':
+    'The tiab-review key has not been opened yet (other reviewers\' decisions are hidden), so the included list and counts cannot be shown. When all reviewers have finished, ask the tiab-review project administrator to open the key, then press "Load and preview" again.',
+  'documents.tiabHandoffKeyClosed':
+    'The tiab-review key has not been opened yet, so the included PDFs cannot be checked. Press this again after the tiab-review project administrator has opened the key.',
   'documents.tiabPreview': 'Load and preview',
   'documents.tiabClose': 'Close',
   'documents.tiabLoading': 'Loading the tiab-review sheet…',

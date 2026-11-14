@@ -180,6 +180,7 @@ export interface TiabImportState {
    * true のとき `#tiab-error` に「Google で許可する」（スプレッドシート Picker）導線を出す
    */
   accessDenied: boolean;
+  keyClosed: boolean;
   /** 反映プラン（プレビュー = そのまま実行内容）。null = 未計算 */
   plan: TiabImportPlan | null;
   /** 「取り込みを実行」の反映中 */
@@ -918,6 +919,7 @@ export function createInitialState(): AppState {
         loading: false,
         error: null,
         accessDenied: false,
+        keyClosed: false,
         plan: null,
         applying: false,
         result: null,

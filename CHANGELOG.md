@@ -17,6 +17,8 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 - 公開ヘルプのエクスポート節に、audit.csv の `app_version`・`run_app_version` の意味と、空欄・構造的欠損になる場合の説明を日英で追加しました（2026-11-14・#520）。
   Added Japanese and English explanations of the audit.csv `app_version` and `run_app_version` columns, including when they are blank or structurally missing, to the export section of the public help (2026-11-14, #520).
+- tiab-review の Config・LLM_Runs・LLM_Executions の読み込み失敗時はエラーで中断し、採用リストと件数を表示しないようにしました。HTTP 400 のタブ欠落だけは、古いシートとの互換のため空として扱います（2026-11-14）。
+  Loading now stops with an error and hides the included list and counts if tiab-review's Config, LLM_Runs, or LLM_Executions cannot be read. Only missing tabs (HTTP 400) are treated as empty for compatibility with older sheets (2026-11-14).
 - Gemini の API キーを URL のクエリから `x-goog-api-key` ヘッダーへ移し、要求 URL を含むエラーや診断ログにキーが残ることを防ぎました（2026-11-13・PR #497）。
   Gemini API keys are now sent in the `x-goog-api-key` header instead of the URL query, preventing keys from appearing in errors and diagnostic logs that contain request URLs (2026-11-13, PR #497).
 - 判定記録（Decisions）の末尾に、アプリの版 `app_version` を追加しました。古いシートは書き込み前にヘッダだけを拡張し、過去の判定行は空欄のまま保持します。抽出版は既存の ExtractionRuns.extension_version を使用し、audit CSV の末尾には判定の版 `app_version` と抽出版 `run_app_version` を追加します（2026-11-13・PR #501）。
@@ -29,6 +31,8 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 - Gemini 3.6 / 3.7 / 3.8 Flash の費用を日時で切り替えるようにしました。2027-01-01T00:00:00Z 以降は入力 $1.50 / 出力 $7.50（100 万トークンあたり）、それ以前は $0.75 / $3.75 を使います。キャッシュ入力は入力単価 × 0.10 の導出値（$0.075 / $0.15）です。事前見積もりは現在時刻、実績は API 呼び出しの開始時刻を使い、保存済みの費用は変更しません（2026-11-13・PR #500）。
   Costs for Gemini 3.6 / 3.7 / 3.8 Flash now follow the effective date: $1.50 input / $7.50 output per million tokens from 2027-01-01T00:00:00Z, and $0.75 / $3.75 before then. Cached input is derived as input × 0.10 ($0.075 / $0.15). Estimates use the current time and actual costs use the API call start time; stored costs remain unchanged (2026-11-13, PR #500).
+- tiab-review の採用リストの読み込みを tiab-review の判定に揃えました。tiab-review のキーが開封されるまでは採用リストと件数を表示せず、tiab-review で重複として除外した文献は取り込まず、全文の候補は最新の判定と採用中の AI 実行の判定だけで決めます。（2026-11-13、PR #510）
+  The tiab-review included list now follows tiab-review's own rules: it is not shown until the tiab-review key is opened, references removed as duplicates in tiab-review are not imported, and full-text candidates are decided from the latest decisions and the AI run in use only. (2026-11-13, PR #510)
 
 ## v0.34.0（2026-11-13）
 

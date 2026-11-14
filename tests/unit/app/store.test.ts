@@ -70,6 +70,7 @@ describe('createInitialState', () => {
           loading: false,
           error: null,
           accessDenied: false,
+          keyClosed: false,
           plan: null,
           applying: false,
           result: null,

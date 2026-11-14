@@ -14,6 +14,7 @@ import {
   parseTiabSpreadsheetId,
   planTiabImport,
   resolveAdoptedReferences,
+  selectActiveTiabLlmIds,
   type TiabAdoptedList,
   type TiabDecision,
   type TiabReference,
@@ -29,7 +30,7 @@ function makeRef(overrides: Partial<TiabReference> = {}): TiabReference {
     pmid: null,
     fulltextUrl: null,
     fulltextSet: null,
-    relatedRefId: null,
+    relatedRefId: null, duplicateOf: null,
     ...overrides,
   };
 }
@@ -124,9 +125,18 @@ describe('parseTiabReferences', () => {
         pmid: '123',
         fulltextUrl: 'https://drive.google.com/file/d/f1/view',
         fulltextSet: null,
-        relatedRefId: null,
+        relatedRefId: null, duplicateOf: null,
       },
     ]);
+  });
+
+  test('duplicate_of の前後空白を除き、空や列なしは null にする', () => {
+    const rows = parseTiabReferences([
+      ['duplicate_of', 'title', 'ref_id'],
+      [' parent ', 'T1', 'r1'], ['  ', 'T2', 'r2'],
+    ]);
+    expect(rows.map((ref) => ref.duplicateOf)).toEqual(['parent', null]);
+    expect(parseTiabReferences([['ref_id', 'title'], ['r', 'T']])[0]?.duplicateOf).toBeNull();
   });
 
   test('year が 4 桁数値でない・任意列が空のときは null にする', () => {
@@ -273,6 +283,36 @@ describe('buildTiabStudyLabel', () => {
 });
 
 describe('resolveAdoptedReferences', () => {
+  test('重複除外済みの文献と判定は全集計から外す', () => {
+    const alive = makeRef({ refId: 'alive' });
+    const removed = ['included', 'adjudicated', 'not-candidate'].map((refId) =>
+      makeRef({ refId, duplicateOf: 'alive' }));
+    const decisions = [alive, ...removed].flatMap((ref) => [
+      makeDecision({ refId: ref.refId, screeningPhase: 'tiab' }),
+      makeDecision({ refId: ref.refId }),
+    ]);
+    decisions.push(makeDecision({ refId: 'adjudicated', reviewerId: 'adjudication:owner', decision: 'exclude' }));
+    const adopted = resolveAdoptedReferences([alive, ...removed], decisions, null);
+    expect(adopted).toEqual({
+      phase: 'fulltext', includes: [alive], totalReferences: 1, orIncludeCount: 1,
+      adjudicationExcluded: [], notCandidateExcluded: [],
+    });
+  });
+
+  test.each(['reviewer', 'adjudication:owner'])('重複除外済みの文献にしか全文判定がなければ TiAb 相（%s）', (reviewerId) => {
+    const alive = makeRef({ refId: 'alive' });
+    const removed = makeRef({ refId: 'removed', duplicateOf: 'alive' });
+    const adopted = resolveAdoptedReferences([alive, removed], [
+      makeDecision({ refId: 'alive', screeningPhase: 'tiab' }),
+      makeDecision({ refId: 'removed', reviewerId }),
+      makeDecision({ refId: 'removed', screeningPhase: 'tiab' }),
+    ], null);
+    expect(adopted.phase).toBe('tiab');
+    expect(adopted.includes).toEqual([alive]);
+    expect(adopted.orIncludeCount).toBe(1);
+    expect(adopted.totalReferences).toBe(1);
+  });
+
   const refs = [makeRef({ refId: 'r1' }), makeRef({ refId: 'r2' }), makeRef({ refId: 'r3' })];
   const candidates = refs.map((ref) => makeDecision({ refId: ref.refId, screeningPhase: 'tiab' }));
 
@@ -634,9 +674,76 @@ describe('planTiabImport', () => {
   });
 });
 
+describe('selectActiveTiabLlmIds', () => {
+  const runs = ['run_id', 'is_active', 'status', 'created_at'];
+  const executions = ['execution_id', 'execution_type', 'run_id'];
+
+  test.each(['TRUE', 'true'])('有効な最新 Run のバッチ実行だけ選ぶ（%s）', (active) => {
+    expect(selectActiveTiabLlmIds([
+      runs,
+      ['old', active, 'confirmed', '2026-01-01'],
+      ['active', active, 'confirmed', '2026-02-01'],
+      ['pending', 'true', 'pending', '2026-03-01'],
+      ['inactive', 'false', 'confirmed', '2026-04-01'],
+    ], [
+      executions,
+      ['llm:old', 'batch_screening', 'old'],
+      ['llm:current', 'batch_screening', 'active'],
+      ['llm:another', 'batch_screening', 'active'],
+      ['llm:other', 'other', 'active'],
+      ['llm:legacy', 'batch_screening', ''],
+    ])).toEqual(new Set(['llm:current', 'llm:another']));
+  });
+
+  test('列順に依存せず、pending 以外は confirmed として扱う', () => {
+    expect(selectActiveTiabLlmIds([
+      ['created_at', 'status', 'run_id', 'is_active'], ['2026-01-01', '', 'r', 'true'],
+    ], [['run_id', 'execution_type', 'execution_id'], ['r', 'batch_screening', 'llm:x']]))
+      .toEqual(new Set(['llm:x']));
+  });
+
+  test('有効な Run なし、必要列なし、空の入力は空集合', () => {
+    expect(selectActiveTiabLlmIds([], [])).toEqual(new Set());
+    expect(selectActiveTiabLlmIds([runs], [])).toEqual(new Set());
+    expect(selectActiveTiabLlmIds([runs], [executions])).toEqual(new Set());
+    expect(selectActiveTiabLlmIds([runs, ['r', 'false', 'confirmed', '2026-01-01']], [executions])).toEqual(new Set());
+    for (const missing of runs) {
+      expect(selectActiveTiabLlmIds([runs.filter((name) => name !== missing)], [executions])).toEqual(new Set());
+    }
+    for (const missing of executions) {
+      expect(selectActiveTiabLlmIds([runs], [executions.filter((name) => name !== missing)])).toEqual(new Set());
+    }
+  });
+});
+
 describe('フルテキスト候補', () => {
-  const config = { fulltextPoolRule: null, fulltextAssignmentStatus: 'none' as const };
+  const config = { fulltextPoolRule: null, fulltextAssignmentStatus: 'none' as const, activeTiabLlmIds: new Set<string>() };
   const tiab = (overrides: Partial<TiabDecision> = {}) => makeDecision({ screeningPhase: 'tiab', ...overrides });
+
+  test('規則なしでも TiAb の最新判定が exclude なら全文 include を候補外にする', () => {
+    const ref = makeRef();
+    const adopted = resolveAdoptedReferences([ref], [
+      tiab(), tiab({ decision: 'exclude', decidedAt: 'z' }), makeDecision(),
+    ], null, config);
+    expect(adopted.includes).toEqual([]);
+    expect(adopted.notCandidateExcluded).toEqual([ref]);
+  });
+
+  test.each([null, { version: 1 as const, voters: ['llm:run'], threshold: 1 }])('有効な Run の TiAb include だけを候補判定に使う（%j）', (fulltextPoolRule) => {
+    const ref = makeRef();
+    const decisions = [tiab({ reviewerId: 'llm:run' }), makeDecision()];
+    const inactive = resolveAdoptedReferences([ref], decisions, null, { ...config, fulltextPoolRule });
+    expect(inactive.includes).toEqual([]);
+    expect(inactive.notCandidateExcluded).toEqual([ref]);
+    const active = resolveAdoptedReferences([ref], decisions, null, {
+      ...config, fulltextPoolRule, activeTiabLlmIds: new Set(['llm:run']),
+    });
+    expect(active.includes).toEqual([ref]);
+    expect(active.notCandidateExcluded).toEqual([]);
+    expect(resolveAdoptedReferences([ref], [tiab({ reviewerId: 'llm:run' })], null, {
+      ...config, activeTiabLlmIds: new Set(['llm:run']),
+    }).includes).toEqual([]);
+  });
 
   test.each(['bad', 'null', '{}', '{"voters":[1],"threshold":1}', '{"voters":[],"threshold":"1"}', '{"voters":[],"threshold":0}'])('不正な規則 %s は null', (json) => {
     expect(parseFulltextPoolRule(json)).toBeNull();
@@ -705,9 +812,12 @@ describe('フルテキスト候補', () => {
   test('プールの LLM は全文採用ラウンドと無関係で、文献ごとに判定する', () => {
     const refs = [makeRef({ refId: 'r1' }), makeRef({ refId: 'r2' })];
     const decisions = [tiab({ refId: 'r1', reviewerId: 'llm:old' }), makeDecision({ refId: 'r1' }), makeDecision({ refId: 'r2' })];
-    const adopted = resolveAdoptedReferences(refs, decisions, 'llm:new', { ...config, fulltextPoolRule: { version: 1, voters: ['llm:old'], threshold: 1 } });
+    const adopted = resolveAdoptedReferences(refs, decisions, 'llm:new', { ...config, activeTiabLlmIds: new Set(['llm:old']), fulltextPoolRule: { version: 1, voters: ['llm:old'], threshold: 1 } });
     expect(adopted.includes).toEqual([refs[0]]);
     expect(adopted.notCandidateExcluded).toEqual([refs[1]]);
+    const inactive = resolveAdoptedReferences(refs, decisions, 'llm:new', { ...config, fulltextPoolRule: { version: 1, voters: ['llm:old'], threshold: 1 } });
+    expect(inactive.includes).toEqual([]);
+    expect(inactive.notCandidateExcluded).toEqual(refs);
     expect(adopted.orIncludeCount).toBe(2);
   });
 });
