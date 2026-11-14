@@ -13,6 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
+（まだありません / Nothing yet）
+
+## v0.35.0（2026-11-15）
+
 ### その他の変更 / Other changes
 
 - ボタンとリンクの読み上げ用の名前に日英の表示文字を含め、見た目を変えずに WCAG 2.5.3 Label in Name の不一致を修正しました（2026-11-14、#535）。

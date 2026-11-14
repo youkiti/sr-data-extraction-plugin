@@ -44,8 +44,8 @@ authors:
     given-names: "Toshi A."
     affiliation: "Kyoto University Office of Institutional Advancement and Communications"
     orcid: "https://orcid.org/0000-0003-2159-3776"
-version: 0.34.0
-date-released: "2026-11-13"
+version: 0.35.0
+date-released: "2026-11-15"
 license: MIT
 repository-code: "https://github.com/youkiti/sr-data-extraction-plugin"
 url: "https://youkiti.github.io/sr-data-extraction-plugin/"
