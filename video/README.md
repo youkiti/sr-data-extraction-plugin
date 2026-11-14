@@ -39,7 +39,7 @@ video/
 
 ## 前提環境
 
-- Node.js `^22.15.0 || >=24`（`package.json` の `engines` 参照）
+- Node.js `^22.22.2 || ^24.15.0 || >=26`（`package.json` の `engines` 参照）
 - Linux + [xvfb](https://www.x.org/releases/X11R7.6/doc/man/man1/Xvfb.1.xhtml)（拡張機能を読み込んだ Chromium
   をヘッド付きで動かして収録するため。収録コマンドは常に `xvfb-run` 経由で実行する）
 - Python3 + [py7zr](https://pypi.org/project/py7zr/)（`pip install py7zr`）

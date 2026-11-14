@@ -76,7 +76,7 @@ flowchart LR
 
 ## 開発セットアップ
 
-以下はソースからビルドして動かす開発者向けの手順です。ふだんの利用には不要です。Node.js `^22.15.0 || >=24` が必要です。
+以下はソースからビルドして動かす開発者向けの手順です。ふだんの利用には不要です。Node.js `^22.22.2 || ^24.15.0 || >=26` が必要です。
 
 ```bash
 git clone https://github.com/youkiti/sr-data-extraction-plugin
