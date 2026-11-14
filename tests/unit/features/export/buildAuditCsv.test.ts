@@ -13,6 +13,9 @@ import {
   OUTCOME_INSTANCE_DECLARATION_NOTE,
 } from '../../../../src/features/verification/instanceDeclarations';
 import { CSV_BOM } from '../../../../src/features/export/csvEncode';
+import { SHEET_HEADERS } from '../../../../src/domain/sheetsSchema';
+import { readAllDecisions, decisionToRow } from '../../../../src/features/verification/decisionRepository';
+import { readRunAuditInfos, extractionRunToRow } from '../../../../src/features/extraction/runRepository';
 
 test('引用 JSON は選択 run の束を昇順に添付し、通常は空・根拠なしは欠損にする', () => {
   const first = evidence('first', 'new', 'd1', 'f1', '-', { quoteSeq: 1, quoteTheme: 'テーマ,一', section: 'Methods' });
@@ -30,13 +33,13 @@ test('引用 JSON は選択 run の束を昇順に添付し、通常は空・根
   expect(AUDIT_HEADER.slice(28, 30)).toEqual(['quotes_json', 'section']);
   expect(placeholder.undecidedCellCount).toBe(1);
   expect(placeholder.csv).toContain(',new,first,');
-  expect(placeholder.csv.endsWith(expectedEnd.replace('\r\n', ',.,.,,,,.,.\r\n'))).toBe(true);
+  expect(placeholder.csv.endsWith(expectedEnd.replace('\r\n', ',.,.,,,,.,.,.,\r\n'))).toBe(true);
   const decided = buildAuditCsv(studies, [decision('d1', 'f1', '-', 'accept', 't2', { schemaVersion: 2 })], rows, runs, fields);
-  expect(decided.csv.endsWith(expectedEnd.replace('\r\n', ',,,,,,,\r\n'))).toBe(true);
+  expect(decided.csv.endsWith(expectedEnd.replace('\r\n', ',,,,,,,,,\r\n'))).toBe(true);
   const historical = buildAuditCsv(studies, [decision('d1', 'f1', '-', 'accept', 't2', {
     schemaVersion: 2, seenEvidenceIds: ['first', 'second'],
   })], [...rows, { ...first, evidenceId: 'relocated', quote: 'new quote' }], runs, fields);
-  expect(historical.csv.endsWith(expectedEnd.replace('\r\n', ',first second,,,,,,\r\n'))).toBe(true);
+  expect(historical.csv.endsWith(expectedEnd.replace('\r\n', ',first second,,,,,,,,\r\n'))).toBe(true);
   const normal = buildAuditCsv(studies, [], [evidence('normal', 'old', 'd1', 'f1', '-')], runs, fields);
   expect(dataRows(normal.csv)[0]?.[34]).toBe('');
   const missing = buildAuditCsv(studies, [decision('d1', 'f1', '-', 'accept', 't2', { schemaVersion: 3 })], rows, runs, fields);
@@ -53,7 +56,7 @@ test('断片のセルは元の値と先頭引用を保ち、quotes_json に全�
     { seq: 1, theme: null, quote: first.quote, page: 1, document_id: first.documentId, anchor_status: 'exact', section: null },
     { seq: 2, theme: null, quote: second.quote, page: 5, document_id: second.documentId, anchor_status: 'fuzzy', section: null },
   ]);
-  expect(result.csv.endsWith(`,"${json.replace(/"/g, '""')}",,.,.,,,,.,.\r\n`)).toBe(true);
+  expect(result.csv.endsWith(`,"${json.replace(/"/g, '""')}",,.,.,,,,.,.,.,\r\n`)).toBe(true);
 });
 /** 構造的欠損トークン（可読性のための短縮名） */
 const NA = AUDIT_MISSING_TOKEN;
@@ -169,12 +172,12 @@ const decision = (
 const headerLine = AUDIT_HEADER.join(',');
 
 test('裁定の出所と AI accept 由来を末尾列に出す', () => {
-  expect(AUDIT_HEADER.slice(-2)).toEqual(['consensus_source', 'adopted_ai_accept']);
+  expect(AUDIT_HEADER.slice(35, 37)).toEqual(['consensus_source', 'adopted_ai_accept']);
   const rows = dataRows(buildAuditCsv([study('d1', 'Study')], [
     decision('d1', 'f1', '-', 'edit', '1', { annotator: 'consensus', annotatorType: 'consensus',
       consensusSource: 'A', adoptedAiAccept: 'A' }),
   ], [], [], [field('f1', 'value', 1)]).csv);
-  expect(rows[0]?.slice(-2)).toEqual(['A', 'A']);
+  expect(rows[0]?.slice(35, 37)).toEqual(['A', 'A']);
 });
 
 test('再抽出・再特定後も判定時の根拠と出所を出す', () => {
@@ -191,7 +194,7 @@ test('再抽出・再特定後も判定時の根拠と出所を出す', () => {
   const rows = dataRows(buildAuditCsv([study('d1', 'Study')], decisions, [original, relocated, fresh],
     [run('r1', 1, '1'), run('r2', 1, '2')], [field('f1', 'value', 1)]).csv);
   expect(rows[0]?.slice(10, 14)).toEqual(['old', 'old value', 'false', 'old quote']);
-  expect(rows[0]?.slice(30)).toEqual(['old missing', 'old value', 'log', 'model', '2', '', '']);
+  expect(rows[0]?.slice(30)).toEqual(['old missing', 'old value', 'log', 'model', '2', '', '', '', '']);
   expect(rows[1]?.[10]).toBe('fresh');
   expect(rows[1]?.[30]).toBe('none');
   expect(rows[2]?.[10]).toBe('fresh');
@@ -275,7 +278,7 @@ describe('buildAuditCsv', () => {
     expect(rows[0]?.[6]).toBe('1'); // schema_version は代表 Evidence の run から
     expect(rows[0]?.[7]).toBe(NA); // annotator が構造的欠損 = 未検証の明示
     // 判定列ブロック（decision_seq〜note）も構造的欠損（study_id 列の追加で開始位置は 22）
-    expect(rows[0]?.slice(22)).toEqual([NA, NA, NA, NA, NA, NA, '', '', NA, NA, '', '', '', NA, NA]);
+    expect(rows[0]?.slice(22)).toEqual([NA, NA, NA, NA, NA, NA, '', '', NA, NA, '', '', '', NA, NA, NA, '']);
     expect(result.undecidedCellCount).toBe(1);
   });
 
@@ -526,4 +529,61 @@ test('印の付け外しを各一行で出し、印イベントだけでは未�
   expect(markedOnly.csv.match(/,unflag_consult,/g)).toHaveLength(1);
   const finalized = buildAuditCsv(inputs, [decision('d1', 'f1', '-', 'accept', 't1'), flag, clear], ev, [], fields);
   expect(finalized.undecidedCellCount).toBe(0);
+});
+
+
+test.each(['0.33.0', null, undefined])('判定の app_version と添付 run の extension_version を末尾へ出す: %s', (extensionVersion) => {
+  const studies = [study('d1', 'Study')];
+  const fields = [field('f1', 'value', 1)];
+  const evidenceRows = [evidence('e1', 'r1', 'd1', 'f1', '-')];
+  const runs = [{ ...run('r1', 1, '1'), extensionVersion }];
+  const decisions = [decision('d1', 'f1', '-', 'accept', '2', { appVersion: '0.34.0' })];
+  const decided = dataRows(buildAuditCsv(studies, decisions, evidenceRows, runs, fields).csv)[0]!;
+  expect(AUDIT_HEADER.slice(-2)).toEqual(['app_version', 'run_app_version']);
+  expect(decided).toHaveLength(AUDIT_HEADER.length);
+  expect(decided.slice(-2)).toEqual(['0.34.0', extensionVersion ?? '']);
+  const placeholder = dataRows(buildAuditCsv(studies, [], evidenceRows, runs, fields).csv)[0]!;
+  expect(placeholder).toHaveLength(AUDIT_HEADER.length);
+  expect(placeholder.slice(-2)).toEqual([NA, extensionVersion ?? '']);
+  const missingRun = dataRows(buildAuditCsv(studies, decisions, evidenceRows, [], fields).csv)[0]!;
+  expect(missingRun.slice(-2)).toEqual(['0.34.0', NA]);
+  const unknownRun = dataRows(buildAuditCsv(studies, [], evidenceRows, [], fields).csv)[0]!;
+  expect(unknownRun.slice(-2)).toEqual([NA, NA]);
+});
+
+test('表示記録で添付した Evidence の run が無いと抽出版は構造的欠損になる', () => {
+  const result = buildAuditCsv([study('d1', 'Study')], [decision('d1', 'f1', '-', 'accept', '2', {
+    appVersion: '0.34.0', seenEvidenceIds: ['e1'],
+  })], [evidence('e1', 'unknown', 'd1', 'f1', '-')], [], [field('f1', 'value', 1)]);
+  expect(dataRows(result.csv)[0]?.slice(-2)).toEqual(['0.34.0', NA]);
+});
+
+
+test.each(['0.33.0', null])('旧判定の版は空欄、抽出版は既存列から audit CSV へ出力する: %s', async (extensionVersion) => {
+  const oldDecisions = [
+    SHEET_HEADERS.Decisions.slice(0, 15),
+    decisionToRow(decision('d1', 'f1', '-', 'accept', '2')).slice(0, 15).map((cell) => String(cell ?? '')),
+  ];
+  const oldRuns = [
+    [...SHEET_HEADERS.ExtractionRuns],
+    extractionRunToRow({ ...run('r1', 1, '1'), extensionVersion }).map((cell) => String(cell ?? '')),
+  ];
+  const deps = {
+    getAccessToken: jest.fn().mockResolvedValue('token'),
+    fetch: jest.fn().mockImplementation(async (url: RequestInfo | URL) => ({
+      ok: true, status: 200,
+      json: async () => ({ values: String(url).includes('Decisions') ? oldDecisions : oldRuns }),
+    } as Response)),
+  };
+  const decisions = await readAllDecisions('old', deps);
+  const runs = await readRunAuditInfos('old', deps);
+  const result = buildAuditCsv([study('d1', 'Study')], decisions,
+    [evidence('e1', 'r1', 'd1', 'f1', '-')], runs, [field('f1', 'value', 1)]);
+  expect(decisions[0]?.appVersion).toBeNull();
+  expect(runs[0]?.extensionVersion).toBe(extensionVersion);
+  const row = dataRows(result.csv)[0]!;
+  expect(row.slice(-2)).toEqual(['', extensionVersion ?? '']);
+  expect(row).toHaveLength(AUDIT_HEADER.length);
+  expect(row[23]).toBe('accept');
+  expect(row[10]).toBe('e1');
 });

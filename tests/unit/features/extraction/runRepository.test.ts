@@ -336,6 +336,14 @@ describe('readRunAuditInfos', () => {
     '',
   ];
 
+  test('既存の extension_version 列を監査情報の版として読み出す', async () => {
+    const row = extractionRunToRow(makeRun({ extensionVersion: '0.33.0' })).map((cell) => String(cell ?? ''));
+    expect(SHEET_HEADERS.ExtractionRuns).toHaveLength(21);
+    expect(SHEET_HEADERS.ExtractionRuns[20]).toBe('extension_version');
+    expect(await readRunAuditInfos('sheet-1', readDeps([[...SHEET_HEADERS.ExtractionRuns], row])))
+      .toEqual([{ runId: 'run-1', schemaVersion: 2, startedAt: 't1', extensionVersion: '0.33.0' }]);
+  });
+
   test('run_id / schema_version / started_at の最小情報を全行ぶん返す', async () => {
     const values = [
       [...SHEET_HEADERS.ExtractionRuns],
@@ -343,8 +351,8 @@ describe('readRunAuditInfos', () => {
       runRow('run-2', '3', ''),
     ];
     expect(await readRunAuditInfos('sheet-1', readDeps(values))).toEqual([
-      { runId: 'run-1', schemaVersion: 1, startedAt: 't1' },
-      { runId: 'run-2', schemaVersion: 3, startedAt: null }, // 空セルは null（最古扱い）
+      { runId: 'run-1', schemaVersion: 1, startedAt: 't1', extensionVersion: null },
+      { runId: 'run-2', schemaVersion: 3, startedAt: null, extensionVersion: null }, // 空セルは null（最古扱い）
     ]);
   });
 
@@ -354,7 +362,7 @@ describe('readRunAuditInfos', () => {
       [null as unknown as string, 'pilot', '2'],
     ];
     expect(await readRunAuditInfos('sheet-1', readDeps(values))).toEqual([
-      { runId: '', schemaVersion: 2, startedAt: null },
+      { runId: '', schemaVersion: 2, startedAt: null, extensionVersion: null },
     ]);
   });
 
