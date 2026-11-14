@@ -15,8 +15,8 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ### その他の変更 / Other changes
 
-- ボタンとリンクの読み上げ用の名前に日英の表示文字を含め、見た目を変えずに WCAG 2.5.3 Label in Name の不一致を修正しました（2026-11-14、(#TBD)）。
-  Accessible names of buttons and links now include their visible Japanese and English labels, fixing WCAG 2.5.3 Label in Name mismatches without changing their appearance (2026-11-14, (#TBD)).
+- ボタンとリンクの読み上げ用の名前に日英の表示文字を含め、見た目を変えずに WCAG 2.5.3 Label in Name の不一致を修正しました（2026-11-14、#535）。
+  Accessible names of buttons and links now include their visible Japanese and English labels, fixing WCAG 2.5.3 Label in Name mismatches without changing their appearance (2026-11-14, #535).
 - 公開ヘルプのエクスポート節に、audit.csv の `app_version`・`run_app_version` の意味と、空欄・構造的欠損になる場合の説明を日英で追加しました（2026-11-14・#520）。
   Added Japanese and English explanations of the audit.csv `app_version` and `run_app_version` columns, including when they are blank or structurally missing, to the export section of the public help (2026-11-14, #520).
 - tiab-review の Config・LLM_Runs・LLM_Executions の読み込み失敗時はエラーで中断し、採用リストと件数を表示しないようにしました。HTTP 400 のタブ欠落だけは、古いシートとの互換のため空として扱います（2026-11-14）。
