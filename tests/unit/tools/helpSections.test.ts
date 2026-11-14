@@ -1,16 +1,20 @@
 // 本物の公開ヘルプと小さな HTML で、言語別小節の境界を検証する。
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { HELP_TOPICS } from '../../../src/lib/help/topics';
 import type { HelpSection } from '../../../src/lib/help/consult/types';
 
-// ビルド用 CommonJS ローダーの関数プロパティも検査する。
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const loader = require('../../../tools/help/helpSections.cjs') as {
-  (this: { resourceQuery: string }, source: string): string;
-  parseHelpSections: (html: string, lang: string) => HelpSection[];
-};
-const parse = loader.parseHelpSections;
+// ローダーは ESM のみの entities 9 を使う .mjs。jest（CommonJS）からは読めないので、
+// 子プロセスの Node で呼んで結果を JSON で受ける。
+function run(mode: 'parse' | 'loader', source: string, lang: string): string {
+  return execFileSync(process.execPath, [join(__dirname, 'helpSectionsRunner.mjs')], {
+    input: JSON.stringify({ mode, source, lang }),
+    encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+}
+const parse = (source: string, lang: string): HelpSection[] => JSON.parse(run('parse', source, lang)) as HelpSection[];
 const html = readFileSync(join(__dirname, '../../../hosted/help.html'), 'utf8');
 
 test('本物のヘルプで日英の ID とトピックが一致し、言語が混在しない', () => {
@@ -59,5 +63,5 @@ test('入れ子の span・実体参照・不要要素・こんなとき・FAQ �
   expect(ja[2]).toMatchObject({ kind: 'faq', title: 'Question', body: 'Answer' });
   expect(ja[3]!.body).toBe('');
   expect(() => parse(source, 'fr')).toThrow();
-  expect(loader.call({ resourceQuery: '?help-sections&lang=ja' }, source)).toBe(`module.exports = ${JSON.stringify(ja)};`);
+  expect(JSON.parse(run('loader', source, 'ja'))).toBe(`module.exports = ${JSON.stringify(ja)};`);
 });

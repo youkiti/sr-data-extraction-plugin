@@ -1,8 +1,8 @@
 // 公開ヘルプを言語別の小節へ変換するビルド用ローダー。
 // タグのスタックで入れ子を保持し、言語と本文の境界を判定する。
-const { decodeHTML } = require('entities');
+import { decodeHTML } from 'entities';
 
-function parseHelpSections(html, lang) {
+export function parseHelpSections(html, lang) {
   if (lang !== 'ja' && lang !== 'en') {
     throw new Error('ヘルプの言語が不正です');
   }
@@ -68,8 +68,7 @@ function parseHelpSections(html, lang) {
   return result;
 }
 
-module.exports = function (source) {
+export default function helpSectionsLoader(source) {
   const lang = new URLSearchParams(this.resourceQuery.slice(1)).get('lang');
   return `module.exports = ${JSON.stringify(parseHelpSections(source, lang))};`;
-};
-module.exports.parseHelpSections = parseHelpSections;
+}
