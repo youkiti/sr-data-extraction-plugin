@@ -1,4 +1,4 @@
-// デモビルド上の操作ツアーを順に実行する。headed ブラウザが必要なため CI 外で使う。
+// デモビルド上の操作ツアーを順に実行する。週次点検では headed ブラウザを Xvfb 上で使う。
 // --settle <ミリ秒>（0〜10000、既定 0）で手順画像の撮影前だけ待機する。失敗・遮断確認画像は待機しない。
 import { readdirSync, mkdirSync } from 'node:fs';
 import { parseArgs } from './lib/options.mjs';
