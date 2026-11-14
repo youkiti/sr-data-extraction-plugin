@@ -62,7 +62,7 @@
     "prettier": "^3.6.2",
     "selenium-webdriver": "^4.45.0",
     "stylelint": "^17.14.0",
-    "stylelint-config-standard": "^40.0.0",
+    "stylelint-config-standard": "^41.0.0",
     "ts-jest": "^29.4.11",
     "ts-loader": "^9.5.4",
     "ts-node": "^10.9.2",
