@@ -5,27 +5,28 @@
 .DESCRIPTION
   master が green な状態から Chrome ウェブストア提出物を作るまでを 1 コマンドにまとめる:
     1. 前提チェック（ブランチ / 作業ツリー / origin 同期 / ヘルプ未記載の候補 / AI の値と CHANGELOG / master の CI / .env）
-    2. version バンプ（src/manifest.json + package.json + package-lock.json の 3 ファイル）+ 文書 3 ファイル（現在値・ヘルプ対象版・CHANGELOG）の自動更新
+    2. version バンプ（src/manifest.json + package.json + package-lock.json の 3 ファイル）+ 文書 4 ファイル（現在値・ヘルプ対象版・CHANGELOG・CITATION）の自動更新
     3. バンプ commit（ローカル）
     4. npm run build（production）
     5. tools/release/pack.ps1（key 除去・zip 化・検証）
-    6. origin/master へ push
-    7. -Submit 指定時のみストアへアップロード・審査提出
+    6. vX.Y.Z タグを作成し、origin/master とタグを push
+    7. CHANGELOG の該当版を本文に GitHub Release を作成（gh が必要）
+    8. -Submit 指定時のみストアへアップロード・審査提出
 
-  version バンプの差分は version 3 ファイルと現在値・ヘルプ対象版・CHANGELOG の文書 3 ファイルで、直前の master は CI green
+  version バンプの差分は version 3 ファイルと現在値・ヘルプ対象版・CHANGELOG・CITATION の文書 4 ファイルで、直前の master は CI green
   （手順 1 で機械チェックする）。そのため PR / CI 待ちを挟まず master へ直接コミットする
   ＝ CLAUDE.md 作業原則 1（master で直接作業しない）の明示的な例外。
   機能変更をこのスクリプトで master へ持ち込んではいけない（作業ツリーが汚れていれば止まる）。
 
   build / pack が失敗した場合、push はまだ実行されていないので origin は無傷。
-  ローカルのバンプ commit だけが残るので `git reset --hard HEAD~1` で戻せる（version 3 ファイル + 文書 3 ファイルを戻す）。
+  ローカルのバンプ commit だけが残るので `git reset --hard HEAD~1` で戻せる（version 3 ファイル + 文書 4 ファイルを戻す）。
 
 .PARAMETER Bump
   major / minor / patch のいずれか、または明示の version（例 0.7.3）。
     major: 0.6.0 -> 1.0.0 ／ minor: 0.6.0 -> 0.7.0 ／ patch: 0.6.0 -> 0.6.1
 
 .PARAMETER NoPush
-  push を行わない（ローカル commit までで止める）。zip は作る。
+  push と GitHub Release 作成を行わない。ローカル commit・タグ・zip は作る。
 
 .PARAMETER SkipCiCheck
   master の CI 状態チェック（gh run list）を省略する。gh が無い環境や、CI 結果を待たずに作る場合。
@@ -117,7 +118,7 @@ $dirty = @(git status --porcelain --ignore-submodules=dirty | Where-Object { $_ 
 if ($dirty.Count -gt 0) {
   Write-Host ($dirty -join "`n") -ForegroundColor DarkGray
   # ここは -Force でも解除しない: 未コミットの変更が混ざった zip を提出させないため
-  Stop-WithError '作業ツリーが汚れています。commit / stash してから再実行してください（前回の失敗で version 編集が残っている場合は `git checkout -- src/manifest.json package.json package-lock.json docs/project-facts.md hosted/help.html CHANGELOG.md`）'
+  Stop-WithError '作業ツリーが汚れています。commit / stash してから再実行してください（前回の失敗で version 編集が残っている場合は `git checkout -- src/manifest.json package.json package-lock.json docs/project-facts.md hosted/help.html CHANGELOG.md CITATION.cff`）'
 }
 Write-Ok '作業ツリーはクリーン'
 
@@ -245,6 +246,8 @@ if ($nextVersionObj -le $currentVersionObj) {
   Stop-WithError "新しい version ($next) が現在の version ($current) 以下です"
 }
 
+$releaseDate = Get-Date -Format 'yyyy-MM-dd'
+
 # package.json / package-lock.json は npm に更新させる（lock の packages."" まで揃う）
 npm version $next --no-git-tag-version --allow-same-version | Out-Null
 if ($LASTEXITCODE -ne 0) {
@@ -261,7 +264,13 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Ok 'docs/project-facts.md を再生成・hosted/help.html の対象バージョンを更新'
 
-node tools/changelog/stampChangelog.mjs $next (Get-Date -Format 'yyyy-MM-dd')
+node tools/release/releaseMetadata.mjs stamp $next $releaseDate
+if ($LASTEXITCODE -ne 0) {
+  Stop-WithError 'CITATION.cff の版と公開日の更新に失敗しました'
+}
+Write-Ok 'CITATION.cff の版と公開日を更新'
+
+node tools/changelog/stampChangelog.mjs $next $releaseDate
 if ($LASTEXITCODE -ne 0) {
   Stop-WithError 'CHANGELOG.md の「未リリース」の切り替えに失敗しました'
 }
@@ -272,7 +281,7 @@ Write-Ok "CHANGELOG.md の「未リリース」を v$next の見出しへ切り�
 # ---------------------------------------------------------------------------
 Write-Host '=== 3. バンプ commit ===' -ForegroundColor Cyan
 
-git add src/manifest.json package.json package-lock.json docs/project-facts.md hosted/help.html CHANGELOG.md
+git add src/manifest.json package.json package-lock.json docs/project-facts.md hosted/help.html CHANGELOG.md CITATION.cff
 git commit --quiet -m "chore: リリース v$next へ version をバンプ"
 if ($LASTEXITCODE -ne 0) {
   Stop-WithError 'git commit が失敗しました'
@@ -319,23 +328,47 @@ if ($LASTEXITCODE -ne 0) {
 # ---------------------------------------------------------------------------
 # 6. push
 # ---------------------------------------------------------------------------
-Write-Host '=== 6. push ===' -ForegroundColor Cyan
+Write-Host '=== 6. タグ作成と push ===' -ForegroundColor Cyan
+
+$tag = "v$next"
+git tag -a $tag -m "リリース $tag"
+if ($LASTEXITCODE -ne 0) {
+  Stop-WithError "タグ $tag の作成に失敗しました。既存タグやローカルの状態を確認してください"
+}
+Write-Ok "タグ $tag を作成"
 
 if ($NoPush) {
-  Write-Warn "-NoPush のため push しません（後で ``git push origin $targetBranch``）"
+  Write-Warn "-NoPush のため push しません（後でブランチとタグ $tag を push し、GitHub Release を作成してください）"
 } else {
-  git push origin "HEAD:$targetBranch"
+  git push --atomic origin "HEAD:$targetBranch" "refs/tags/$tag"
   if ($LASTEXITCODE -ne 0) {
-    Stop-WithError "push に失敗しました。zip は出来ています。origin の更新を取り込んでから ``git push origin HEAD:$targetBranch`` を手動で実行してください"
+    Stop-WithError "push に失敗しました。zip は出来ています。origin の更新を取り込んでから ``git push --atomic origin HEAD:$targetBranch refs/tags/$tag`` を手動で実行してください"
   }
-  Write-Ok "origin/$targetBranch へ push"
+  Write-Ok "origin/$targetBranch と $tag を push"
+}
+
+# gh 未導入・未認証・公開失敗は警告に留め、zip とストア提出は利用できるようにする。
+if (-not $NoPush) {
+  Write-Host '=== 7. GitHub Release 作成 ===' -ForegroundColor Cyan
+  $notesPath = [System.IO.Path]::GetTempFileName()
+  try {
+    node tools/release/releaseMetadata.mjs notes $next $notesPath
+    if ($LASTEXITCODE -ne 0) { throw 'CHANGELOG の本文抽出に失敗しました' }
+    gh release create $tag --verify-tag --title $tag --notes-file $notesPath
+    if ($LASTEXITCODE -ne 0) { throw 'gh release create が失敗しました' }
+    Write-Ok "GitHub Release $tag を作成（Zenodo 連携を有効にしていれば DOI が発行されます）"
+  } catch {
+    Write-Warn "GitHub Release を作成できませんでした: $_。gh の導入・認証と公開状態を確認し、CHANGELOG の該当版を本文に $tag の Release を手動で作成してください（version は上げ直さない）"
+  } finally {
+    Remove-Item $notesPath -ErrorAction SilentlyContinue
+  }
 }
 
 $zipPath = Join-Path $repoRoot "release\sr-data-extraction-plugin-$next.zip"
 Write-Host ''
 Write-Host "提出用 zip: $zipPath" -ForegroundColor Cyan
 if ($Submit) {
-  Write-Host '=== 7. ストアへ提出 ===' -ForegroundColor Cyan
+  Write-Host '=== 8. ストアへ提出 ===' -ForegroundColor Cyan
   node tools/release/storeApi.mjs submit "--zip=$zipPath"
   if ($LASTEXITCODE -eq 3) {
     Stop-WithError '結果不明。npm run store:status で確認する。zip 作成と push は完了済み'

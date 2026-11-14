@@ -2,6 +2,8 @@
 
 # sr-data-extraction-plugin
 
+値・判定・集計・Methods に影響した不具合の版の範囲と、シートでの確認・対処は [既知の不具合](KNOWN_ISSUES.md) を参照してください。
+
 システマティックレビュー（SR）／スコーピングレビューの**データ抽出工程**を支援する、MIT ライセンスの OSS Chrome 拡張です。SR ツール群 3 部作（[sr-query-builder](https://github.com/youkiti/sr-query-builder-plugin) → [tiab-review](https://github.com/youkiti/tiab-review-plugin) → 本拡張）の 3 作目にあたります。
 
 > **開発ステータス**: Chrome ウェブストアで **v0.1.0 を一般公開しました**（2026-07-12）。以降も継続的にリリースを重ねています。現在のストア公開版とリポジトリの版は [docs/project-facts.md](docs/project-facts.md) を参照してください。S1〜S12 まで実装済み（MVP の S1〜S10 + Options に加え、RoB テンプレート・独立二重レビュー・S12 裁定画面などを実装）。正典ドキュメントは [docs/requirements.md](docs/requirements.md) を起点に、残タスクは [docs/remaining-work-plan.md](docs/remaining-work-plan.md) を参照してください。実機通し確認の記録は [docs/manual-testing.md](docs/manual-testing.md) にあります。
@@ -97,7 +99,7 @@ npm run dev            # dist/ に開発ビルドを生成
 | `npm test` | jest（`src/` の行・分岐カバレッジ 100% を強制） |
 | `npm run test:e2e` | Playwright E2E（`dist/` を静的配信 + chrome スタブ。詳細: [docs/test-strategy.md](docs/test-strategy.md)） |
 | `npm run build:demo` | 録画用のデモビルド（架空論文 3 本のモックデータで取り込み〜ダッシュボード〜エクスポートを再現） |
-| `npm run release` | 前提チェック → version バンプ → 本番ビルド → zip 化・検証 → push までを一括実行（`tools/release/release.ps1`。PowerShell〔pwsh〕が必要） |
+| `npm run release` | 前提チェック → version バンプ → 本番ビルド → zip 化・検証 → 版タグの作成・push → GitHub Release 作成までを一括実行（`tools/release/release.ps1`。PowerShell〔pwsh〕が必要） |
 | `npm run pack:release` | 既存ビルドの zip 化・検証のみ（`tools/release/pack.ps1`） |
 | `npm run manual:check` | 実機通し確認の Selenium 半自動ハーネス（詳細: [docs/manual-testing.md](docs/manual-testing.md)） |
 | `npm run video:*`（`video:setup` / `video:fixtures` / `video:record` / `video:tts` / `video:assemble`） | 操作解説動画の制作パイプライン（詳細: [video/README.md](video/README.md)） |
@@ -118,6 +120,12 @@ E2E はローカルの chromium を使います。`npx playwright install chromi
 | [docs/manual-testing.md](docs/manual-testing.md) | 実機通し確認のシナリオと結果記録 |
 | [hosted/README.md](hosted/README.md) | 公開ページ（GitHub Pages）のデプロイ手順 |
 | [experiments/anchor-spike/REPORT.md](experiments/anchor-spike/REPORT.md) | quote アンカリングの技術スパイク結果（anchor 成功率 96.2%） |
+
+## 引用方法
+
+[CITATION.cff](CITATION.cff) の著者・版の情報を使って引用してください。GitHub のリポジトリ画面にある「Cite this repository」から引用形式をコピーできます。利用した版は `chrome://extensions` で確認できます。
+
+TODO: 初回の Zenodo リリースで DOI が発行されたら、DOI のバッジとリンクをここに追加します。特定の版を引用するときは、その版の DOI を使用してください。
 
 ## ライセンス・資金
 

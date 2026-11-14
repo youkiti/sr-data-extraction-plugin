@@ -441,6 +441,10 @@ export const jaApp = {
     'tiab-review のスプレッドシートを直読みし、最終判定 include の文献から study_label（著者 (year)）と DOI / PMID を反映します。fulltext フォルダから取り込んだ PDF と突き合わせるため、先に PDF を取り込んでください。',
   'documents.tiabSheetAria': 'tiab-review のスプレッドシート URL または ID',
   'documents.tiabSheetPlaceholder': 'https://docs.google.com/spreadsheets/d/… または ID',
+  'documents.tiabKeyClosed':
+    'tiab-review のキーがまだ開封されていないため（他のレビュアーの判定が非表示の状態）、採用リストと件数は表示できません。全員の判定が終わったら tiab-review のプロジェクト管理者にキーの開封を依頼し、開封後にもう一度「読み込んでプレビュー」を押してください。',
+  'documents.tiabHandoffKeyClosed':
+    'tiab-review のキーがまだ開封されていないため、include の PDF を確認できません。tiab-review のプロジェクト管理者がキーを開封した後で、もう一度押してください。',
   'documents.tiabPreview': '読み込んでプレビュー',
   'documents.tiabClose': '閉じる',
   'documents.tiabLoading': 'tiab-review のシートを読み込んでいます…',

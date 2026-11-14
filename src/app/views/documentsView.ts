@@ -625,7 +625,11 @@ function renderTiabCard(state: AppState, ctx: ViewContext): HTMLElement {
   if (tiab.loading) {
     children.push(el('p', { id: 'tiab-loading', text: t('documents.tiabLoading') }));
   }
-  if (tiab.error !== null) {
+  if (tiab.keyClosed) {
+    children.push(el('p', {
+      id: 'tiab-key-closed', attributes: { role: 'status' }, text: t('documents.tiabKeyClosed'),
+    }));
+  } else if (tiab.error !== null) {
     children.push(
       el('p', {
         id: 'tiab-error',
@@ -649,7 +653,7 @@ function renderTiabCard(state: AppState, ctx: ViewContext): HTMLElement {
       children.push(grant);
     }
   }
-  if (tiab.plan !== null) {
+  if (!tiab.keyClosed && tiab.plan !== null) {
     children.push(...renderTiabPlan(tiab.plan, tiab, ctx));
   }
   if (tiab.result !== null) {

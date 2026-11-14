@@ -26,6 +26,8 @@ jobs:
         run: npm run lint
       - name: 自動生成ファイルの鮮度（docs/project-facts.md）
         run: npm run facts:check
+      - name: 自動生成ファイルの鮮度（THIRD_PARTY_NOTICES.md）
+        run: npm run licenses:check
       - name: stylelint
         run: npm run lint:css
       - name: jest（カバレッジ 100% 強制）

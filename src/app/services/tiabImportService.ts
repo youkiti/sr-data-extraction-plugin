@@ -74,6 +74,7 @@ export function closeTiabImport(store: Store): void {
     loading: false,
     error: null,
     accessDenied: false,
+    keyClosed: false,
     plan: null,
     applying: false,
     result: null,
@@ -104,6 +105,7 @@ export async function previewTiabImport(
       sheetInput: rawInput,
       error: t('documents.tiabErrInput'),
       accessDenied: false,
+      keyClosed: false,
       plan: null,
       result: null,
     });
@@ -116,6 +118,7 @@ export async function previewTiabImport(
       sheetInput: rawInput,
       error: t('documents.tiabErrNotLoaded'),
       accessDenied: false,
+      keyClosed: false,
       plan: null,
       result: null,
     });
@@ -126,11 +129,16 @@ export async function previewTiabImport(
     loading: true,
     error: null,
     accessDenied: false,
+    keyClosed: false,
     plan: null,
     result: null,
   });
   try {
     const sheet = prefetched ?? (await readTiabSheet(spreadsheetId, deps.google));
+    if (sheet.keyOpened === false) {
+      patchTiab(store, { loading: false, plan: null, keyClosed: true });
+      return;
+    }
     const adopted = resolveAdoptedReferences(
       sheet.references,
       sheet.decisions,
@@ -271,6 +279,10 @@ export async function runTiabHandoffImport(
   patchTiabHandoff(store, { running: true, error: null });
   try {
     const sheet = await readTiabSheet(handoff.tiabSheetId, deps.google);
+    if (sheet.keyOpened === false) {
+      patchTiabHandoff(store, { running: false, error: t('documents.tiabHandoffKeyClosed') });
+      return;
+    }
     const adopted = resolveAdoptedReferences(
       sheet.references,
       sheet.decisions,

@@ -58,7 +58,7 @@ MIT ライセンスの OSS Chrome 拡張 **sr-data-extraction-plugin**。SR ツ�
 - リリース自動化: `npm run release`（`tools/release/release.ps1`）が前提チェック → version バンプ → 本番ビルド → zip 化・検証 → push まで一気通貫。zip 化のみは `npm run pack:release`（`tools/release/pack.ps1`）。PowerShell（pwsh）が必要
 - デモビルド: `npm run build:demo`（架空論文 3 本のモックデータで取り込み〜ダッシュボード〜エクスポートまでの流れを再現する、録画用のビルド）
 - テスト: jest（jsdom、カバレッジ 100% 強制）+ Playwright + axe
-- Node.js ≥ 18
+- Node.js `^22.15.0 || >=24`（正の場所は `package.json` の `engines.node`）
 
 ## 実装時に押さえる設計判断（requirements.md からの要点）
 
