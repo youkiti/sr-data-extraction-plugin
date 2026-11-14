@@ -20,6 +20,8 @@ export interface TiabReference {
   fulltextUrl: string | null;
   fulltextSet: string | null;
   relatedRefId: string | null;
+  /** tiab-review で重複として除外済みなら残す側の ref_id。空は生きている文献 */
+  duplicateOf: string | null;
 }
 
 export type TiabDecisionValue = 'include' | 'exclude' | 'maybe' | 'pending';
@@ -152,6 +154,7 @@ export function parseTiabReferences(values: readonly (readonly string[])[]): Tia
       fulltextUrl: emptyToNull(cellAt(raw, index.get('fulltext_url'))),
       fulltextSet: emptyToNull(cellAt(raw, index.get('fulltext_set'))),
       relatedRefId: emptyToNull(cellAt(raw, index.get('related_ref_id'))),
+      duplicateOf: emptyToNull(cellAt(raw, index.get('duplicate_of'))),
     });
   }
   return rows;
@@ -192,6 +195,34 @@ export function parseTiabDecisions(values: readonly (readonly string[])[]): Tiab
     });
   }
   return rows;
+}
+
+/** 有効な TiAb Run に属するバッチ実行の判定者 ID を選ぶ */
+export function selectActiveTiabLlmIds(
+  runValues: readonly (readonly string[])[],
+  executionValues: readonly (readonly string[])[],
+): Set<string> {
+  const runIndex = headerIndex(runValues[0] ?? []);
+  const executionIndex = headerIndex(executionValues[0] ?? []);
+  if (
+    !['run_id', 'is_active', 'status', 'created_at'].every((name) => runIndex.has(name)) ||
+    !['execution_id', 'execution_type', 'run_id'].every((name) => executionIndex.has(name))
+  ) {
+    return new Set();
+  }
+  const activeRun = runValues.slice(1)
+    .filter((row) => cellAt(row, runIndex.get('is_active')).toLowerCase() === 'true' &&
+      cellAt(row, runIndex.get('status')) !== 'pending')
+    .sort((a, b) => new Date(cellAt(b, runIndex.get('created_at'))).getTime() -
+      new Date(cellAt(a, runIndex.get('created_at'))).getTime())[0];
+  if (activeRun === undefined) {
+    return new Set();
+  }
+  const runId = cellAt(activeRun, runIndex.get('run_id'));
+  return new Set(executionValues.slice(1)
+    .filter((row) => cellAt(row, executionIndex.get('execution_type')) === 'batch_screening' &&
+      cellAt(row, executionIndex.get('run_id')) === runId)
+    .map((row) => cellAt(row, executionIndex.get('execution_id'))));
 }
 
 /**
@@ -269,6 +300,7 @@ export interface FulltextPoolRule {
 export interface TiabCandidateConfig {
   fulltextPoolRule: FulltextPoolRule | null;
   fulltextAssignmentStatus: 'configured' | 'none';
+  activeTiabLlmIds: ReadonlySet<string>;
 }
 
 /** Config のプール規則を解析し、不正な値は規則なしにする */
@@ -362,7 +394,7 @@ function latestKey(d: TiabDecision): string {
  * 最終判定 include の Reference を抽出する。
  * - 判定は (相, 文献, 判定者) ごとに decided_at 最新の 1 件へ畳み込む（tiab の「最新判定のみ有効」規約）
  * - `llm:` 判定者は fulltext 相の採用ラウンド（Config.fulltext_ai_active_round）のみ集計する
- *   （TiAb 相の LLM run の有効・無効判別は LLM_Runs の読み出しが必要なため v1 では集計しない）
+ *   （TiAb 相の OR 合議では LLM 判定を集計しない。全文候補の判定には有効な Run の判定のみ使う）
  * - fulltext 相は最新の裁定票を優先し、裁定票がなければ通常票の OR 合議。
  *   fulltext 相の有効判定または裁定票が 1 件でもあれば fulltext 相を使い、
  *   無ければ TiAb 相の OR 合議で include を決める
@@ -371,11 +403,18 @@ export function resolveAdoptedReferences(
   references: readonly TiabReference[],
   decisions: readonly TiabDecision[],
   activeFulltextAiRound: string | null,
-  candidateConfig: TiabCandidateConfig = { fulltextPoolRule: null, fulltextAssignmentStatus: 'none' },
+  candidateConfig: TiabCandidateConfig = {
+    fulltextPoolRule: null, fulltextAssignmentStatus: 'none', activeTiabLlmIds: new Set(),
+  },
 ): TiabAdoptedList {
+  const aliveReferences = references.filter((ref) => ref.duplicateOf === null);
+  const aliveIds = new Set(aliveReferences.map((ref) => ref.refId));
   const adjudications = new Map<string, TiabDecision>();
   const latest = new Map<string, TiabDecision>();
   for (const decision of decisions) {
+    if (!aliveIds.has(decision.refId)) {
+      continue;
+    }
     if (decision.screeningPhase === 'fulltext' && decision.reviewerId.startsWith('adjudication:')) {
       const previous = adjudications.get(decision.refId);
       if (previous === undefined || decision.decidedAt > previous.decidedAt) {
@@ -387,6 +426,20 @@ export function resolveAdoptedReferences(
     const existing = latest.get(key);
     if (existing === undefined || decision.decidedAt > existing.decidedAt) {
       latest.set(key, decision);
+    }
+  }
+
+  const candidateDecisions = new Map<string, TiabDecision[]>();
+  for (const decision of latest.values()) {
+    if (decision.screeningPhase !== 'tiab' ||
+      (decision.reviewerId.startsWith('llm:') && !candidateConfig.activeTiabLlmIds.has(decision.reviewerId))) {
+      continue;
+    }
+    const refDecisions = candidateDecisions.get(decision.refId);
+    if (refDecisions === undefined) {
+      candidateDecisions.set(decision.refId, [decision]);
+    } else {
+      refDecisions.push(decision);
     }
   }
 
@@ -419,8 +472,8 @@ export function resolveAdoptedReferences(
 
   const phase: TiabScreeningPhase = hasFulltextDecision ? 'fulltext' : 'tiab';
   const effective = byPhase[phase];
-  const orIncludes = references.filter((ref) => effective.get(ref.refId)?.has('include') === true);
-  const adopted = references.filter((ref) => {
+  const orIncludes = aliveReferences.filter((ref) => effective.get(ref.refId)?.has('include') === true);
+  const adopted = aliveReferences.filter((ref) => {
     const adjudication = phase === 'fulltext' ? adjudications.get(ref.refId) : undefined;
     return adjudication === undefined
       ? effective.get(ref.refId)?.has('include') === true
@@ -432,7 +485,7 @@ export function resolveAdoptedReferences(
   const includes = adopted.filter((ref) => {
     if (phase === 'fulltext' && !isProjectFulltextCandidateRef({
       ref,
-      decisions: decisions.filter((d) => d.refId === ref.refId),
+      decisions: candidateDecisions.get(ref.refId) ?? [],
       config: candidateConfig,
     })) {
       notCandidateExcluded.push(ref);
@@ -441,7 +494,7 @@ export function resolveAdoptedReferences(
     return true;
   });
   return {
-    phase, includes, totalReferences: references.length, orIncludeCount: orIncludes.length,
+    phase, includes, totalReferences: aliveReferences.length, orIncludeCount: orIncludes.length,
     adjudicationExcluded, notCandidateExcluded,
   };
 }

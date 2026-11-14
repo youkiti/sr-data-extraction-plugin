@@ -55,6 +55,8 @@ export const enPages: Record<keyof typeof jaPages, string> = {
   'popup.tiabPicking': 'Choose the sheet in the picker…',
   'popup.tiabChecking': 'Checking the selected sheet…',
   'popup.tiabDetected': 'Found {n} included references. Confirm the project title and create.',
+  'popup.tiabKeyClosed':
+    'The tiab-review key for this sheet has not been opened yet (other reviewers\' decisions are hidden), so the included references cannot be checked. When all reviewers have finished, ask the tiab-review project administrator to open the key, then select the sheet again.',
   'popup.tiabNoIncludes':
     'No included references were found. Check the screening decisions in tiab-review.',
   'popup.tiabCreateSubmit': 'Create and continue',

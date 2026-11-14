@@ -561,7 +561,7 @@ test('tiab-review 取り込み: 導線ボタン → プレビュー（Sheets 直
       return;
     }
     if (method === 'GET' && url.includes('/values/Config')) {
-      await route.fulfill({ json: { values: [['fulltext_ai_active_round', '']] } });
+      await route.fulfill({ json: { values: [['fulltext_ai_active_round', ''], ['key_opened', 'true']] } });
       return;
     }
     if (method === 'GET' && url.includes('/values/Documents')) {
@@ -700,4 +700,26 @@ test('アクセシビリティ違反がない（axe）', async ({ page }) => {
   await expect(page.locator('#tiab-plan')).toBeVisible();
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
+});
+
+
+test('tiab-review のキー未開封は採用リストと件数を表示しない', async ({ page }) => {
+  await page.route('https://sheets.googleapis.com/**', async (route) => {
+    const url = decodeURIComponent(route.request().url());
+    if (url.includes('values:batchGet')) {
+      await route.fulfill({ json: { valueRanges: [
+        { values: [['ref_id', 'title'], ['r1', 'Included reference']] },
+        { values: [['ref_id', 'reviewer_id', 'decision'], ['r1', 'a@example.com', 'include']] },
+      ] } });
+      return;
+    }
+    await route.fulfill({ json: { values: url.includes('/values/Config') ? [['key_opened', 'false']] : [] } });
+  });
+  await initApp(page, docsState({ records: [RECORDS[0]], studies: [STUDIES[0]] }));
+  await page.locator('#documents-tiab-open').click();
+  await page.locator('#tiab-sheet-input').fill('https://docs.google.com/spreadsheets/d/tiab-sheet-1/edit');
+  await page.locator('#tiab-preview').click();
+  await expect(page.locator('#tiab-key-closed')).toBeVisible();
+  await expect(page.locator('#tiab-key-closed')).toHaveAttribute('role', 'status');
+  await expect(page.locator('#tiab-summary, #tiab-or-summary, #tiab-plan, #tiab-apply, #tiab-adjudication-warning, #tiab-not-candidate-warning')).toHaveCount(0);
 });

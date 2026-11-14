@@ -2,6 +2,8 @@
 
 # sr-data-extraction-plugin
 
+値・判定・集計・Methods に影響した不具合の版の範囲と、シートでの確認・対処は [既知の不具合](KNOWN_ISSUES.md) を参照してください。
+
 システマティックレビュー（SR）／スコーピングレビューの**データ抽出工程**を支援する、MIT ライセンスの OSS Chrome 拡張です。SR ツール群 3 部作（[sr-query-builder](https://github.com/youkiti/sr-query-builder-plugin) → [tiab-review](https://github.com/youkiti/tiab-review-plugin) → 本拡張）の 3 作目にあたります。
 
 > **開発ステータス**: Chrome ウェブストアで **v0.1.0 を一般公開しました**（2026-07-12）。以降も継続的にリリースを重ねています。現在のストア公開版とリポジトリの版は [docs/project-facts.md](docs/project-facts.md) を参照してください。S1〜S12 まで実装済み（MVP の S1〜S10 + Options に加え、RoB テンプレート・独立二重レビュー・S12 裁定画面などを実装）。正典ドキュメントは [docs/requirements.md](docs/requirements.md) を起点に、残タスクは [docs/remaining-work-plan.md](docs/remaining-work-plan.md) を参照してください。実機通し確認の記録は [docs/manual-testing.md](docs/manual-testing.md) にあります。
@@ -74,7 +76,7 @@ flowchart LR
 
 ## 開発セットアップ
 
-以下はソースからビルドして動かす開発者向けの手順です。ふだんの利用には不要です。Node.js ≥ 18 が必要です。
+以下はソースからビルドして動かす開発者向けの手順です。ふだんの利用には不要です。Node.js `^22.15.0 || >=24` が必要です。
 
 ```bash
 git clone https://github.com/youkiti/sr-data-extraction-plugin

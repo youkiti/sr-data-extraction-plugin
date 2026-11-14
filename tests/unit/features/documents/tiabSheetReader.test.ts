@@ -3,6 +3,7 @@
 // GoogleApiError のユーザー向け文言変換 / SheetsAccessDeniedError への分類を検証する
 import { readTiabSheet } from '../../../../src/features/documents/tiabSheetReader';
 import { SheetsAccessDeniedError } from '../../../../src/lib/google/sheets';
+import { GoogleApiError } from '../../../../src/lib/google/types';
 
 const REF_HEADER = ['ref_id', 'title', 'abstract', 'year', 'authors', 'doi', 'pmid', 'fulltext_url'];
 const DEC_HEADER = ['decision_id', 'ref_id', 'reviewer_id', 'decision', 'reason', 'labels', 'note', 'decided_at', 'client_version', 'source_url', 'screening_phase'];
@@ -49,8 +50,8 @@ describe('readTiabSheet', () => {
           ],
         });
       }
-      expect(url).toContain('/values/Config');
-      return okJson({ values: [['keyOpened', 'true'], ['fulltext_ai_active_round', ' llm:round-1 ']] });
+      if (!url.includes('/values/Config')) return okJson({ values: [] });
+      return okJson({ values: [['key_opened', 'true'], ['fulltext_ai_active_round', ' llm:round-1 ']] });
     });
 
     const data = await readTiabSheet('sheet-1', deps);
@@ -59,6 +60,8 @@ describe('readTiabSheet', () => {
     expect(data.decisions).toHaveLength(1);
     expect(data.decisions[0]).toMatchObject({ refId: 'r1', screeningPhase: 'fulltext' });
     expect(data.activeFulltextAiRound).toBe('llm:round-1');
+    expect(data.keyOpened).toBe(true);
+    expect(data.activeTiabLlmIds).toEqual(new Set());
   });
 
   test('Config の採用ラウンドが空値なら null、Config タブ欠落（読み出し失敗）も null', async () => {
@@ -68,6 +71,7 @@ describe('readTiabSheet', () => {
         : okJson({ values: [['fulltext_ai_active_round', '']] }),
     );
     await expect(readTiabSheet('sheet-1', emptyRound)).resolves.toMatchObject({
+      keyOpened: false, activeTiabLlmIds: new Set(),
       activeFulltextAiRound: null,
       fulltextPoolRule: null,
       fulltextAssignmentStatus: 'none',
@@ -80,6 +84,7 @@ describe('readTiabSheet', () => {
         : okJson({ values: [['fulltext_ai_active_round']] }),
     );
     await expect(readTiabSheet('sheet-1', raggedRound)).resolves.toMatchObject({
+      keyOpened: false, activeTiabLlmIds: new Set(),
       activeFulltextAiRound: null,
       fulltextPoolRule: null,
       fulltextAssignmentStatus: 'none',
@@ -91,6 +96,7 @@ describe('readTiabSheet', () => {
         : errorResponse(400),
     );
     await expect(readTiabSheet('sheet-1', missingConfig)).resolves.toMatchObject({
+      keyOpened: false, activeTiabLlmIds: new Set(),
       activeFulltextAiRound: null,
       fulltextPoolRule: null,
       fulltextAssignmentStatus: 'none',
@@ -112,6 +118,85 @@ describe('readTiabSheet', () => {
     if (rows.some((row) => row[1] === 'new')) {
       expect(data.activeFulltextAiRound).toBe('new');
     }
+  });
+
+  test.each([
+    { rows: [['key_opened', 'true']], opened: true },
+    { rows: [['key_opened', 'TRUE']], opened: true },
+    { rows: [['key_opened', 'false']], opened: false },
+    { rows: [['key_opened', 'FALSE']], opened: false },
+    { rows: [['key_opened', '']], opened: false },
+    { rows: [['key_opened']], opened: false },
+    { rows: [], opened: false },
+    { rows: [['key_opened', 'false'], ['key_opened', 'true']], opened: false },
+    { rows: [['key_opened', 'true'], ['key_opened', 'false']], opened: true },
+  ])('key_opened の最初の行だけを使う: $rows', async ({ rows, opened }) => {
+    const data = await readTiabSheet('sheet-1', makeDeps((url) =>
+      url.includes('values:batchGet')
+        ? okJson({ valueRanges: [{ values: [REF_HEADER] }, { values: [DEC_HEADER] }] })
+        : okJson({ values: rows })));
+    expect(data.keyOpened).toBe(opened);
+  });
+
+  test.each([null, 'LLM_Runs', 'LLM_Executions'])('LLM タブを読み、有効な実行を返す。片方の失敗は空集合（%s）', async (failedTab) => {
+    const deps = makeDeps((url) => {
+      if (url.includes('values:batchGet')) {
+        return okJson({ valueRanges: [{ values: [REF_HEADER] }, { values: [DEC_HEADER] }] });
+      }
+      if (failedTab !== null && url.includes('/values/' + failedTab)) return errorResponse(400);
+      if (url.includes('/values/LLM_Runs')) {
+        return okJson({ values: [['run_id', 'is_active', 'status', 'created_at'], ['r', 'true', 'confirmed', '2026-01-01']] });
+      }
+      if (url.includes('/values/LLM_Executions')) {
+        return okJson({ values: [['execution_id', 'execution_type', 'run_id'], ['llm:x', 'batch_screening', 'r']] });
+      }
+      return errorResponse(400);
+    });
+    const data = await readTiabSheet('sheet-1', deps);
+    expect(data.activeTiabLlmIds).toEqual(new Set(failedTab === null ? ['llm:x'] : []));
+    expect(data.keyOpened).toBe(false);
+    const calls = jest.mocked(deps.fetch).mock.calls.map(([url]) => decodeURIComponent(String(url)));
+    expect(calls.some((url) => url.includes('/values/LLM_Runs'))).toBe(true);
+    expect(calls.some((url) => url.includes('/values/LLM_Executions'))).toBe(true);
+  });
+
+  describe.each(['Config', 'LLM_Runs', 'LLM_Executions'])('任意タブ %s', (tab) => {
+    function depsWithError(error: unknown): ReturnType<typeof makeDeps> {
+      return makeDeps((url) => {
+        if (url.includes('values:batchGet')) {
+          return okJson({ valueRanges: [{ values: [REF_HEADER] }, { values: [DEC_HEADER] }] });
+        }
+        if (url.includes('/values/' + tab)) {
+          throw error;
+        }
+        return okJson({ values: [] });
+      });
+    }
+
+    test('GoogleApiError の 400 のみ空として扱う', async () => {
+      const deps = depsWithError(new GoogleApiError('Unable to parse range', 400, '', ''));
+      await expect(readTiabSheet('sheet-1', deps)).resolves.toMatchObject({
+        keyOpened: false,
+        activeFulltextAiRound: null,
+        fulltextPoolRule: null,
+        fulltextAssignmentStatus: 'none',
+        activeTiabLlmIds: new Set(),
+      });
+    });
+
+    test.each([
+      new GoogleApiError('server error', 500, '', ''),
+      new GoogleApiError('forbidden', 403, '', ''),
+      new Error('network down'),
+      { status: 400 },
+    ])('その他の失敗はそのまま投げる: %s', async (error) => {
+      await expect(readTiabSheet('sheet-1', depsWithError(error))).rejects.toBe(error);
+    });
+
+    test.each([403, 404])('アクセス拒否 %s は SheetsAccessDeniedError にする', async (status) => {
+      const error = new GoogleApiError('denied', status, '', JSON.stringify({ error: { status: 'PERMISSION_DENIED' } }));
+      await expect(readTiabSheet('sheet-1', depsWithError(error))).rejects.toBeInstanceOf(SheetsAccessDeniedError);
+    });
   });
 
   test('batchGet の 400（タブ欠落）は tiab-review シートでない旨のエラーへ変換する', async () => {

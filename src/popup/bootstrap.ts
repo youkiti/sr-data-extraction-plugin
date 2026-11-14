@@ -676,6 +676,13 @@ function bindTiabHandoff(els: PopupElements, deps: PopupDeps): void {
         // 状態 C: 検証中（付与直後の伝播遅延はリトライで吸収する）
         els.tiabStatus.textContent = t('popup.tiabChecking');
         const sheet = await readTiabSheetWithGrantRetry(deps, selection.sourceFileId);
+        if (sheet.keyOpened === false) {
+          checkedSheetId = null;
+          els.tiabForm.hidden = true;
+          els.tiabStatus.textContent = '';
+          els.tiabError.textContent = t('popup.tiabKeyClosed');
+          return;
+        }
         const adopted = resolveAdoptedReferences(
           sheet.references,
           sheet.decisions,

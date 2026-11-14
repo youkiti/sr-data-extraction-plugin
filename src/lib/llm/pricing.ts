@@ -22,8 +22,8 @@ export interface ModelPricing {
 }
 
 /**
- * モデル名 → 単価の対応表。
- * 価格改定時に要更新。未知のモデルは表に載せず、cost_estimate_usd は null のままにする。
+ * モデル名 → 改定前の基準単価の対応表。
+ * 価格改定は MODEL_PRICING_REVISIONS に追加する。未知のモデルの費用は null のままにする。
  *
  * 確認日はモデル群ごとに異なる（行ごとのコメント参照）。2026-08-31 の一斉再確認では、
  * **Anthropic 3 モデルだけ公式料金ページに到達できた**。Gemini（ai.google.dev）と
@@ -53,7 +53,7 @@ export const MODEL_PRICING: Readonly<Record<string, ModelPricing>> = {
   'gemini-3.1-flash-lite': { inputPerMillion: 0.25, outputPerMillion: 1.5, cachedInputPerMillion: 0.025 },
   // 2026-09-21 確認（issue #261、公式 Gemini 料金表。3.7 / 3.8 は API モデル一覧でも確認）。
   // 3.6 / 3.7 / 3.8 Flash は 2026-12-31 まで入力 $0.75 / 出力 $3.75 per 1M。
-  // 2027-01-01 に $1.50 / $7.50 へ切り替わるため、その時点で表の更新が必要。
+  // 2027-01-01 UTC 0 時以降は MODEL_PRICING_REVISIONS の単価を適用する。
   // キャッシュ入力 $0.075 は既存の入力単価 × 0.10 の慣例による導出値。
   'gemini-3.6-flash': { inputPerMillion: 0.75, outputPerMillion: 3.75, cachedInputPerMillion: 0.075 },
   'gemini-3.7-flash': { inputPerMillion: 0.75, outputPerMillion: 3.75, cachedInputPerMillion: 0.075 },
@@ -76,6 +76,25 @@ export const MODEL_PRICING: Readonly<Record<string, ModelPricing>> = {
   'claude-opus-5': { inputPerMillion: 5.0, outputPerMillion: 25.0, cachedInputPerMillion: 0.5 },
   'claude-sonnet-5': { inputPerMillion: 2.0, outputPerMillion: 10.0, cachedInputPerMillion: 0.2 },
   'claude-haiku-4-5': { inputPerMillion: 1.0, outputPerMillion: 5.0, cachedInputPerMillion: 0.1 },
+};
+
+/** 適用開始日時付きの改定単価。 */
+interface ModelPricingRevision extends ModelPricing {
+  effectiveFrom: string;
+}
+
+// UTC は保存するタイムスタンプと同じ規約。キャッシュ入力 $0.15 は入力単価 × 0.10 の導出値。
+const GEMINI_FLASH_2027_PRICING: ModelPricingRevision = {
+  effectiveFrom: '2027-01-01T00:00:00Z',
+  inputPerMillion: 1.5,
+  outputPerMillion: 7.5,
+  cachedInputPerMillion: 0.15,
+};
+// 各モデルの配列は新しい改定から並べる。
+const MODEL_PRICING_REVISIONS: Readonly<Record<string, readonly ModelPricingRevision[]>> = {
+  'gemini-3.6-flash': [GEMINI_FLASH_2027_PRICING],
+  'gemini-3.7-flash': [GEMINI_FLASH_2027_PRICING],
+  'gemini-3.8-flash': [GEMINI_FLASH_2027_PRICING],
 };
 
 /**
@@ -130,7 +149,10 @@ export const APPROX_IMAGE_TOKENS_PER_PAGE = 1_100;
  *
  *   (tokensIn - cachedTokensIn) × 入力単価 + cachedTokensIn × キャッシュ単価 + tokensOut × 出力単価
  *
- * 省略・null のときは従来どおり `tokensIn` 全量を入力単価で積む（＝この引数を渡さない
+ * `timestampMs` は実行前の見積もりでは現在時刻、実績では呼び出し開始時刻を渡す。
+ * 改定前の時刻には元の単価を適用し、過去の費用を維持する。
+ *
+ * `cachedTokensIn` が省略・null のときは `tokensIn` 全量を入力単価で積む（＝この引数を渡さない
  * 既存の呼び出しは 1 セントも結果が変わらない）。キャッシュが効いている呼び出しで
  * 渡さないと、実費の数倍を表示することになる点に注意。
  */
@@ -140,8 +162,12 @@ export function estimateCostUsd(
   tokensOut: number | null,
   cachedTokensIn: number | null = null,
   fallbackPricing?: ModelPricing,
+  timestampMs: number = Date.now(),
 ): number | null {
-  const pricing = MODEL_PRICING[model] ?? fallbackPricing;
+  const revision = MODEL_PRICING_REVISIONS[model]?.find(
+    (entry) => timestampMs >= Date.parse(entry.effectiveFrom),
+  );
+  const pricing = revision ?? MODEL_PRICING[model] ?? fallbackPricing;
   if (pricing === undefined) {
     return null;
   }

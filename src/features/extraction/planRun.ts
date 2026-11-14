@@ -408,6 +408,7 @@ export function planRun(input: PlanRunInput): RunPlan {
     tokensOutEstimate * thinkingOutputMultiplier,
     null,
     input.fallbackPricing,
+    Date.now(),
   );
   const inputMode: InputMode = augmentedImageDocumentIds.size > 0
     ? 'text_with_page_images'

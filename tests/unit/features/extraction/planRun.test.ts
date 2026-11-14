@@ -904,3 +904,17 @@ test.each([
   expect(actual.tokensOutEstimate).toBe(Math.ceil(Math.max(1, 3 - multiSelect.exclusiveValues.length) * OUTPUT_CHARS_PER_ITEM / APPROX_CHARS_PER_TOKEN));
   expect(OUTPUT_CHARS_PER_ITEM).toBe(335);
 });
+
+test('抽出前の見積もりは現在日時で Gemini Flash の単価を選ぶ', () => {
+  jest.useFakeTimers().setSystemTime(new Date('2026-12-31T23:59:59.999Z'));
+  try {
+    const input = { documents: [makeDocument({ documentId: 'd1' })], fields: [STUDY_FIELD], model: 'gemini-3.8-flash' };
+    const before = planRun(input);
+    jest.setSystemTime(new Date('2027-01-01T00:00:00Z'));
+    const after = planRun(input);
+    expect(before.costEstimateUsd).toBeGreaterThan(0);
+    expect(after.costEstimateUsd).toBeCloseTo(before.costEstimateUsd! * 2, 12);
+  } finally {
+    jest.useRealTimers();
+  }
+});
