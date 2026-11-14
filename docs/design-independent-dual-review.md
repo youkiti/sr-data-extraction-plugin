@@ -240,7 +240,7 @@ RoB タブ（`rob_domain`）と study タブは群構成に依存しないため
 - ui-flow.md: ロール別ナビ + `#/adjudicate` ルート + reviewer オンボーディングフロー
 - ui-states.md: §8 の状態マトリクス
 - manual-testing.md: 2 アカウント通し手順
-- CLAUDE.md: フェーズ記述の更新
+- 実装の記録は該当 issue / PR / git log に残す（[AGENTS.md](../AGENTS.md) の作業原則 9 を参照）
 
 ## 11. スコープ外（明示）
 
