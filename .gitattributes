@@ -1,0 +1,2 @@
+# 上流の許諾文の原文は、OS を問わずバイトどおり（LF）にチェックアウトする
+tools/licenses/supplements/*.txt text eol=lf
