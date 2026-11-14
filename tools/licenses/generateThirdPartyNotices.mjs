@@ -11,6 +11,29 @@ const compare = (a, b) => a < b ? -1 : a > b ? 1 : 0;
 // PDF.js の Node.js 専用 canvas はブラウザ用バンドルでは使われない。
 const excluded = new Set(['@napi-rs/canvas']);
 
+// 配布物だけでは不足する許諾文を、確認したパッケージ名と版に限定して補う。
+const supplements = {
+  'pako@1.0.11': {
+    source: 'lib/zlib/inflate.js',
+    verified: true,
+    read(directory) {
+      const source = normalize(readFileSync(join(directory, this.source), 'utf8'));
+      const header = source.match(/^\/\/ \(C\)[\s\S]*?^\/\/ 3\. This notice may not be removed or altered from any source distribution\.$/m);
+      if (!header) {
+        throw new Error(`Zlib の許諾文が見つかりません: ${directory}/${this.source}`);
+      }
+      return header[0].replace(/^\/\/ ?/gm, '');
+    },
+  },
+  'dingbat-to-unicode@1.0.1': {
+    source: 'https://github.com/mwilliamson/dingbat-to-unicode/blob/9eb2d1d8b8463b7bd3cd125597eabcfa9df42128/js/LICENSE',
+    verified: true,
+    read() {
+      return readFileSync(new URL('./supplements/dingbat-to-unicode-1.0.1-LICENSE.txt', import.meta.url), 'utf8');
+    },
+  },
+};
+
 export function resolveDependency(packages, from, name) {
   let directory = from;
   while (true) {
@@ -51,40 +74,57 @@ export function legalFiles(directory, prefix = '') {
 }
 
 export function readNotices(directory, manifest) {
-  const files = legalFiles(directory);
-  if (files.length) return files.map((file) => ({ file, text: noticeText(readFileSync(join(directory, file), 'utf8')) }));
-  for (const file of readdirSync(directory).sort(compare).filter((name) => /^readme(?:\.|$)/i.test(name))) {
-    const text = normalize(readFileSync(join(directory, file), 'utf8'));
-    const section = text.match(/^#{1,6} Licen[cs]e[^\n]*\n([\s\S]*?)(?=^#{1,6} |$(?![\s\S]))/im);
-    if (section && /copyright/i.test(section[1])) return [{ file, text: noticeText(section[1]) }];
+  const notices = legalFiles(directory)
+    .map((file) => ({ file, text: noticeText(readFileSync(join(directory, file), 'utf8')) }))
+    .filter((notice) => notice.text);
+  if (!notices.length) {
+    for (const file of readdirSync(directory).sort(compare).filter((name) => /^readme(?:\.|$)/i.test(name))) {
+      const text = normalize(readFileSync(join(directory, file), 'utf8'));
+      const section = text.match(/^#{1,6} Licen[cs]e[^\n]*\n([\s\S]*?)(?=^#{1,6} |$(?![\s\S]))/im);
+      if (section && /copyright/i.test(section[1])) {
+        notices.push({ file, text: noticeText(section[1]) });
+        break;
+      }
+    }
   }
-  // 配布元が著作権表記を含めていない場合、推測せず作者情報と欠落を明示する。
-  if (manifest.author) {
-    const author = typeof manifest.author === 'string' ? manifest.author : manifest.author.name;
-    return [{ file: 'package.json', text: `作者: ${author}\n配布元パッケージにライセンス本文・著作権表記がありません。\nライセンス指定: ${manifest.license}` }];
+  const supplement = supplements[`${manifest.name}@${manifest.version}`];
+  if (supplement) {
+    notices.push({ file: '補足', source: supplement.source, verified: supplement.verified, text: noticeText(supplement.read(directory, manifest)) });
   }
-  throw new Error(`ライセンス本文・著作権表記・作者情報がありません: ${directory}`);
+  return notices;
 }
 
 export function generateNotices(directory) {
   const readJson = (file) => JSON.parse(readFileSync(join(directory, file), 'utf8'));
   const lock = readJson('package-lock.json');
   const paths = productionPackages(readJson('package.json'), lock);
+  const missing = [];
   const records = paths.map((path) => {
     const manifest = readJson(`${path}/package.json`);
     const locked = lock.packages[path];
     if (manifest.version !== locked.version) throw new Error(`インストール済みの版が lockfile と違います: ${path}`);
     const notices = readNotices(join(directory, path), manifest);
+    if (!notices.length) {
+      missing.push(`${manifest.name}@${manifest.version} (${path})`);
+      return null;
+    }
     const license = manifest.license || locked.license || (notices.some((notice) => /^The MIT License \(MIT\)/m.test(notice.text)) ? 'MIT' : null);
     if (typeof license !== 'string') throw new Error(`ライセンス指定がありません: ${path}`);
     return { name: manifest.name, version: manifest.version, license, path, notices };
   });
-  let output = `# サードパーティライセンス表記\n\n<!-- tools/licenses/generateThirdPartyNotices.mjs が生成する。手で編集しない。 -->\n\n\`npm run licenses\` で更新し、\`npm run licenses:check\` で鮮度を検査する。\n\n対象は package.json の dependencies と、package-lock.json で解決した推移的な本番依存（任意依存を含む）。\n取りこぼしを避けるため、バンドル最適化で除かれるモジュールや型定義も含めた保守的な一覧とする。\nPDF.js の Node.js 専用の任意依存 @napi-rs/canvas とそのプラットフォーム別バイナリ、開発専用の依存は対象外。\nインストール済みパッケージのライセンス・NOTICE と付属資産の表記を収録する。\n配布元に本文・著作権表記がない場合は作者情報と欠落を明記する。\n\n| パッケージ | 版 | ライセンス |\n|---|---|---|\n`;
+  if (missing.length) {
+    throw new Error(`ライセンス本文・著作権表記・補足がありません:\n${missing.join('\n')}`);
+  }
+  let output = `# サードパーティライセンス表記\n\n<!-- tools/licenses/generateThirdPartyNotices.mjs が生成する。手で編集しない。 -->\n\n\`npm run licenses\` で更新し、\`npm run licenses:check\` で鮮度を検査する。\n\n対象は package.json の dependencies と、package-lock.json で解決した推移的な本番依存（任意依存を含む）。\n取りこぼしを避けるため、バンドル最適化で除かれるモジュールや型定義も含めた保守的な一覧とする。\nPDF.js の Node.js 専用の任意依存 @napi-rs/canvas とそのプラットフォーム別バイナリ、開発専用の依存は対象外。\nインストール済みパッケージのライセンス・NOTICE と付属資産の表記を収録する。\n補足の許諾文には出典と確認状態を記し、本文・著作権表記・補足がない場合は生成を失敗させる。\n\n| パッケージ | 版 | ライセンス |\n|---|---|---|\n`;
   for (const record of records) output += `| ${record.name} | ${record.version} | ${record.license.replaceAll('|', '\\|')} |\n`;
   for (const record of records) {
     output += `\n## ${record.name} (${record.version})\n\nライセンス: ${record.license}\n\n出典: \`${record.path}\`\n`;
     for (const notice of record.notices) {
       const fence = '`'.repeat(Math.max(3, ...[...notice.text.matchAll(/`+/g)].map((match) => match[0].length + 1)));
+      if (notice.source) {
+        const source = notice.source.startsWith('https://') ? notice.source : posix.join(record.path, notice.source);
+        output += `\n補足の出典: ${source}\n\n確認済み: ${notice.verified ? 'はい' : 'いいえ（上流未確認の仮の文面。SPDX BSD-2-Clause 標準文面と package.json の author を使用）'}\n`;
+      }
       output += `\n### ${notice.file}\n\n${fence}text\n${notice.text}\n${fence}\n`;
     }
   }

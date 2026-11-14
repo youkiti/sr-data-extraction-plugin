@@ -8,7 +8,7 @@
 取りこぼしを避けるため、バンドル最適化で除かれるモジュールや型定義も含めた保守的な一覧とする。
 PDF.js の Node.js 専用の任意依存 @napi-rs/canvas とそのプラットフォーム別バイナリ、開発専用の依存は対象外。
 インストール済みパッケージのライセンス・NOTICE と付属資産の表記を収録する。
-配布元に本文・著作権表記がない場合は作者情報と欠落を明記する。
+補足の許諾文には出典と確認状態を記し、本文・著作権表記・補足がない場合は生成を失敗させる。
 
 | パッケージ | 版 | ライセンス |
 |---|---|---|
@@ -3017,12 +3017,35 @@ THIS SOFTWARE.
 
 出典: `node_modules/dingbat-to-unicode`
 
-### package.json
+補足の出典: https://github.com/mwilliamson/dingbat-to-unicode/blob/9eb2d1d8b8463b7bd3cd125597eabcfa9df42128/js/LICENSE
+
+確認済み: はい
+
+### 補足
 
 ```text
-作者: Michael Williamson <mike@zwobble.org>
-配布元パッケージにライセンス本文・著作権表記がありません。
-ライセンス指定: BSD-2-Clause
+Copyright (c) 2021, Michael Williamson
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
 ## dompurify (3.4.17)
@@ -5082,6 +5105,33 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+```
+
+補足の出典: node_modules/pako/lib/zlib/inflate.js
+
+確認済み: はい
+
+### 補足
+
+```text
+(C) 1995-2013 Jean-loup Gailly and Mark Adler
+(C) 2014-2017 Vitaly Puzrin and Andrey Tupitsin
+
+This software is provided 'as-is', without any express or implied
+warranty. In no event will the authors be held liable for any damages
+arising from the use of this software.
+
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it
+freely, subject to the following restrictions:
+
+1. The origin of this software must not be misrepresented; you must not
+  claim that you wrote the original software. If you use this software
+  in a product, an acknowledgment in the product documentation would be
+  appreciated but is not required.
+2. Altered source versions must be plainly marked as such, and must not be
+  misrepresented as being the original software.
+3. This notice may not be removed or altered from any source distribution.
 ```
 
 ## path-data-parser (0.1.0)
