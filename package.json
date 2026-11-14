@@ -5,7 +5,7 @@
   "description": "SR のデータ抽出工程を支援する Chrome 拡張（AI 事前抽出 + 人間検証 + 監査証跡）",
   "license": "MIT",
   "engines": {
-    "node": ">=22"
+    "node": "^22.15.0 || >=24"
   },
   "scripts": {
     "dev": "webpack --mode development",
