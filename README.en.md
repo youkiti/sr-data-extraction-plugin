@@ -95,7 +95,7 @@ No build tools are needed. Install from the Chrome Web Store, then connect your 
 
 ## Development
 
-Requires Node.js `^22.15.0 || >=24`. These steps are for building from source; ordinary users do not need them.
+Requires Node.js `^22.22.2 || ^24.15.0 || >=26`. These steps are for building from source; ordinary users do not need them.
 
 ```bash
 git clone https://github.com/youkiti/sr-data-extraction-plugin
