@@ -15,8 +15,8 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ### その他の変更 / Other changes
 
-- 公開ヘルプのエクスポート節に、audit.csv の `app_version`・`run_app_version` の意味と、空欄・構造的欠損になる場合の説明を日英で追加しました（2026-11-14・(#TBD)）。
-  Added Japanese and English explanations of the audit.csv `app_version` and `run_app_version` columns, including when they are blank or structurally missing, to the export section of the public help (2026-11-14, (#TBD)).
+- 公開ヘルプのエクスポート節に、audit.csv の `app_version`・`run_app_version` の意味と、空欄・構造的欠損になる場合の説明を日英で追加しました（2026-11-14・#520）。
+  Added Japanese and English explanations of the audit.csv `app_version` and `run_app_version` columns, including when they are blank or structurally missing, to the export section of the public help (2026-11-14, #520).
 - Gemini の API キーを URL のクエリから `x-goog-api-key` ヘッダーへ移し、要求 URL を含むエラーや診断ログにキーが残ることを防ぎました（2026-11-13・PR #497）。
   Gemini API keys are now sent in the `x-goog-api-key` header instead of the URL query, preventing keys from appearing in errors and diagnostic logs that contain request URLs (2026-11-13, PR #497).
 - 判定記録（Decisions）の末尾に、アプリの版 `app_version` を追加しました。古いシートは書き込み前にヘッダだけを拡張し、過去の判定行は空欄のまま保持します。抽出版は既存の ExtractionRuns.extension_version を使用し、audit CSV の末尾には判定の版 `app_version` と抽出版 `run_app_version` を追加します（2026-11-13・PR #501）。
