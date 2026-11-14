@@ -9,7 +9,7 @@
 
 ```
 sr-data-extraction-plugin/
-├── .github/workflows/ci.yml       # CI-1（typecheck + lint + jest + dev ビルド。test-strategy.md §4）
+├── .github/workflows/ci.yml       # CI-1（typecheck + lint + jest + dev ビルド + 本番バンドル予算。test-strategy.md §4）
 ├── docs/
 │   ├── requirements.md
 │   ├── ui-flow.md
@@ -279,9 +279,25 @@ anchorQuote() ──文字範囲──▶ highlightMap() ──span 座標──
 
 ### 3.2 npm スクリプト
 
-`dev` / `watch` / `build` / `bundle:report` / `build:demo` / `pack:release` / `lint` / `lint:css` / `typecheck` / `test` / `test:watch` / `test:coverage` / `test:e2e` / `test:e2e:ui` / `manual:check` / `video:setup` / `video:record` / `video:tts` / `video:assemble`。
+`dev` / `watch` / `build` / `bundle:report` / `bundle:check` / `build:demo` / `pack:release` / `lint` / `lint:css` / `typecheck` / `test` / `test:watch` / `test:coverage` / `test:e2e` / `test:e2e:ui` / `manual:check` / `video:setup` / `video:record` / `video:tts` / `video:assemble`。
 
 `bundle:report` は `npm run bundle:report -- /tmp/stats.json` で webpack stats のエントリ資産・チャンク別に npm パッケージと `src/` の寄与を表示する。stats は本番ビルドに `--profile --json=/tmp/stats.json` を追加して生成する（本番用の `WEBAUTH_CLIENT_ID` が必要）。資産サイズは圧縮後、モジュールの寄与は圧縮前の KB（1024 bytes）で、合計値は一致しない。
+
+本番バンドルの上限は `tools/bundle/budget.json` で管理する。上記の stats を使い、
+`npm run bundle:check -- /tmp/stats.json` で検査する。対象は 4 エントリそれぞれの初期 JS の合計
+（共有チャンクを含み、source map と CSS は除外）、`chunks/pdfjs.js`、`pdf.worker.min.mjs`。
+サイズは minify 後、gzip 前の bytes で、上限と同値は成功、超過・対象の欠落・不正なサイズは非 0 終了となる。
+初期予算は実測値に約 12% の余裕を加えて読みやすい整数に切り上げている。
+CI の check ジョブは dev ビルドを維持し、その後に本番ビルドと予算検査を実行する。
+計測専用ビルドでは `WEBAUTH_CLIENT_ID=bundle-budget-check.apps.googleusercontent.com` というダミー値を使う。
+この成果物は配布せず、実 API への接続にも使わない。
+
+上限を引き上げる場合は、本番ビルドと `bundle:report` で増加した資産・依存関係を確認し、
+予算ファイルの対象の `measuredBytes`（実測記録）と `maxBytes`（検査上限）を更新する。
+**PR 本文には実測値、変更前後の上限、増加を許容する理由を書く。**
+検査処理の純粋関数と終了コードは `node --test tools/bundle/checkBudget.test.mjs` で確認でき、
+`npm run test:tools` にも含まれる。実機・実 API での確認は不要。
+リリース zip は PowerShell による `pack:release` が必要なため予算に含めず、通常の本番ビルドが生成する資産のみ検査する。
 
 `pack:release`（= `tools/release/pack.ps1`）は Chrome ウェブストア提出用 zip を作る。`npm run build` 済みの `dist/` を入力に、事前検証 → `release/*.zip` の全削除（過去ビルドは残さない）→ manifest からの `key` 除去 → zip 化 → 展開し直しての検証、までを行い、検証 NG なら非 0 終了する。運用手順は `.claude/skills/release-build/SKILL.md` が正典。
 
