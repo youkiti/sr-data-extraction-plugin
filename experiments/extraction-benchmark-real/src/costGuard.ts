@@ -277,8 +277,8 @@ export function attemptCount(entries: readonly LedgerEntry[], runId: string): nu
 
 /**
  * text 中の secret（生の文字列と URL エンコード形の両方）を [REDACTED] に置換する。
- * Gemini は API キーを URL のクエリ `?key=` で送るため、fetch 由来の例外メッセージに
- * URL ごとキーが載りうる（エンコード形での混入経路）。空文字の secret では何もしない。
+ * 過去の URL クエリ方式などで例外メッセージに混入したキーも除去する。
+ * 空文字の secret では何もしない。
  */
 export function redactSecret(text: string, secret: string): string {
   if (secret === '') return text;

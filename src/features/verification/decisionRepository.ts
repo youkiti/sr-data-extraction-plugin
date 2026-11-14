@@ -7,6 +7,7 @@ import { SHEET_HEADERS } from '../../domain/sheetsSchema';
 import { withApiErrorLogging } from '../../lib/diagnostics/apiErrorLog';
 import { appendRows, getBatchValues, getSheetValues, updateRow } from '../../lib/google/sheets';
 import type { GoogleApiDeps } from '../../lib/google/types';
+import { getToolVersion } from '../../utils/toolVersion';
 
 const DECISIONS_TAB = 'Decisions';
 const provenanceSheets = new Set<string>();
@@ -83,6 +84,7 @@ export function decisionToRow(decision: Decision): (string | number | null)[] {
     decision.seenAiValue ?? null,
     decision.consensusSource ?? null,
     decision.adoptedAiAccept ?? null,
+    decision.appVersion ?? null,
   ];
 }
 
@@ -105,7 +107,10 @@ export async function appendDecisionRows(
     async () => {
       if (decisions.length === 0) return;
       await ensureDecisionsProvenanceColumns(spreadsheetId, deps);
-      await appendRows(spreadsheetId, DECISIONS_TAB, decisions.map(decisionToRow), deps);
+      await appendRows(spreadsheetId, DECISIONS_TAB, decisions.map((decision) => decisionToRow({
+        ...decision,
+        appVersion: decision.appVersion === undefined ? getToolVersion() : decision.appVersion,
+      })), deps);
     },
   );
 }
@@ -165,6 +170,7 @@ export async function readAllDecisions(
       seenAiValue: emptyToNull(cellAt(raw, 12)),
       consensusSource: parseOptionalEnum<ConsensusSource>(cellAt(raw, 13), ['A', 'B', 'third', 'bulk_match', 'not_reported', 'undo']),
       adoptedAiAccept: parseOptionalEnum<AdoptedAiAccept>(cellAt(raw, 14), ['A', 'B', 'A,B', 'none']),
+      appVersion: emptyToNull(cellAt(raw, 15)),
     };
   });
 }

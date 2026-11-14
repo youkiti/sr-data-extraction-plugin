@@ -1,4 +1,4 @@
-# CI-1（docs/test-strategy.md §4）: typecheck + jest（カバレッジ 100% 込み）+ test:tools + lint + lint:css + dev ビルド。
+# CI-1（docs/test-strategy.md §4）: typecheck + jest（カバレッジ 100% 込み）+ test:tools + lint + lint:css + dev ビルド + 本番バンドル予算。
 # CI-2 導入済み（2026-07-03）: Playwright E2E を e2e ジョブとして check と並列実行する
 name: CI
 
@@ -36,6 +36,12 @@ jobs:
         run: npm run test:tools
       - name: dev ビルド検証（作業原則 7）
         run: npm run dev
+      - name: 本番ビルド（サイズ計測用）
+        env:
+          WEBAUTH_CLIENT_ID: bundle-budget-check.apps.googleusercontent.com
+        run: npm run build -- --profile --json=/tmp/bundle-stats.json
+      - name: バンドル予算の検査
+        run: npm run bundle:check -- /tmp/bundle-stats.json
 
   e2e:
     runs-on: ubuntu-latest
