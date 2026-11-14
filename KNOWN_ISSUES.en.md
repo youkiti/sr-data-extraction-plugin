@@ -9,7 +9,7 @@ This list covers bugs affecting extracted values, decisions, persistence, agreem
 - Version ranges include both endpoints. A fixed version is the first release containing the fix, rather than the package.json version present while the fix was being developed. Store publication dates may differ.
 - Ranges were reconstructed from release merges, version bumps and fix commits on origin/master. Starts inferred from the original implementation are marked “estimated”. Early v0.1.0 development continued under the same version around public launch, so the contents of individual distributed builds cannot be established from the version alone.
 - “Sheet” means your project's Google spreadsheet. Identify fields using `SchemaFields.field_id` / `field_name` / `entity_level` / `section`. `Evidence` holds original AI output, `StudyData` / `ResultsData` hold values per annotator, and `Decisions` holds decision history.
-- Check `ExtractionRuns.extension_version` when recorded. Once the separately planned `app_version` column is released, `Decisions.app_version` / `ExtractionRuns.app_version` can also identify versions for rows written after its introduction. Do not assume these columns exist or contain values in older rows. Blank means unknown, not unaffected.
+- Check `ExtractionRuns.extension_version` for the version used for extraction and `Decisions.app_version` for the version used for decisions, when recorded. Do not assume these columns exist or contain values in older rows. Blank means unknown, not unaffected.
 - When the version is unknown, compare `ExtractionRuns.started_at`, `Decisions.decided_at`, `LLMApiLog.timestamp`, `prompt_version`, saved release zip files and contemporaneous work records. Dates alone cannot establish a version. Prompt versions and extension versions are different identifiers.
 - Updating does not repair historical values, logs, exported CSVs or manuscript text. Back up the sheet and recalculate or export again with a fixed version or later. Where re-extraction is needed, compare against the paper and redo human verification and adjudication. Keep historical audit rows rather than deleting them in bulk.
 
@@ -26,7 +26,7 @@ This list covers bugs affecting extracted values, decisions, persistence, agreem
 | KI-007 | OpenRouter estimates preferred over reported costs | v0.1.0 (estimated) to v0.10.0 | v0.11.0 |
 | KI-008 | Paper questions omitted from costs; log upload failures lose responses | Questions: v0.11.0 to v0.19.1; upload failures: v0.1.0 (estimated) to v0.19.1 | v0.20.0 |
 | KI-009 | Extraction ignores the reasoning effort configured in Options | v0.7.0 to v0.19.1 | v0.20.0 |
-| KI-010 | Methods claims procedures or completion unsupported by records | v0.3.0 to v0.19.1 | v0.20.0 |
+| KI-010 | Methods claims procedures or completion unsupported by records | v0.2.0 to v0.19.1 | v0.20.0 |
 | KI-011 | Agreement and pilot aggregates include blank or unfinished work | Agreement and pilot: v0.2.0 (estimated) to v0.19.1 | v0.20.0 |
 | KI-012 | Agreement ignores corrected arm mappings | v0.2.0 (estimated) | v0.3.0 |
 | KI-013 | Abstract findings or Methods design fields may be marked unreported | v0.23.0 to v0.32.0 | v0.33.0 |
@@ -38,7 +38,7 @@ This list covers bugs affecting extracted values, decisions, persistence, agreem
 - Symptom: separate section calls can assign different `entity_key` strings to the same result, creating separate verification and export rows with many apparently empty cells.
 - Affected versions: v0.1.0 (estimated, initial section splitting in `06e90ff9`) to v0.32.0. Prompt version 15 in v0.32.0 mitigates the problem by asking later calls to reuse earlier keys. v0.33.0 sends all outcome_result fields together to prevent splitting caused by separate section calls.
 - Check: within the same `Evidence.run_id` / `study_id`, look for outcome_result fields belonging to different `SchemaFields.section` values whose keys differ despite referring to the same result. Compare `ResultsData.study_id` / `field_id` / `entity_key` / `value` too. Take care not to merge genuinely different results.
-- Remedy: on v0.33.0 or later, re-extract the affected study's outcome_result fields together, check the paper, and redo verification, adjudication and exports. Historical rows are not automatically merged.
+- Remedy: on v0.33.0 or later, start again from extraction in a new project for the affected studies, check the paper, and redo verification, adjudication and exports. Re-extracting in the same project leaves rows with decisions or adjudications under old keys, and those rows are also included in CSV exports.
 - Related: [PR #473](https://github.com/youkiti/sr-data-extraction-plugin/pull/473), [PR #476](https://github.com/youkiti/sr-data-extraction-plugin/pull/476).
 
 ### KI-002 Non-numeric arm keys in result-only batches
@@ -108,7 +108,9 @@ This list covers bugs affecting extracted values, decisions, persistence, agreem
 ### KI-010 Methods asserts procedures unsupported by project records
 
 - Symptom: statements about drafting, piloting, revision, extraction of all fields for all studies, verification of every cell, independent extraction or completed adjudication could differ from actual work. Drafting and extraction models were not distinguished either.
-- Affected versions: v0.3.0, the first release containing the Methods card, to v0.19.1. Fixed in v0.20.0.
+- Affected versions: v0.2.0 to v0.19.1.
+  The store release of v0.2.0 includes the Methods card, while v0.1.0 is thought not to include it, though this cannot be established because the submitted commit was not recorded.
+  Fixed in v0.20.0.
 - Check: compare previously copied text with `ExtractionRuns.run_type` / `status` / `study_ids` / `field_ids`, `LLMApiLog.purpose` / `model` / `error` / `prompt_summary`, `StudyData` / `ResultsData.annotator_type`, and `Decisions.action`. In particular, check `[batch_failed]` / `[transfer_failed]`, unverified cells and whether consensus rows exist.
 - Remedy: regenerate the text after updating, check it against what was actually done, and revise the manuscript. The currently installed extension version may differ from the version used for historical extraction. Do not claim procedures that older records cannot establish.
 - Related: [PR #390](https://github.com/youkiti/sr-data-extraction-plugin/pull/390) (`2b881c79` / `4eea8fcf`).
