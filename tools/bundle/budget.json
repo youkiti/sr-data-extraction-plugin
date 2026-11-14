@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "entries": {
+    "background/service-worker": {
+      "measuredBytes": 5162,
+      "maxBytes": 5800
+    },
+    "app/app": {
+      "measuredBytes": 1198646,
+      "maxBytes": 1343000
+    },
+    "popup/popup": {
+      "measuredBytes": 69076,
+      "maxBytes": 78000
+    },
+    "options/options": {
+      "measuredBytes": 89358,
+      "maxBytes": 101000
+    },
+    "chunks/pdfjs.js": {
+      "measuredBytes": 486577,
+      "maxBytes": 545000
+    },
+    "pdf.worker.min.mjs": {
+      "measuredBytes": 1234672,
+      "maxBytes": 1383000
+    }
+  }
+}

@@ -15,6 +15,12 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ### その他の変更 / Other changes
 
+- Gemini の API キーを URL のクエリから `x-goog-api-key` ヘッダーへ移し、要求 URL を含むエラーや診断ログにキーが残ることを防ぎました（2026-11-13・PR #497）。
+  Gemini API keys are now sent in the `x-goog-api-key` header instead of the URL query, preventing keys from appearing in errors and diagnostic logs that contain request URLs (2026-11-13, PR #497).
+- 判定記録（Decisions）の末尾に、アプリの版 `app_version` を追加しました。古いシートは書き込み前にヘッダだけを拡張し、過去の判定行は空欄のまま保持します。抽出版は既存の ExtractionRuns.extension_version を使用し、audit CSV の末尾には判定の版 `app_version` と抽出版 `run_app_version` を追加します（2026-11-13・PR #501）。
+  Added `app_version` at the end of Decisions records. Existing decision sheet headers are extended before writing, leaving historical decision rows blank. Extraction runs use the existing ExtractionRuns.extension_version column. Audit CSV now appends the decision version as `app_version` and the extraction version as `run_app_version` (2026-11-13, PR #501).
+- pdfjs-dist を 6.5.438 に更新し、悪意ある PDF を開いたときに任意の JavaScript が実行される脆弱性（GHSA-hq66-cqwq-w95j）を修正しました。あわせて本番依存のセキュリティ更新を取り込みました（2026-11-13・PR #511）。  
+  Updated pdfjs-dist to 6.5.438 to fix arbitrary JavaScript execution when opening malicious PDFs (GHSA-hq66-cqwq-w95j), and applied security updates to production dependencies (2026-11-13, PR #511).
 - tiab-review の採用リストの読み込みを tiab-review の判定に揃えました。tiab-review のキーが開封されるまでは採用リストと件数を表示せず、tiab-review で重複として除外した文献は取り込まず、全文の候補は最新の判定と採用中の AI 実行の判定だけで決めます。（2026-11-13、PR #510）
   The tiab-review included list now follows tiab-review's own rules: it is not shown until the tiab-review key is opened, references removed as duplicates in tiab-review are not imported, and full-text candidates are decided from the latest decisions and the AI run in use only. (2026-11-13, PR #510)
 

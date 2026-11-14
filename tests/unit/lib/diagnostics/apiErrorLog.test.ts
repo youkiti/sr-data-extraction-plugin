@@ -12,6 +12,7 @@ import {
   recordApiErrorLog,
   withApiErrorLogging,
 } from '../../../../src/lib/diagnostics/apiErrorLog';
+import { GeminiProvider } from '../../../../src/lib/llm/GeminiProvider';
 import { GoogleApiError } from '../../../../src/lib/google/types';
 import { installChromeMock, type ChromeMock } from '../../../setup/chrome-mock';
 
@@ -116,6 +117,41 @@ describe('lib/diagnostics/apiErrorLog', () => {
 
   afterEach(() => {
     configureApiErrorLog(null);
+  });
+
+  test.each([false, true])('Gemini の要求 URL を含む例外を記録してもキーが残らない（再送: %s）', async (retry) => {
+    const apiKey = 'dummy-gemini-key/with+special?chars';
+    const fetch = jest.fn().mockImplementation(async (url: RequestInfo | URL) => {
+      throw new TypeError(`fetch failed: ${String(url)}`);
+    });
+    if (retry) {
+      fetch.mockResolvedValueOnce({
+        ok: false, status: 400, text: async () => 'Thinking level unsupported',
+      } as Response);
+    }
+    const error: unknown = await new GeminiProvider({ apiKey, fetch }).chat([]).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(TypeError);
+    expect(String(error)).toContain(':generateContent');
+    expect(String(error)).not.toContain(apiKey);
+    expect(String(error)).not.toContain(encodeURIComponent(apiKey));
+    expect(String(error)).not.toContain('key=');
+    expect(fetch).toHaveBeenCalledTimes(retry ? 2 : 1);
+    for (const [url, init] of fetch.mock.calls) {
+      expect(new URL(String(url)).search).toBe('');
+      expect(init.headers['x-goog-api-key']).toBe(apiKey);
+    }
+    recordApiErrorLog({ context: 'llm_log_upload', error });
+    await wait();
+    const { apiErrorLogQueue: queue } = await chromeMock.storage.local.get('apiErrorLogQueue');
+    expect(queue).toEqual([expect.objectContaining({ message: String((error as Error).message) })]);
+    expect(JSON.stringify(queue)).not.toContain(apiKey);
+    expect(JSON.stringify(queue)).not.toContain(encodeURIComponent(apiKey));
+    const deps = makeGoogleDeps();
+    configureApiErrorLog({ spreadsheetId: 'SID', loggedBy: 'me@example.com', appVersion: '1.0.0', google: deps });
+    await flushApiErrorLogQueue();
+    expect(JSON.stringify(appendedRows(deps))).toContain(':generateContent');
+    expect(JSON.stringify(appendedRows(deps))).not.toContain(apiKey);
+    expect(JSON.stringify(appendedRows(deps))).not.toContain(encodeURIComponent(apiKey));
   });
 
   test('SHEET_HEADERS.ApiErrorLog の列順に対応する行を書く', async () => {

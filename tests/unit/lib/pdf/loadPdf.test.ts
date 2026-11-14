@@ -98,6 +98,25 @@ describe('loadDisposablePdf', () => {
     await disposable.destroy();
     expect(destroy).toHaveBeenCalled();
   });
+
+  test('loadingTask.destroy の完了を待ち、解放失敗を呼び出し側へ返す', async () => {
+    let rejectDestroy!: (reason: Error) => void;
+    const destruction = new Promise<void>((_resolve, reject) => {
+      rejectDestroy = reject;
+    });
+    const destroy = jest.fn(() => destruction);
+    mockedGetDocument.mockReturnValue({
+      promise: Promise.resolve({ numPages: 1, loadingTask: { destroy } }),
+    } as unknown as ReturnType<typeof getDocument>);
+
+    const disposable = await loadDisposablePdf(new ArrayBuffer(1));
+    const result = disposable.destroy();
+    expect(result).toBe(destruction);
+    const assertion = expect(result).rejects.toThrow('worker 解放失敗');
+    rejectDestroy(new Error('worker 解放失敗'));
+    await assertion;
+    expect(destroy).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('遅延ロード', () => {

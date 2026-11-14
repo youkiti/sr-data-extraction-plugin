@@ -117,7 +117,7 @@ Load `dist/` via `chrome://extensions` → Developer mode → "Load unpacked".
 
 The E2E suite uses a local Chromium: run `npx playwright install chromium`, or point at an existing binary with `PLAYWRIGHT_CHROMIUM_PATH=/path/to/chrome npm run test:e2e`.
 
-Contribution conventions (branching, Japanese-language commit messages and docs, test protection, shared hotspot files) are in [CLAUDE.md](CLAUDE.md) (Japanese).
+Contribution conventions (branching, Japanese-language commit messages and docs, test protection, shared hotspot files) are in [AGENTS.md](AGENTS.md) (Japanese).
 
 ## Documentation
 
@@ -131,6 +131,7 @@ All documents below are written in Japanese.
 | [docs/ui-states.md](docs/ui-states.md) | UI state matrix (target spec) |
 | [docs/test-strategy.md](docs/test-strategy.md) | Test strategy: jest 100% + Playwright, PDF fixtures, CI |
 | [docs/remaining-work-plan.md](docs/remaining-work-plan.md) | Remaining work and the list of items that need manual / real-API testing |
+| [docs/maintenance-policy.md](docs/maintenance-policy.md) | Maintenance policy: feature scope, release frequency, and conditions for prompt and default-model changes |
 | [docs/manual-testing.md](docs/manual-testing.md) | Manual end-to-end test scenarios and results |
 | [docs/methods-boilerplate.md](docs/methods-boilerplate.md) | Methods paragraph templates (English and Japanese) |
 | [hosted/README.md](hosted/README.md) | Deployment of the public pages (GitHub Pages) |
