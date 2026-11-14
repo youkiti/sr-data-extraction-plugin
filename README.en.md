@@ -117,7 +117,7 @@ Load `dist/` via `chrome://extensions` → Developer mode → "Load unpacked".
 
 The E2E suite uses a local Chromium: run `npx playwright install chromium`, or point at an existing binary with `PLAYWRIGHT_CHROMIUM_PATH=/path/to/chrome npm run test:e2e`.
 
-Contribution conventions (branching, Japanese-language commit messages and docs, test protection, shared hotspot files) are in [CLAUDE.md](CLAUDE.md) (Japanese).
+Contribution conventions (branching, Japanese-language commit messages and docs, test protection, shared hotspot files) are in [AGENTS.md](AGENTS.md) (Japanese).
 
 ## Documentation
 
