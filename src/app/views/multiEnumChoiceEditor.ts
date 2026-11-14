@@ -66,7 +66,7 @@ export function renderMultiEnumChoiceEditor(options: MultiEnumChoiceEditorOption
       const chip = el('button', {
         className: `verify__enum-chip${exclusive ? ' verify__enum-chip--exclusive' : ''}${known ? '' : ' verify__enum-chip--unknown'}`,
         attributes: {
-          type: 'button', 'aria-label': option,
+          type: 'button',
           'aria-pressed': String(selected.some((item) => item.option === option)),
           ...(exclusive ? { title: t('verify.multiExclusiveTitle') } : {}),
         },

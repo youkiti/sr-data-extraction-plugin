@@ -5,7 +5,7 @@
   "description": "SR のデータ抽出工程を支援する Chrome 拡張（AI 事前抽出 + 人間検証 + 監査証跡）",
   "license": "MIT",
   "engines": {
-    "node": "^22.15.0 || >=24"
+    "node": "^22.22.2 || ^24.15.0 || >=26"
   },
   "scripts": {
     "dev": "webpack --mode development",
@@ -57,15 +57,15 @@
     "@typescript-eslint/parser": "^8.72.2",
     "copy-webpack-plugin": "^14.0.0",
     "dotenv": "^18.0.10",
-    "entities": "^6.0.1",
+    "entities": "^9.0.0",
     "eslint": "^10.14.0",
     "globals": "^17.14.0",
     "jest": "^30.4.2",
     "jest-environment-jsdom": "^30.4.1",
     "prettier": "^3.6.2",
     "selenium-webdriver": "^4.45.0",
-    "stylelint": "^17.14.0",
-    "stylelint-config-standard": "^40.0.0",
+    "stylelint": "^18.0.0",
+    "stylelint-config-standard": "^41.0.0",
     "ts-jest": "^29.4.11",
     "ts-loader": "^9.5.4",
     "ts-node": "^10.9.2",

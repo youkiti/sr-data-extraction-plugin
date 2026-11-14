@@ -280,7 +280,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'adjudicate.quoteAdoptAria': 'Adopt as final evidence',
   'adjudicate.quoteOwnerBoth': 'A & B',
   'adjudicate.quoteAddTarget': 'Add from PDF',
-  'adjudicate.quoteAddTargetAria': 'Add quotes from PDF to this cell',
+  'adjudicate.quoteAddTargetAria': 'Add from PDF: add quotes to this cell',
   'adjudicate.quoteJump': 'Go to highlight',
   'adjudicate.quotesAddedByAdjudicator': 'Added by adjudicator',
   'adjudicate.outsideNote':
@@ -474,9 +474,9 @@ export const enApp: Record<keyof typeof jaApp, string> = {
 
   // S3 exclusion feature (issue #181)
   'documents.excludeStudyButton': 'Exclude this study',
-  'documents.excludeStudyAria': 'Exclude {label} from extraction candidates',
+  'documents.excludeStudyAria': 'Exclude this study: exclude {label} from extraction candidates',
   'documents.restoreStudyButton': 'Restore this study',
-  'documents.restoreStudyAria': 'Restore {label} from exclusion',
+  'documents.restoreStudyAria': 'Restore this study: {label}',
   'documents.allDocsExcludedNote':
     "All documents of this study are excluded (it's dropped from extraction candidates).",
   'documents.excludeDocumentButton': 'Exclude',
@@ -568,7 +568,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'schema.dataTypeLabelEnum': 'Choice list (enum)',
   'schema.dataTypeLabelDate': 'Date (date)',
   'schema.enumSuggest': 'Make a choice list',
-  'schema.enumSuggestAria': 'Make {label} a choice list',
+  'schema.enumSuggestAria': 'Make a choice list: {label}',
   'schema.enumTitle': 'Convert free text to a choice list: {label}',
   'schema.enumLoading': 'AI is suggesting choices…',
   'schema.enumValues': 'Choices (lowercase snake_case, separated by |, 3–8 including unclear / other)',
@@ -1028,7 +1028,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'dashboard.summaryNotReported': 'not_reported rate',
   'dashboard.headStudy': 'Study',
   'dashboard.headAcceptRate': 'AI acceptance rate',
-  'dashboard.cellAria': 'Verify {section} of {study} ({decided} / {total} decided)',
+  'dashboard.cellAria': '{decided} / {total}: verify {section} of {study} (decided)',
   'dashboard.caption':
     'Verification progress per study × section (cell = decided / total cells; click to open verification)',
   'dashboard.loadError': 'Failed to load progress: {reason}',
@@ -1396,7 +1396,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'adjudicate.sideNote': "{side}'s note: {note}",
   'adjudicate.schemaMismatchBadge': 'schema_version mismatch',
   'adjudicate.showEvidence': 'Show evidence',
-  'adjudicate.showEvidenceAria': 'Show the AI evidence of {label} in the PDF',
+  'adjudicate.showEvidenceAria': 'Show evidence: the AI evidence of {label} in the PDF',
   'adjudicate.lockedNote': 'Arm structure confirmation required',
   'adjudicate.undo': 'Undo',
   'adjudicate.undoAria': 'Undo the adjudication of {label}',

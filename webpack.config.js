@@ -129,7 +129,7 @@ module.exports = (env, argv) => {
           include: path.resolve(__dirname, 'hosted'),
           resourceQuery: /[?&]help-sections(?:&|$)/,
           type: 'javascript/auto',
-          loader: path.resolve(__dirname, 'tools/help/helpSections.cjs'),
+          loader: path.resolve(__dirname, 'tools/help/helpSections.mjs'),
         },
         {
           test: /\.ts$/,

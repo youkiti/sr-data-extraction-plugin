@@ -130,7 +130,7 @@ test('複数選択は選択肢別の引用を表示し、排他選択と自由�
   await initApp(page, '#/verify?study=study-1');
   await expect(page.locator('.verify__quotes-theme')).toHaveText(['Students', 'Records themselves']);
   await page.locator('#verify-focus-detail .verify__action--edit').click();
-  const chip = (option: string) => page.locator(`.verify__enum-chip[aria-label="${option}"]`);
+  const chip = (option: string) => page.getByRole('button', { name: option, exact: true });
   await expect(chip('Students')).toHaveAttribute('aria-pressed', 'true');
   await expect(chip('Records themselves')).toHaveAttribute('aria-pressed', 'true');
   await chip('unclear').click();

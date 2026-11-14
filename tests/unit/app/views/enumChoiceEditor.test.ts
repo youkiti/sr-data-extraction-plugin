@@ -93,6 +93,10 @@ describe('renderEnumChoiceEditor: チップ列', () => {
     expect(values).toHaveLength(4);
     expect(values[0]).toContain('low');
     expect(values[3]).toContain('その他');
+    const chip = root.querySelector('.verify__enum-chip')!;
+    expect(chip.getAttribute('aria-label')).toBeNull();
+    expect(chip.querySelector('.verify__enum-chip-key')?.getAttribute('aria-hidden')).toBe('true');
+    expect(chip.querySelector('.verify__enum-chip-value')?.textContent).toBe('low');
     expect(root.querySelector('.verify__enum-chip--other')).not.toBeNull();
   });
 
