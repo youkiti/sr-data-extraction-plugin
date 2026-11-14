@@ -117,7 +117,7 @@ PDF.js の Node.js 専用の任意依存 @napi-rs/canvas とそのプラット�
 | import-meta-resolve | 4.2.0 | MIT |
 | inherits | 2.0.4 | ISC |
 | internmap | 2.0.3 | ISC |
-| jszip | 3.10.1 | (MIT OR GPL-3.0-or-later) |
+| jszip | 3.10.2 | (MIT OR GPL-3.0-or-later) |
 | katex | 0.18.10 | MIT |
 | commander | 15.1.0 | MIT |
 | khroma | 2.1.0 | MIT |
@@ -5241,7 +5241,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ```
 
-## jszip (3.10.1)
+## jszip (3.10.2)
 
 ライセンス: (MIT OR GPL-3.0-or-later)
 
