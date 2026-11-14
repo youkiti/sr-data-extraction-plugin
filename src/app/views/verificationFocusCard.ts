@@ -234,6 +234,10 @@ function renderMatrixDataCell(
   if (titleParts.length > 0) {
     attributes['title'] = titleParts.join('\n');
   }
+  // 隣接する span の表示文字を、DOM にない空白を挟まず名前の先頭へ含める。
+  const visibleTrailing = trailing.filter((item) => item.getAttribute('aria-hidden') !== 'true')
+    .map((item) => item.textContent).join('');
+  attributes['aria-label'] = `${value}${visibleTrailing}: ${attributes['aria-label']}`;
   const button = el(
     'button',
     { className: 'focus-card__matrix-btn', attributes },

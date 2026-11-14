@@ -277,7 +277,7 @@ export const jaApp = {
   'adjudicate.quoteAdoptAria': '最終の根拠に採用',
   'adjudicate.quoteOwnerBoth': 'A・B',
   'adjudicate.quoteAddTarget': 'PDF から追加',
-  'adjudicate.quoteAddTargetAria': 'このセルへ PDF から引用を追加',
+  'adjudicate.quoteAddTargetAria': 'PDF から追加: このセルへ引用を追加',
   'adjudicate.quoteJump': 'ハイライトへ',
   'adjudicate.quotesAddedByAdjudicator': '裁定者が追加',
   'adjudicate.outsideNote': '担当外の判定（{email}）は裁定と一致度から除外しています',
@@ -469,9 +469,9 @@ export const jaApp = {
 
   // S3 文献除外機能（issue #181）
   'documents.excludeStudyButton': 'この study を除外',
-  'documents.excludeStudyAria': '{label} を抽出候補から除外',
+  'documents.excludeStudyAria': 'この study を除外: {label} を抽出候補から除外',
   'documents.restoreStudyButton': 'study の除外を解除',
-  'documents.restoreStudyAria': '{label} の除外を解除',
+  'documents.restoreStudyAria': 'study の除外を解除: {label}',
   'documents.allDocsExcludedNote': 'この study の文書はすべて除外されています（抽出候補から外れています）。',
   'documents.excludeDocumentButton': '除外',
   'documents.excludeDocumentAria': '{filename} を抽出候補から除外',
@@ -1015,7 +1015,7 @@ export const jaApp = {
   'dashboard.summaryNotReported': 'not_reported 率',
   'dashboard.headStudy': '研究',
   'dashboard.headAcceptRate': 'AI 採用率',
-  'dashboard.cellAria': '{study} の {section} を検証（判定済み {decided} / {total}）',
+  'dashboard.cellAria': '{decided} / {total}: {study} の {section} を検証（判定済み）',
   'dashboard.caption':
     'study × section の検証進捗（セル = 判定済み / 総セル。クリックで検証画面へ）',
   'dashboard.loadError': '進捗を読み込めませんでした: {reason}',
@@ -1375,7 +1375,7 @@ export const jaApp = {
   'adjudicate.sideNote': '{side} のメモ: {note}',
   'adjudicate.schemaMismatchBadge': 'schema_version 不一致',
   'adjudicate.showEvidence': '根拠を表示',
-  'adjudicate.showEvidenceAria': '{label} の AI 根拠を PDF で表示',
+  'adjudicate.showEvidenceAria': '根拠を表示: {label} の AI 根拠を PDF で表示',
   'adjudicate.lockedNote': '群構成の確定が必要です',
   'adjudicate.undo': '取り消し',
   'adjudicate.undoAria': '{label} の裁定を取り消し',

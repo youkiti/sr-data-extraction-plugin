@@ -142,7 +142,7 @@ function renderChips(
       'button',
       {
         className: 'verify__enum-chip',
-        attributes: { type: 'button', 'aria-label': value, title: `${index + 1}: ${value}` },
+        attributes: { type: 'button', title: `${index + 1}: ${value}` },
       },
       [
         el('span', {
