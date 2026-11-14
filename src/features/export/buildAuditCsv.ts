@@ -49,6 +49,8 @@ export const AUDIT_HEADER = [
   'evidence_source_prompt_version',
   'consensus_source',
   'adopted_ai_accept',
+  'app_version',
+  'run_app_version',
 ] as const;
 
 /**
@@ -241,6 +243,9 @@ export function buildAuditCsv(
             ...sourceColumns(attached === null ? null : attached.evidence),
             decision.consensusSource ?? '',
             decision.adoptedAiAccept ?? '',
+            decision.appVersion ?? '',
+            attached === null || !runById.has(attached.evidence.runId) ? AUDIT_MISSING_TOKEN
+              : runById.get(attached.evidence.runId)!.extensionVersion ?? '',
           ],
         });
       });
@@ -288,6 +293,8 @@ export function buildAuditCsv(
           ...sourceColumns(representative),
           AUDIT_MISSING_TOKEN,
           AUDIT_MISSING_TOKEN,
+          AUDIT_MISSING_TOKEN,
+          run === undefined ? AUDIT_MISSING_TOKEN : run.extensionVersion ?? '',
         ],
       });
     }

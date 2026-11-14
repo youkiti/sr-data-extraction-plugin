@@ -1,3 +1,4 @@
+import { installChromeMock } from '../../../setup/chrome-mock';
 import type { Decision } from '../../../../src/domain/decision';
 import {
   appendDecisionRows,
@@ -11,7 +12,7 @@ import { SHEET_HEADERS } from '../../../../src/domain/sheetsSchema';
 
 beforeEach(clearDecisionsProvenanceCache);
 
-test('13 列のシートを読み、最初の追記で 15 列に伸ばす', async () => {
+test('13 列のシートを読み、最初の追記で 16 列に伸ばす', async () => {
   const header = SHEET_HEADERS.Decisions.slice(0, 13);
   const old = decisionToRow(makeDecision()).slice(0, 13).map((v) => String(v ?? ''));
   const deps = makeDeps([header, old]);
@@ -19,7 +20,7 @@ test('13 列のシートを読み、最初の追記で 15 列に伸ばす', asyn
   await appendDecisionRows('thirteen', [makeDecision()], deps);
   const put = deps.fetch.mock.calls.find(([, init]) => init?.method === 'PUT');
   expect(JSON.parse(String(put?.[1].body)).values).toEqual([SHEET_HEADERS.Decisions]);
-  expect(SHEET_HEADERS.Decisions).toHaveLength(15);
+  expect(SHEET_HEADERS.Decisions).toHaveLength(16);
 });
 
 test.each([
@@ -69,6 +70,7 @@ function makeDecision(overrides: Partial<Decision> = {}): Decision {
     seenAiValue: null,
     consensusSource: null,
     adoptedAiAccept: null,
+    appVersion: null,
     ...overrides,
   };
 }
@@ -114,6 +116,7 @@ describe('decisionToRow', () => {
       2,
       'accept',
       '120',
+      null,
       null,
       null,
       null,
@@ -274,4 +277,45 @@ test.each(['flag_consult', 'unflag_consult'] as const)('既存ヘッダで印イ
   const flag = makeDecision({ action, note: '相談' });
   const deps = makeDeps([DECISIONS_HEADER, decisionToRow(flag).map((value) => String(value ?? ''))]);
   expect(await readAllDecisions('sheet', deps)).toEqual([flag]);
+});
+
+
+test.each([11, 13, 15])('旧 %i 列の行を空欄のまま読み、新しい追記だけに manifest の版を記録する', async (count) => {
+  const chromeMock = installChromeMock();
+  chromeMock.runtime.getManifest.mockReturnValue({ version: '0.34.0' });
+  const header = SHEET_HEADERS.Decisions.slice(0, count);
+  const oldRow = decisionToRow(makeDecision()).slice(0, count).map((cell) => String(cell ?? ''));
+  const deps = makeDeps([header, oldRow]);
+  expect((await readAllDecisions('legacy', deps))[0]?.appVersion).toBeNull();
+  const next = makeDecision({ action: 'undo', appVersion: undefined });
+  await appendDecisionRows('legacy', [next], deps);
+  const put = deps.fetch.mock.calls.find(([, init]) => init?.method === 'PUT');
+  expect(JSON.parse(String(put?.[1].body)).values).toEqual([SHEET_HEADERS.Decisions]);
+  const appended = JSON.parse(String(postCalls(deps)[0]?.[1].body)).values as string[][];
+  expect(appended[0]?.[15]).toBe('0.34.0');
+  expect(next.appVersion).toBeUndefined();
+  expect((await readAllDecisions('migrated', makeDeps([[...SHEET_HEADERS.Decisions], oldRow, ...appended])))
+    .map((decision) => decision.appVersion)).toEqual([null, '0.34.0']);
+});
+
+test.each(['0.33.0', null])('明示されたアプリの版は追記でも保持する: %s', async (appVersion) => {
+  const deps = makeDeps([[...SHEET_HEADERS.Decisions]]);
+  const item = makeDecision({ appVersion });
+  await appendDecisionRows('explicit', [item], deps);
+  const appended = JSON.parse(String(postCalls(deps)[0]?.[1].body)).values as string[][];
+  expect(appended[0]?.[15]).toBe(appVersion ?? '');
+  expect((await readAllDecisions('explicit', makeDeps([[...SHEET_HEADERS.Decisions], ...appended])))[0]).toEqual(item);
+});
+
+test('manifest が無い環境の追記は版を空欄にする', async () => {
+  const chromeMock = installChromeMock();
+  const getManifest = chromeMock.runtime.getManifest;
+  Object.defineProperty(chromeMock.runtime, 'getManifest', { configurable: true, value: undefined, writable: true });
+  try {
+    const deps = makeDeps([[...SHEET_HEADERS.Decisions]]);
+    await appendDecisionRows('no-runtime', [makeDecision({ appVersion: undefined })], deps);
+    expect(JSON.parse(String(postCalls(deps)[0]?.[1].body)).values[0][15]).toBe('');
+  } finally {
+    Object.defineProperty(chromeMock.runtime, 'getManifest', { configurable: true, value: getManifest, writable: true });
+  }
 });
