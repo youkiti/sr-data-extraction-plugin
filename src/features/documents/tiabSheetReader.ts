@@ -1,6 +1,6 @@
 // tiab-review スプレッドシートの直読み I/O（issue #68・requirements.md §4.5 / ※Q2）。
 // References / Decisions を一括で読み、Config・LLM_Runs・LLM_Executions は並行で読む。
-// 任意タブの読み出し失敗はキー未開封・設定なし・有効な AI 実行なしとして扱う。
+// 任意タブは HTTP 400（タブ欠落）のみ空として扱い、それ以外の読み出し失敗は伝播する。
 // パース（列名解決・型変換）は tiabReview.ts の純ロジックに委譲する
 import {
   getBatchValues,
@@ -82,7 +82,15 @@ export async function readTiabSheet(
   let fulltextAssignmentStatus: TiabCandidateConfig['fulltextAssignmentStatus'] = 'none';
   const [configValues, runValues, executionValues] = await Promise.all(
     (['Config', 'LLM_Runs', 'LLM_Executions'] as const).map((tab) =>
-      getSheetValues(spreadsheetId, tab, deps).catch(() => [])),
+      getSheetValues(spreadsheetId, tab, deps).catch((err: unknown) => {
+        if (err instanceof GoogleApiError && err.status === 400) {
+          return [];
+        }
+        if (isSheetsAccessDenied(err)) {
+          throw new SheetsAccessDeniedError(spreadsheetId, err.status);
+        }
+        throw err;
+      })),
   ) as [string[][], string[][], string[][]];
   const keyOpened = (configValues.find((row) => row[0] === 'key_opened')?.[1] ?? '')
     .toLowerCase() === 'true';

@@ -1309,6 +1309,29 @@ describe('bootstrapPopup', () => {
       expect(el<HTMLButtonElement>('tiab-pick').disabled).toBe(false);
     });
 
+    test.each(['Config', 'LLM_Runs', 'LLM_Executions'])('任意タブ %s の読み込み失敗はエラーを表示し採用件数を出さない', async (tab) => {
+      const google = makeTiabGoogle({ includeCount: 1 });
+      const fetch = google.fetch;
+      google.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (decodeURIComponent(String(input)).includes('/values/' + tab)) {
+          throw new Error('network down');
+        }
+        return fetch(input, init);
+      }) as typeof google.fetch;
+      const deps = makeDeps({
+        openTiabSheetPicker: jest.fn(async () => SELECTION),
+        google,
+      });
+      await bootstrapPopup(document, deps);
+      el<HTMLButtonElement>('tiab-pick').click();
+      await flush();
+      expect(el('tiab-error').textContent).toBe('network down');
+      expect(el('tiab-status').textContent).toBe('');
+      expect(el<HTMLFormElement>('tiab-create-form').hidden).toBe(true);
+      expect(el<HTMLButtonElement>('tiab-pick').disabled).toBe(false);
+      expect(deps.openAppTab).not.toHaveBeenCalled();
+    });
+
     test('検証済みシートが無い状態でフォームが送信されても（防御的分岐）saveTiabHandoff を呼ばず作成のみ行う', async () => {
       // 通常の UI 操作では #tiab-create-form は検証成功後にしか表示されないため到達しないが、
       // checkedSheetId 未設定時のガード（bindTiabHandoff）を直接検証する
