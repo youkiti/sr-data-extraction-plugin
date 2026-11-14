@@ -1,0 +1,79 @@
+{
+  "title": "SR Data Extraction Plugin: a Chrome extension for AI-assisted, human-verified data extraction in systematic reviews",
+  "upload_type": "software",
+  "description": "<p>SR Data Extraction Plugin supports the data extraction step of systematic reviews. An LLM drafts the extraction form from the protocol and extracts each value with a verbatim quote; the quote is anchored to the PDF text layer and highlighted, and a human accepts, edits, rejects or marks every value as not reported, with all decisions kept as an audit trail. It also supports independent dual review with adjudication, risk-of-bias templates and CSV export. Google Sheets serves as the database and Google Drive stores the PDFs. Release notes for each version are in CHANGELOG.md.</p>",
+  "creators": [
+    {
+      "name": "Kataoka, Yuki",
+      "affiliation": "Center for Postgraduate Clinical Training and Career Development, Nagoya University Hospital",
+      "orcid": "0000-0001-7982-5213"
+    },
+    {
+      "name": "So, Ryuhei",
+      "affiliation": "Okayama Psychiatric Medical Center",
+      "orcid": "0000-0002-9838-350X"
+    },
+    {
+      "name": "Watanabe, Jun",
+      "affiliation": "Division of Gastroenterological, General and Transplant Surgery, Department of Surgery, Jichi Medical University",
+      "orcid": "0000-0003-4477-4238"
+    },
+    {
+      "name": "Ishida, Kentaro",
+      "affiliation": "Department of Gynecology and Obstetrics, Graduate School of Medicine, Kyoto University",
+      "orcid": "0000-0001-8218-4373"
+    },
+    {
+      "name": "Banno, Masahiro",
+      "affiliation": "Department of Psychiatry, Seichiryo Hospital",
+      "orcid": "0000-0002-2539-1031"
+    },
+    {
+      "name": "Takayama, Tomohiro",
+      "affiliation": "Kyoto University Hospital",
+      "orcid": "0009-0000-3313-0619"
+    },
+    {
+      "name": "Tsujimoto, Yasushi",
+      "affiliation": "Oku Medical Clinic",
+      "orcid": "0000-0002-7214-5589"
+    },
+    {
+      "name": "Sato, Tomoo",
+      "affiliation": "Department of Nursing, Faculty of Nursing, Kindai University",
+      "orcid": "0000-0003-4036-4629"
+    },
+    {
+      "name": "Dohi, Eisuke",
+      "affiliation": "Department of Mental Disorder Research, National Institute of Neuroscience, National Center of Neurology and Psychiatry",
+      "orcid": "0000-0002-5365-4900"
+    },
+    {
+      "name": "Furukawa, Toshi A.",
+      "affiliation": "Kyoto University Office of Institutional Advancement and Communications",
+      "orcid": "0000-0003-2159-3776"
+    }
+  ],
+  "license": "MIT",
+  "access_right": "open",
+  "keywords": [
+    "systematic review",
+    "data extraction",
+    "human verification",
+    "large language model",
+    "Chrome extension"
+  ],
+  "notes": "This work was supported by JSPS KAKENHI Grant Number 25K13585",
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/youkiti/sr-data-extraction-plugin",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    },
+    {
+      "identifier": "https://youkiti.github.io/sr-data-extraction-plugin/help.html",
+      "relation": "isDocumentedBy",
+      "scheme": "url"
+    }
+  ]
+}

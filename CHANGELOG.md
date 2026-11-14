@@ -33,6 +33,8 @@ This is the public changelog of this extension. Any change that can alter AI out
   Costs for Gemini 3.6 / 3.7 / 3.8 Flash now follow the effective date: $1.50 input / $7.50 output per million tokens from 2027-01-01T00:00:00Z, and $0.75 / $3.75 before then. Cached input is derived as input × 0.10 ($0.075 / $0.15). Estimates use the current time and actual costs use the API call start time; stored costs remain unchanged (2026-11-13, PR #500).
 - tiab-review の採用リストの読み込みを tiab-review の判定に揃えました。tiab-review のキーが開封されるまでは採用リストと件数を表示せず、tiab-review で重複として除外した文献は取り込まず、全文の候補は最新の判定と採用中の AI 実行の判定だけで決めます。（2026-11-13、PR #510）
   The tiab-review included list now follows tiab-review's own rules: it is not shown until the tiab-review key is opened, references removed as duplicates in tiab-review are not imported, and full-text candidates are decided from the latest decisions and the AI run in use only. (2026-11-13, PR #510)
+- リリース時に版タグと CHANGELOG 本文付きの GitHub Release を作成する処理、版と公開日を更新する CITATION.cff、Zenodo 用の著者・資金メタデータ、README と公開ヘルプの引用案内を追加しました。DOI はオーナーによる Zenodo 連携の有効化と初回リリース後に追記します（2026-11-13・PR #506）。  
+  Added version tags and GitHub Releases with the matching CHANGELOG section, CITATION.cff with automatic version and release-date updates, Zenodo author and funding metadata, and citation guidance in the READMEs and public help. The DOI will be added after the owner enables Zenodo integration and publishes the first release (2026-11-13, PR #506).
 
 ## v0.34.0（2026-11-13）
 

@@ -1,0 +1,56 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata from this file and state the version you used."
+type: software
+title: "SR Data Extraction Plugin"
+abstract: "A Chrome extension that supports data extraction in systematic reviews: AI-assisted extraction with verbatim quotes, highlighting of the supporting passages in the PDF, human verification of every value with an audit trail, and independent dual review, using Google Sheets as the database."
+authors:
+  - family-names: Kataoka
+    given-names: "Yuki"
+    affiliation: "Center for Postgraduate Clinical Training and Career Development, Nagoya University Hospital"
+    orcid: "https://orcid.org/0000-0001-7982-5213"
+  - family-names: So
+    given-names: "Ryuhei"
+    affiliation: "Okayama Psychiatric Medical Center"
+    orcid: "https://orcid.org/0000-0002-9838-350X"
+  - family-names: Watanabe
+    given-names: "Jun"
+    affiliation: "Division of Gastroenterological, General and Transplant Surgery, Department of Surgery, Jichi Medical University"
+    orcid: "https://orcid.org/0000-0003-4477-4238"
+  - family-names: Ishida
+    given-names: "Kentaro"
+    affiliation: "Department of Gynecology and Obstetrics, Graduate School of Medicine, Kyoto University"
+    orcid: "https://orcid.org/0000-0001-8218-4373"
+  - family-names: Banno
+    given-names: "Masahiro"
+    affiliation: "Department of Psychiatry, Seichiryo Hospital"
+    orcid: "https://orcid.org/0000-0002-2539-1031"
+  - family-names: Takayama
+    given-names: "Tomohiro"
+    affiliation: "Kyoto University Hospital"
+    orcid: "https://orcid.org/0009-0000-3313-0619"
+  - family-names: Tsujimoto
+    given-names: "Yasushi"
+    affiliation: "Oku Medical Clinic"
+    orcid: "https://orcid.org/0000-0002-7214-5589"
+  - family-names: Sato
+    given-names: "Tomoo"
+    affiliation: "Department of Nursing, Faculty of Nursing, Kindai University"
+    orcid: "https://orcid.org/0000-0003-4036-4629"
+  - family-names: Dohi
+    given-names: "Eisuke"
+    affiliation: "Department of Mental Disorder Research, National Institute of Neuroscience, National Center of Neurology and Psychiatry"
+    orcid: "https://orcid.org/0000-0002-5365-4900"
+  - family-names: Furukawa
+    given-names: "Toshi A."
+    affiliation: "Kyoto University Office of Institutional Advancement and Communications"
+    orcid: "https://orcid.org/0000-0003-2159-3776"
+version: 0.34.0
+date-released: "2026-11-13"
+license: MIT
+repository-code: "https://github.com/youkiti/sr-data-extraction-plugin"
+url: "https://youkiti.github.io/sr-data-extraction-plugin/"
+keywords:
+  - systematic review
+  - data extraction
+  - human verification
+  - large language model
