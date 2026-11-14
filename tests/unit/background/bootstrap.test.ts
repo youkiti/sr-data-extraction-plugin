@@ -74,21 +74,25 @@ describe('handleInstalled', () => {
       getUiLanguage: jest.fn(() => uiLanguage),
       openExternalTab: jest.fn(),
     };
-    handleInstalled(deps, { reason: 'install' as chrome.runtime.OnInstalledReason });
+    handleInstalled(deps, { reason: 'install' });
     expect(deps.openExternalTab).toHaveBeenCalledTimes(1);
     expect(deps.openExternalTab).toHaveBeenCalledWith(
       `https://youkiti.github.io/sr-data-extraction-plugin/help.html?lang=${lang}#setup`,
     );
   });
 
-  test.each(['update', 'chrome_update', 'shared_module_update'] as const)(
-    '%s ではガイドを開かず言語も読まない',
-    (reason) => {
+  test.each<chrome.runtime.InstalledDetails>([
+    { reason: 'update', previousVersion: '0.33.0' },
+    { reason: 'chrome_update' },
+    { reason: 'shared_module_update', id: 'shared-module-id' },
+  ])(
+    '$reason ではガイドを開かず言語も読まない',
+    (details) => {
       const deps: InstalledDeps = {
         getUiLanguage: jest.fn(),
         openExternalTab: jest.fn(),
       };
-      handleInstalled(deps, { reason: reason as chrome.runtime.OnInstalledReason });
+      handleInstalled(deps, details);
       expect(deps.openExternalTab).not.toHaveBeenCalled();
       expect(deps.getUiLanguage).not.toHaveBeenCalled();
     },

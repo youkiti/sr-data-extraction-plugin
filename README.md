@@ -114,6 +114,7 @@ E2E はローカルの chromium を使います。`npx playwright install chromi
 | [docs/ui-states.md](docs/ui-states.md) | UI 状態マトリクス（target spec + drift 注記） |
 | [docs/test-strategy.md](docs/test-strategy.md) | テスト戦略（jest 100% + Playwright、PDF fixture 運用、CI 計画） |
 | [docs/remaining-work-plan.md](docs/remaining-work-plan.md) | 残作業・実機テスト要否一覧 |
+| [docs/maintenance-policy.md](docs/maintenance-policy.md) | 保守期の基準（新機能・リリース頻度・プロンプトと既定モデルの変更条件） |
 | [docs/manual-testing.md](docs/manual-testing.md) | 実機通し確認のシナリオと結果記録 |
 | [hosted/README.md](hosted/README.md) | 公開ページ（GitHub Pages）のデプロイ手順 |
 | [experiments/anchor-spike/REPORT.md](experiments/anchor-spike/REPORT.md) | quote アンカリングの技術スパイク結果（anchor 成功率 96.2%） |

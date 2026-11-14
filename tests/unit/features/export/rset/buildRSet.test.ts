@@ -25,6 +25,13 @@ describe('buildRSet', () => {
     expect(result.manifest.files['acceptance_criteria.csv']).toEqual({ rows: 2 });
   });
 
+  test('判定の版が未導入・空欄・記録済みでも解析用の表と出力時の manifest は変わらない', () => {
+    for (const appVersion of [undefined, null, '0.34.0']) {
+      expect(buildRSet({ ...MATERIALS, decisions: MATERIALS.decisions.map((decision) => ({ ...decision, appVersion })) },
+        MANIFEST_META)).toEqual(built);
+    }
+  });
+
   test('合格基準を含む 9 ファイルを生成する', () => {
     expect(built.files.map((file) => file.name)).toEqual([
       'acceptance_criteria.csv',
