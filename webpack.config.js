@@ -3,7 +3,7 @@
 // - HTML / CSS / manifest / _locales / icons は copy-webpack-plugin で転写
 // - OAuth クライアント ID（Web アプリケーション型。issue #129）は DefinePlugin の
 //   __WEBAUTH_CLIENT_ID__ としてコードへ注入する。dev ビルドは拡張名に (dev) を付与
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 const path = require('path');
 const webpack = require('webpack');
 const CopyWebpackPlugin = require('copy-webpack-plugin');

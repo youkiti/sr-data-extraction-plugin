@@ -14,4 +14,6 @@
 
 ## 開発時のみ使用するツール（配布物に含まれない）
 
-webpack / ts-loader / copy-webpack-plugin / dotenv / jest / ts-jest / jest-environment-jsdom / Playwright / axe-core / ESLint / stylelint / Prettier / TypeScript（それぞれ MIT / Apache-2.0 系ライセンス）。
+webpack / ts-loader / copy-webpack-plugin / jest / ts-jest / jest-environment-jsdom / Playwright / axe-core / ESLint / stylelint / Prettier / TypeScript（それぞれ MIT / Apache-2.0 系ライセンス）。
+
+dotenv（ルートの開発依存は 18 系、BSD-2-Clause）。

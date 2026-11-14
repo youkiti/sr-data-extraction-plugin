@@ -15,7 +15,7 @@ SR では 1 つの試験（trial）が複数の PDF（本論文・試験登録�
 
 | 順 | ドキュメント | 読む箇所 |
 | --- | --- | --- |
-| 1 | [CLAUDE.md](../CLAUDE.md) | 全部（作業原則 1〜8 は強制） |
+| 1 | [AGENTS.md](../AGENTS.md) | 全部（作業原則を遵守する） |
 | 2 | [docs/requirements.md](requirements.md) | §3.2 / §3.3 / §4.2 / §4.3 / §4.5 / §5 / §10 Q10 |
 | 3 | [docs/architecture.md](architecture.md) | `src/` の層構成（domain → features → app/services → app/views） |
 | 4 | [docs/test-strategy.md](test-strategy.md) | jest 100% 強制・E2E seam（`__E2E_PRELOADED_STATE__` / stub 配信） |
@@ -151,7 +151,7 @@ requirements.md §4.5 のとおり。状態は先に [ui-states.md](ui-states.md
 
 - `npm test`（カバレッジ 100%）/ `npm run dev` / `npm run test:e2e` がすべて通る
 - requirements.md との齟齬がない（齟齬を見つけたら実装を曲げる前に報告）
-- [ui-states.md](ui-states.md)（対象画面の状態マトリクス）・[CLAUDE.md](../CLAUDE.md)（現在フェーズの実装済みリスト）・[ui-flow.md](ui-flow.md)（`?study=` クエリ）を同期
+- [ui-states.md](ui-states.md)（対象画面の状態マトリクス）・[ui-flow.md](ui-flow.md)（`?study=` クエリ）を同期
 - 実機確認: [docs/manual-testing.md](manual-testing.md) の運用に倣い、最低 1 回は実 Google アカウントで「2 文書統合 → 抽出 → 検証（文書切替）→ エクスポート」を通す（Selenium 半自動ハーネス `tools/selenium/manualCheck.mjs` が使える）
 
 ## 7. 実装者の裁量に委ねる点
