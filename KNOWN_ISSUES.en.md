@@ -30,6 +30,7 @@ This list covers bugs affecting extracted values, decisions, persistence, agreem
 | KI-011 | Agreement and pilot aggregates include blank or unfinished work | Agreement and pilot: v0.2.0 (estimated) to v0.19.1 | v0.20.0 |
 | KI-012 | Agreement ignores corrected arm mappings | v0.2.0 (estimated) | v0.3.0 |
 | KI-013 | Abstract findings or Methods design fields may be marked unreported | v0.23.0 to v0.32.0 | v0.33.0 |
+| KI-014 | The tiab-review included list contains duplicates or AI decisions not in use | v0.2.0 (estimated) to v0.34.0 | v0.35.0 |
 
 ## Checks and remedies
 
@@ -138,6 +139,14 @@ This list covers bugs affecting extracted values, decisions, persistence, agreem
 - Check: inspect `LLMApiLog.prompt_version` and `Evidence.study_id` / `field_id` / `entity_key` / `not_reported` / `value`, comparing outcome_result design fields and abstract-only findings with the PDF's Methods and Abstract. Check missing `ResultsData.value` too. For older logs lacking the column, inspect retained payloads.
 - Remedy: re-extract affected fields on v0.33.0 or later and verify against the paper. Version 16 explicitly includes Abstract findings as the study's own results and permits design fields to be extracted from Methods or Abstract.
 - Related: [PR #477](https://github.com/youkiti/sr-data-extraction-plugin/pull/477), rule introduced in [PR #417](https://github.com/youkiti/sr-data-extraction-plugin/pull/417).
+
+### KI-014 The tiab-review included list differs from tiab-review's own decisions
+
+- Symptom: when loading the included list from tiab-review, references removed as duplicates in tiab-review (rows whose `References.duplicate_of` is not blank) were still counted as candidates. Full-text candidates were also decided using decisions from AI runs not in use. The included list and counts were shown even before the tiab-review key was opened. Only the set of imported references is affected. Extracted values and decisions made after import are not changed.
+- Affected versions: v0.2.0 (estimated), which introduced the tiab-review hand-off, to v0.34.0. Fixed in v0.35.0.
+- Check: confirm that no reference with a non-blank `References.duplicate_of` in the tiab-review sheet was imported into this extension's `Studies` / `Documents`. Compare full-text candidates with those decided only by the run in use in tiab-review's `LLM_Runs` and its `LLM_Executions` decisions. If import counts were used in a PRISMA diagram or Methods, check those numbers too.
+- Remedy: reload the included list on v0.35.0 or later and compare candidates and counts. Exclude documents imported in error on the import screen (the exclusion remains recorded for audit). Correct any counts reported in the manuscript.
+- Related: [PR #510](https://github.com/youkiti/sr-data-extraction-plugin/pull/510), [issue #480](https://github.com/youkiti/sr-data-extraction-plugin/issues/480), hand-off introduced in `c3fd3ec1`.
 
 ## Version evidence
 

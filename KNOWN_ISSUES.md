@@ -30,6 +30,7 @@
 | KI-011 | 未入力・未完了を含めた一致度やパイロット集計 | 一致度・パイロット: v0.2.0（推定）〜v0.19.1 | v0.20.0 |
 | KI-012 | 群の対応を直しても一致度に反映しない | v0.2.0（推定） | v0.3.0 |
 | KI-013 | 抄録の結果・方法の設計項目が未報告になりうる | v0.23.0〜v0.32.0 | v0.33.0 |
+| KI-014 | tiab-review の採用リストに重複除外の文献や使っていない AI 判定が混ざる | v0.2.0（推定）〜v0.34.0 | v0.35.0 |
 
 ## 項目ごとの確認と対処
 
@@ -138,6 +139,14 @@
 - 確かめ方: `LLMApiLog.prompt_version` と `Evidence.study_id` / `field_id` / `entity_key` / `not_reported` / `value` を確認し、outcome_result の設計項目と抄録だけにある結果を PDF の方法・抄録と比較します。`ResultsData.value` の欠落も対象です。列がない旧ログでは保存済み payload を確認してください。
 - 直し方・回避策: v0.33.0 以降で該当項目を再抽出し、原文を見て再判定します。版 16 は抄録を研究自身の結果に含め、設計項目は方法・抄録からも抽出すると明示します。
 - 関連: [PR #477](https://github.com/youkiti/sr-data-extraction-plugin/pull/477)、規則の導入 [PR #417](https://github.com/youkiti/sr-data-extraction-plugin/pull/417)。
+
+### KI-014 tiab-review の採用リストが tiab-review の判定と食い違う
+
+- 症状: tiab-review から採用リストを読み込むとき、tiab-review で重複として除外した文献（`References.duplicate_of` が空でない行）も候補と件数に入っていました。全文の候補の判定には、採用していない AI 実行の判定も使われていました。tiab-review のキーを開封する前でも、採用リストと件数が表示されていました。読み込んだ文献の範囲が変わるだけで、取り込み後の抽出値や判定そのものは変わりません。
+- 影響する版: tiab-review 連携の導入版 v0.2.0（推定）〜v0.34.0。修正版 v0.35.0。
+- 確かめ方: tiab-review のシートの `References.duplicate_of` が空でない文献が、本拡張の `Studies` / `Documents` に取り込まれていないかを確かめます。全文の候補は、tiab-review の `LLM_Runs` で採用中の実行と、その `LLM_Executions` の判定だけで決まるものと突き合わせます。取り込み時の件数を論文の PRISMA の図や Methods に使っている場合は、その数も対象です。
+- 直し方・回避策: v0.35.0 以降で採用リストを読み直し、候補と件数を比べます。余分に取り込んだ文書は取り込み画面で除外します（除外の記録は監査のために残ります）。件数を論文に使っていれば書き直します。
+- 関連: [PR #510](https://github.com/youkiti/sr-data-extraction-plugin/pull/510)、[issue #480](https://github.com/youkiti/sr-data-extraction-plugin/issues/480)、連携の導入 `c3fd3ec1`。
 
 ## 版の根拠
 
