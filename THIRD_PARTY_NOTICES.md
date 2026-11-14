@@ -54,7 +54,6 @@ PDF.js の Node.js 専用の任意依存 @napi-rs/canvas とそのプラット�
 | @upsetjs/venn.js | 2.0.0 | MIT |
 | @xmldom/xmldom | 0.8.15 | MIT |
 | base64-js | 1.5.1 | MIT |
-| bluebird | 3.4.7 | MIT |
 | core-util-is | 1.0.3 | MIT |
 | cose-base | 1.0.3 | MIT |
 | cytoscape | 3.34.0 | MIT |
@@ -121,7 +120,7 @@ PDF.js の Node.js 専用の任意依存 @napi-rs/canvas とそのプラット�
 | lie | 3.3.0 | MIT |
 | lodash-es | 4.18.1 | MIT |
 | lop | 0.4.2 | BSD-2-Clause |
-| mammoth | 1.12.0 | BSD-2-Clause |
+| mammoth | 1.13.0 | BSD-2-Clause |
 | argparse | 1.0.10 | MIT |
 | marked | 16.4.2 | MIT |
 | mermaid | 11.17.2 | MIT |
@@ -129,7 +128,6 @@ PDF.js の Node.js 専用の任意依存 @napi-rs/canvas とそのプラット�
 | package-manager-detector | 1.7.0 | MIT |
 | pako | 1.0.11 | (MIT AND Zlib) |
 | path-data-parser | 0.1.0 | MIT |
-| path-is-absolute | 1.0.1 | MIT |
 | pdfjs-dist | 6.5.438 | Apache-2.0 |
 | points-on-curve | 0.2.0 | MIT |
 | points-on-path | 0.2.1 | MIT |
@@ -1660,38 +1658,6 @@ all copies or substantial portions of the Software.
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-```
-
-## bluebird (3.4.7)
-
-ライセンス: MIT
-
-出典: `node_modules/bluebird`
-
-### LICENSE
-
-```text
-The MIT License (MIT)
-
-Copyright (c) 2013-2015 Petka Antonov
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
 AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
@@ -4858,7 +4824,7 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## mammoth (1.12.0)
+## mammoth (1.13.0)
 
 ライセンス: BSD-2-Clause
 
@@ -5164,38 +5130,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-```
-
-## path-is-absolute (1.0.1)
-
-ライセンス: MIT
-
-出典: `node_modules/path-is-absolute`
-
-### license
-
-```text
-The MIT License (MIT)
-
-Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
 ```
 
 ## pdfjs-dist (6.5.438)

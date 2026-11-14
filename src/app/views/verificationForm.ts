@@ -244,10 +244,12 @@ function renderDecidedRow(
   const enumWarning = allowedValuesWarningText(cell.field, cell.state.value);
   const attributes: Record<string, string> = { type: 'button', title: t('verify.decidedRowTitle') };
   if (enumWarning !== null) {
+    // 表示文字の並びを保ち、装飾の警告バッジを加える前に名前を作る。
+    const visibleLabel = children.map((child) => child.textContent).join('');
     children.push(renderAllowedValuesBadge());
     const message = enumWarning.replace(/^⚠ /, '');
     attributes['aria-label'] =
-      `${cell.field.fieldLabel}: ${valueText}${consulted ? t('verify.consultAriaSuffix') : ''}${t('verify.enumAriaSuffix', { message })}`;
+      `${visibleLabel}${t('verify.enumAriaSuffix', { message })}`;
     attributes['title'] = `${t('verify.decidedRowTitle')}\n${message}`;
   }
   const row = el(

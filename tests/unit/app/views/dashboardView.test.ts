@@ -437,7 +437,7 @@ describe('renderDashboardView', () => {
     expect(links[0]?.getAttribute('href')).toBe('#/verify?study=study-1&entity=-');
     expect(links[1]?.getAttribute('href')).toBe('#/verify?study=study-1&entity=arm%3A1');
     expect(links[0]?.getAttribute('aria-label')).toBe(
-      'Smith 2020 の methods を検証（判定済み 1 / 2）',
+      '1 / 2: Smith 2020 の methods を検証（判定済み）',
     );
     // AI 採用率セル = accept / decided、内訳を title に持つ
     const rateCells = [...row1.querySelectorAll('td.dashboard__rate')];

@@ -1,4 +1,6 @@
 import type { Evidence } from '../../../../src/domain/evidence';
+import type { Decision } from '../../../../src/domain/decision';
+import { setUiLanguage } from '../../../../src/lib/i18n';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import { cellKeyOf, emptyCellState, type CellState } from '../../../../src/features/verification/cellState';
 import type { VerificationCell } from '../../../../src/features/verification/cells';
@@ -125,6 +127,21 @@ function render(model: VerificationFocusCardModel, handlers = makeHandlers()) {
 }
 
 describe('renderVerificationFocusCard', () => {
+  test.each(['ja', 'en'] as const)('値・状態・要相談の表示文字を名前の先頭に含める（%s）', (language) => {
+    setUiLanguage(language);
+    try {
+      const cell = makeCell();
+      const flag = { action: 'flag_consult' } as Decision;
+      const { root } = render(makeModel({ consultFlags: new Map([[cell.cellKey, flag]]) }));
+      const button = root.querySelector('.focus-card__matrix-btn')!;
+      const visible = [...button.querySelectorAll('.focus-card__matrix-value, .verify__chip, .verify__consult-badge')]
+        .map((item) => item.textContent).join('');
+      expect(button.getAttribute('aria-label')?.startsWith(`${visible}:`)).toBe(true);
+    } finally {
+      setUiLanguage('ja');
+    }
+  });
+
   test.each(['ai', 'human'])('複数選択の %s 値をマトリクス・読み上げ・直近判定で整形する', (source) => {
     const field = makeField({
       dataType: 'enum', allowedValues: 'A|B',
@@ -139,7 +156,9 @@ describe('renderVerificationFocusCard', () => {
     const unit = makeUnit({ rows: [{ field, cells: [cell] }] });
     const { root } = render(makeModel({ unit, recentCell }));
     expect(root.querySelector('.focus-card__matrix-value')?.textContent).toBe('A | B');
-    expect(root.querySelector('.focus-card__matrix-btn')?.getAttribute('aria-label')).toBe('平均値 × 介入群: A | B');
+    expect(root.querySelector('.focus-card__matrix-btn')?.getAttribute('aria-label')).toBe(
+      `A | B${source === 'ai' ? '未検証' : '承認'}: 平均値 × 介入群: A | B`,
+    );
     expect(root.querySelector('.focus-card__recent-value')?.textContent).toBe('= A | B');
   });
 
@@ -200,7 +219,7 @@ describe('renderVerificationFocusCard', () => {
     const button = table!.querySelector<HTMLButtonElement>('.focus-card__matrix-btn');
     expect(button?.querySelector('.focus-card__matrix-value')?.textContent).toBe('5.2');
     expect(button?.querySelector('.verify__chip')?.textContent).toBe('未検証');
-    expect(button?.getAttribute('aria-label')).toBe('平均値 × 介入群: 5.2');
+    expect(button?.getAttribute('aria-label')).toBe('5.2未検証: 平均値 × 介入群: 5.2');
     button?.click();
     expect(handlers.onFocusCell).toHaveBeenCalledWith(cellKeyOf('f-mean', 'outcome:pain|arm:1'));
   });
@@ -215,7 +234,7 @@ describe('renderVerificationFocusCard', () => {
     expect(button?.querySelector('.verify__consistency-badge')).not.toBeNull();
     expect(button?.querySelector('.verify__consistency-badge')?.getAttribute('aria-hidden')).toBe('true');
     expect(button?.getAttribute('aria-label')).toBe(
-      `平均値 × 介入群: 5.2（整合性チェック警告: ${message}）`,
+      `5.2未検証: 平均値 × 介入群: 5.2（整合性チェック警告: ${message}）`,
     );
     expect(button?.getAttribute('title')).toBe(message);
   });
@@ -224,7 +243,7 @@ describe('renderVerificationFocusCard', () => {
     const { root } = render(makeModel());
     const button = root.querySelector<HTMLButtonElement>('.focus-card__matrix-btn');
     expect(button?.querySelector('.verify__consistency-badge')).toBeNull();
-    expect(button?.getAttribute('aria-label')).toBe('平均値 × 介入群: 5.2');
+    expect(button?.getAttribute('aria-label')).toBe('5.2未検証: 平均値 × 介入群: 5.2');
     expect(button?.hasAttribute('title')).toBe(false);
   });
 
@@ -248,7 +267,7 @@ describe('renderVerificationFocusCard', () => {
     const button = root.querySelector<HTMLButtonElement>('.focus-card__matrix-btn');
     expect(button?.querySelector('.verify__rob-badge')).not.toBeNull();
     expect(button?.getAttribute('aria-label')).toBe(
-      '平均値 × 介入群: 5.2（RoB アルゴリズム提案との不一致: アルゴリズム提案 (high) と現在の判定 (low) が一致しません）',
+      '5.2未検証: 平均値 × 介入群: 5.2（RoB アルゴリズム提案との不一致: アルゴリズム提案 (high) と現在の判定 (low) が一致しません）',
     );
     expect(button?.getAttribute('title')).toBe('アルゴリズム提案 (high) と現在の判定 (low) が一致しません');
   });
@@ -262,7 +281,7 @@ describe('renderVerificationFocusCard', () => {
     const { root } = render(makeModel({ unit, robAlgorithmInfo: robInfo }));
     const button = root.querySelector<HTMLButtonElement>('.focus-card__matrix-btn');
     expect(button?.querySelector('.verify__rob-badge')).toBeNull();
-    expect(button?.getAttribute('aria-label')).toBe('平均値 × 介入群: 5.2');
+    expect(button?.getAttribute('aria-label')).toBe('5.2未検証: 平均値 × 介入群: 5.2');
   });
 
   test('整合性チェック違反と RoB 不一致が同一セルで重なる場合は両方のバッジを併記し、title を連結する', () => {

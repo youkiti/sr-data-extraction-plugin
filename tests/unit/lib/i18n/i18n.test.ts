@@ -23,6 +23,22 @@ afterEach(() => {
 });
 
 describe('辞書（ja / en）', () => {
+  test.each(['ja', 'en'] as const)('ボタンとリンクの名前は表示文字を連続して含む（%s）', (language) => {
+    setUiLanguage(language);
+    const pairs: readonly [MessageKey, MessageKey][] = [
+      ['adjudicate.quoteAddTarget', 'adjudicate.quoteAddTargetAria'],
+      ['adjudicate.showEvidence', 'adjudicate.showEvidenceAria'],
+      ['documents.excludeStudyButton', 'documents.excludeStudyAria'],
+      ['documents.restoreStudyButton', 'documents.restoreStudyAria'],
+      ['schema.enumSuggest', 'schema.enumSuggestAria'],
+    ];
+    for (const [visible, name] of pairs) {
+      expect(t(name, { label: 'Study' })).toContain(t(visible));
+    }
+    expect(t('dashboard.cellAria', { study: 'Study', section: 'results', decided: 0, total: 1 }))
+      .toMatch(/^0 \/ 1:/);
+  });
+
   test('ja / en のキー集合が一致する（受け入れ条件: 両辞書の網羅）', () => {
     expect(Object.keys(en).sort()).toEqual(Object.keys(ja).sort());
   });

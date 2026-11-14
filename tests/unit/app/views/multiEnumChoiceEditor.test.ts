@@ -13,7 +13,7 @@ function setup(overrides: Partial<MultiEnumChoiceEditorOptions> = {}) {
   const editor = renderMultiEnumChoiceEditor(options)!;
   document.body.replaceChildren(editor.element);
   const chip = (option: string) => [...editor.element.querySelectorAll<HTMLButtonElement>('.verify__enum-chip')]
-    .find((node) => node.getAttribute('aria-label') === option)!;
+    .find((node) => node.querySelector('.verify__enum-chip-value')?.textContent === option)!;
   const input = () => editor.element.querySelector<HTMLInputElement>('.verify__multi-free-text')!;
   return { ...editor, options, chip, input };
 }
@@ -30,6 +30,8 @@ test('対象外は null、初期値 null は全件未選択で確定不可、初
   expect(s.element.className).toBe('verify__editor verify__editor--enum verify__editor--multi');
   expect(s.element.querySelector('[role="group"]')?.getAttribute('aria-label')).toContain('デザイン');
   expect(s.element.querySelectorAll('[aria-pressed="false"]')).toHaveLength(4);
+  expect(s.chip('Students').getAttribute('aria-label')).toBeNull();
+  expect(s.chip('Students').querySelector('.verify__enum-chip-key')?.getAttribute('aria-hidden')).toBe('true');
   expect(s.element.querySelector<HTMLButtonElement>('.verify__edit-confirm')!.disabled).toBe(true);
   expect(s.confirm()).toBe(false);
   expect(s.options.onConfirm).not.toHaveBeenCalled();

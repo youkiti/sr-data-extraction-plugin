@@ -15,6 +15,8 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ### その他の変更 / Other changes
 
+- ボタンとリンクの読み上げ用の名前に日英の表示文字を含め、見た目を変えずに WCAG 2.5.3 Label in Name の不一致を修正しました（2026-11-14、#535）。
+  Accessible names of buttons and links now include their visible Japanese and English labels, fixing WCAG 2.5.3 Label in Name mismatches without changing their appearance (2026-11-14, #535).
 - stylelint 18 への更新に伴い、開発に必要な Node.js の要件を `^22.22.2 || ^24.15.0 || >=26` に引き上げました（2026-11-14） #536。
   Raised the Node.js requirement for development to `^22.22.2 || ^24.15.0 || >=26` for the update to stylelint 18 (2026-11-14) #536.
 - 公開ヘルプのエクスポート節に、audit.csv の `app_version`・`run_app_version` の意味と、空欄・構造的欠損になる場合の説明を日英で追加しました（2026-11-14・#520）。
