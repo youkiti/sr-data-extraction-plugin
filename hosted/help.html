@@ -974,8 +974,8 @@
             <span class="en" lang="en">Suspected preview PDFs are listed by filename after import and before extraction. Warnings use the selected display language. If you change the selected studies while document text is being checked, processing stops; press Run again. Detection looks for repeated PREVIEW, SAMPLE, or EXCERPT lines at page endings, so it cannot identify every incomplete PDF. AI cannot extract values if the results chapter is missing. Replace the file with a full-text PDF. If a warning appears before a pilot run, press Run again after checking it to continue.</span>
           </p>
           <p>
-            <span class="ja" lang="ja">tiab-review の採用リストは、フルテキストの最新の裁定を優先します（裁定がなければ通常票の OR 合議）。裁定が maybe の文献は取り込みません。プレビューに「裁定を反映した採用件数（取り込む件数）」と「OR 合議なら採用になる件数」を表示します。裁定で採用対象外になった文献があれば、警告とタイトル一覧が出ます。フルテキスト相では、tiab-review のフルテキスト候補に入らない文献は取り込みません。候補外のため取り込み対象から外した文献は、別の警告で件数とタイトル一覧をプレビューに表示します。取り込みは続行できます。TiAb 相の採用判定は変わりません。再取り込みでも既存 study は自動除外されません。必要に応じて「study の除外」を行ってください。</span>
-            <span class="en" lang="en">The tiab-review included list uses the latest full-text adjudication, falling back to OR consensus of regular votes when there is no adjudication. A maybe adjudication is not included. The preview shows the count after adjudication (to import) and the OR consensus count. A warning lists any titles no longer included after adjudication. In the full-text phase, references outside tiab-review’s project full-text candidates are not imported. A separate preview warning shows the count and titles excluded for this reason. You can continue importing. Title/abstract phase inclusion is unchanged. Re-importing does not automatically exclude existing studies. Use “Exclude study” as needed.</span>
+            <span class="ja" lang="ja">tiab-review のキーが開封されるまでは採用リストと件数を表示しません。Config・LLM_Runs・LLM_Executions の読み込みに失敗した場合も、エラーを表示して中断し、採用リストと件数は表示しません。古いシートでタブが無い場合（HTTP 400）だけ、設定や有効な AI 実行が無いものとして扱います。tiab-review で重複として除外した文献は取り込みません。tiab-review の採用リストは、フルテキストの最新の裁定を優先します（裁定がなければ通常票の OR 合議）。裁定が maybe の文献は取り込みません。プレビューに「裁定を反映した採用件数（取り込む件数）」と「OR 合議なら採用になる件数」を表示します。裁定で採用対象外になった文献があれば、警告とタイトル一覧が出ます。フルテキスト相では、tiab-review のフルテキスト候補に入らない文献は取り込みません。候補外のため取り込み対象から外した文献は、別の警告で件数とタイトル一覧をプレビューに表示します。取り込みは続行できます。TiAb 相の採用判定は変わりません。再取り込みでも既存 study は自動除外されません。必要に応じて「study の除外」を行ってください。</span>
+            <span class="en" lang="en">The included list and counts are not shown until the tiab-review key is opened. If Config, LLM_Runs, or LLM_Executions cannot be read, an error is shown and loading stops without displaying the included list or counts. Only missing tabs in older sheets (HTTP 400) are treated as absent settings or active AI executions. References removed as duplicates in tiab-review are not imported. The tiab-review included list uses the latest full-text adjudication, falling back to OR consensus of regular votes when there is no adjudication. A maybe adjudication is not included. The preview shows the count after adjudication (to import) and the OR consensus count. A warning lists any titles no longer included after adjudication. In the full-text phase, references outside tiab-review’s project full-text candidates are not imported. A separate preview warning shows the count and titles excluded for this reason. You can continue importing. Title/abstract phase inclusion is unchanged. Re-importing does not automatically exclude existing studies. Use “Exclude study” as needed.</span>
           </p>
           <figure class="shot shot--screen">
             <a href="screenshots/help-03-documents.png" target="_blank" rel="noopener noreferrer">
@@ -2309,6 +2309,12 @@
             </table>
           </div>
           <p>
+            <span class="ja" lang="ja"><code>audit.csv</code> の末尾の <code>app_version</code> は判定をシートへ追記したときのアプリの版（オフライン再送も追記時の版）、<code>run_app_version</code> は添付した AI 根拠の抽出実行時のアプリの版です。
+              古い行や取得不能で版が未記録なら空欄、対応する判定がない未検証行の <code>app_version</code> や、添付した AI 根拠または対応する実行がない行の <code>run_app_version</code> は <code>.</code>（構造的欠損）になります。</span>
+            <span class="en" lang="en">The final columns of <code>audit.csv</code> are <code>app_version</code>, the app version when the decision was appended to the sheet (including when an offline decision is resent), and <code>run_app_version</code>, the app version used for the extraction run of the attached AI evidence.
+              A version is blank if it was not recorded in an older row or could not be obtained; <code>app_version</code> is <code>.</code> (structural missingness) for an unverified row with no decision, as is <code>run_app_version</code> when there is no attached AI evidence or corresponding run.</span>
+          </p>
+          <p>
             <span class="ja" lang="ja">確認途中で考察やミーティングの準備に使うときは、「未確認分を AI の値で補う（仮エクスポート）」をオンにします（既定はオフ）。study_wide / results_long のみ、未確認の文献・セルを AI の値で補います。最終データではありません。人が確認していない AI の値を含みます。wide の各項目の <code>{field}__source</code> 列、long の <code>source</code> 列で <code>human</code>（人の確認済み）/ <code>consensus</code>（裁定済み）/ <code>ai_unverified</code>（未確認）を区別し、ファイル名に <code>_draft</code> が付きます。audit・R セット・Methods 文案・根拠の表には影響しません。最終データを出すときはオフに戻してください。</span>
             <span class="en" lang="en">For discussion or meeting preparation while verification is ongoing, enable “Fill unverified cells with AI values (draft export)” (off by default). Only study_wide and results_long fill unverified studies and cells with AI values. This is not final data: it includes AI values that have not been verified by a human. Each wide field has a <code>{field}__source</code> column; long has a <code>source</code> column: <code>human</code> (verified), <code>consensus</code> (adjudicated), or <code>ai_unverified</code> (unverified). Filenames include <code>_draft</code>. Audit, R sets, Methods text and evidence quotes remain unchanged. Turn this option off when exporting final data.</span>
           </p>
@@ -2923,6 +2929,10 @@
                 when you use a free tier.</span
               >
             </p>
+            <p>
+              <span class="ja" lang="ja">Gemini 3.6 / 3.7 / 3.8 Flash の概算単価は、2027-01-01 0:00 UTC に入力 $0.75 / 出力 $3.75 から入力 $1.50 / 出力 $7.50（100 万トークンあたり）へ切り替わります。キャッシュ入力は入力単価 × 0.10 の導出値です。送信前の見積もりは現在時刻、実績は API 呼び出しの開始時刻で単価を選びます。保存済みの費用は再計算しません。</span>
+              <span class="en" lang="en">Estimated rates for Gemini 3.6 / 3.7 / 3.8 Flash switch from $0.75 input / $3.75 output to $1.50 input / $7.50 output per million tokens at 00:00 UTC on January 1, 2027. Cached input is derived as input × 0.10. Estimates use the current time; actual costs use the API call start time. Stored costs are not recalculated.</span>
+            </p>
           </details>
 
           <details class="faq" id="faq-model">
@@ -2966,13 +2976,13 @@
                 >既定モデル・プロンプトの版数・推論の強さの既定・集計方法など、AI の結果に影響する変更は、版ごとに公開の<a
                   href="https://github.com/youkiti/sr-data-extraction-plugin/blob/master/CHANGELOG.md"
                   >変更履歴（CHANGELOG）</a
-                >に載せています。更新のあとに結果の傾向が変わったと感じたら、まずここを確かめてください。</span
+                >に載せています。更新のあとに結果の傾向が変わったと感じたら、まずここを確かめてください。値・判定・集計・エクスポート・Methods に影響した不具合の版の範囲と、シートでの確認・対処は<a href="https://github.com/youkiti/sr-data-extraction-plugin/blob/master/KNOWN_ISSUES.md">既知の不具合</a>にまとめています。</span
               >
               <span class="en" lang="en"
                 >Every change that affects AI output, such as the default model, prompt versions, the default reasoning effort or counting methods, is listed version by version in the public <a
                   href="https://github.com/youkiti/sr-data-extraction-plugin/blob/master/CHANGELOG.md"
                   >CHANGELOG</a
-                >. If results seem to shift after an update, check it first.</span
+                >. If results seem to shift after an update, check it first. For bugs affecting values, decisions, aggregates, exports or Methods, see <a href="https://github.com/youkiti/sr-data-extraction-plugin/blob/master/KNOWN_ISSUES.en.md">Known issues</a> for affected versions, sheet checks and remedies.</span
               >
             </p>
           </details>

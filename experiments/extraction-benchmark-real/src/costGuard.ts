@@ -33,6 +33,7 @@ export interface BilledCostResult {
 export function billedCostUsd(
   input: BilledCostInput,
   pricing = { production: MODEL_PRICING, fallback: FALLBACK_PRICING, estimate: estimateCostUsd },
+  timestampMs: number = Date.now(),
 ): BilledCostResult {
   const { model, tokensIn, rawResponse, cachedTokensIn } = input;
   const usage = extractUsageMetadata(rawResponse);
@@ -48,7 +49,7 @@ export function billedCostUsd(
 
   if (hasProductionPricing) {
     return {
-      costUsd: pricing.estimate(model, tokensIn, billedTokensOut, cachedTokensIn),
+      costUsd: pricing.estimate(model, tokensIn, billedTokensOut, cachedTokensIn, undefined, timestampMs),
       costSource,
       billedTokensOut,
     };
@@ -134,6 +135,7 @@ export function extractThoughtsTokens(raw: unknown): number | null {
 /** 保存済み run の費用計算に必要な部分。 */
 export interface RecordedCostRun {
   runId: string;
+  executedAt?: string;
   model: string;
   tokensIn: number | null;
   tokensOut: number | null;
@@ -144,14 +146,16 @@ export interface RecordedCostRun {
   costBasis?: CostBasis;
 }
 
-/** 採点時の費用。使用量が無い過去の記録だけ記録値を維持する。 */
+/** 採点時の費用。実行日時か使用量が無い過去の記録は記録値を維持する。 */
 export function recalculateRunCost(run: RecordedCostRun): { costUsd: number | null; usedRecordedCost: boolean } {
-  if (run.costBasis === 'measured_failure' || run.costBasis === 'estimated_output_limit' ||
+  const timestampMs = Date.parse(run.executedAt ?? '');
+  if (!Number.isFinite(timestampMs) || run.costBasis === 'measured_failure' || run.costBasis === 'estimated_output_limit' ||
       extractUsageMetadata(run.rawResponse) === null) {
     return { costUsd: run.costUsd, usedRecordedCost: true };
   }
   return {
-    costUsd: billedCostUsd({ ...run, rawResponse: run.rawResponse, cachedTokensIn: run.cachedTokensIn ?? null }).costUsd,
+    costUsd: billedCostUsd({ ...run, rawResponse: run.rawResponse, cachedTokensIn: run.cachedTokensIn ?? null },
+      undefined, timestampMs).costUsd,
     usedRecordedCost: false,
   };
 }
@@ -233,8 +237,13 @@ export function recalculateLedger(
         !Object.hasOwn(entry, 'billedTokensOut') && run !== undefined &&
         run.runId === entry.runId && run.tokensOut === entry.tokensOut &&
         run.thoughtsTokens === entry.thoughtsTokens && extractUsageMetadata(run.rawResponse) !== null) {
-      totalUsd += recalculateRunCost(run).costUsd ?? 0;
-      recalculatedCount += 1;
+      const cost = recalculateRunCost(run);
+      if (cost.usedRecordedCost) {
+        totalUsd += entry.costUsd ?? 0;
+      } else {
+        totalUsd += cost.costUsd ?? 0;
+        recalculatedCount += 1;
+      }
     } else {
       totalUsd += entry.costUsd ?? 0;
     }

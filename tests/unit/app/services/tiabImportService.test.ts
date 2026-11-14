@@ -196,7 +196,7 @@ function includedSheetResponse(fulltextUrl: string | null = 'https://drive.googl
         doi: null,
         pmid: null,
         fulltextSet: 'set',
-        relatedRefId: null,
+        relatedRefId: null, duplicateOf: null,
         fulltextUrl,
       },
     ],
@@ -209,7 +209,7 @@ function includedSheetResponse(fulltextUrl: string | null = 'https://drive.googl
         clientVersion: null, screeningPhase: 'fulltext' as const,
       },
     ],
-    fulltextPoolRule: null, fulltextAssignmentStatus: 'configured' as const, activeFulltextAiRound: null,
+    fulltextPoolRule: null, fulltextAssignmentStatus: 'configured' as const, activeFulltextAiRound: null, keyOpened: true, activeTiabLlmIds: new Set<string>(),
   };
 }
 
@@ -233,6 +233,7 @@ describe('openTiabImport / closeTiabImport', () => {
           loading: false,
           error: 'err',
           accessDenied: true,
+          keyClosed: true,
           plan: makePlan(),
           applying: false,
           result: { studiesUpdated: 1, documentsUpdated: 1, unmatched: 0 },
@@ -246,6 +247,7 @@ describe('openTiabImport / closeTiabImport', () => {
       loading: false,
       error: null,
       accessDenied: false,
+      keyClosed: false,
       plan: null,
       applying: false,
       result: null,
@@ -254,6 +256,19 @@ describe('openTiabImport / closeTiabImport', () => {
 });
 
 describe('previewTiabImport', () => {
+  test('キー未開封はプレビューを破棄し、開封後に再試行できる', async () => {
+    const store = makeStore();
+    mockReadTiabSheet.mockResolvedValue({ ...includedSheetResponse(), keyOpened: false });
+    await previewTiabImport(store, makeDeps(), SHEET_URL);
+    expect(store.getState().documents.tiabImport).toMatchObject({
+      loading: false, plan: null, keyClosed: true, error: null, result: null,
+    });
+    mockReadTiabSheet.mockResolvedValue(includedSheetResponse());
+    await previewTiabImport(store, makeDeps(), SHEET_URL);
+    expect(store.getState().documents.tiabImport.keyClosed).toBe(false);
+    expect(store.getState().documents.tiabImport.plan).not.toBeNull();
+  });
+
   test('tiab シートを読み、include 抽出 + 反映プランを state に置く', async () => {
     const store = makeStore();
     mockReadTiabSheet.mockResolvedValue({
@@ -266,7 +281,7 @@ describe('previewTiabImport', () => {
           doi: null,
           pmid: '123',
           fulltextSet: 'set',
-          relatedRefId: null,
+          relatedRefId: null, duplicateOf: null,
           fulltextUrl: 'https://drive.google.com/file/d/src-1/view',
         },
       ],
@@ -279,7 +294,7 @@ describe('previewTiabImport', () => {
           clientVersion: null, screeningPhase: 'fulltext',
         },
       ],
-      fulltextPoolRule: null, fulltextAssignmentStatus: 'configured' as const, activeFulltextAiRound: null,
+      fulltextPoolRule: null, fulltextAssignmentStatus: 'configured' as const, activeFulltextAiRound: null, keyOpened: true, activeTiabLlmIds: new Set<string>(),
     });
 
     await previewTiabImport(store, makeDeps(), SHEET_URL);
@@ -377,7 +392,7 @@ describe('previewTiabImport', () => {
         tiabImport: { ...store.getState().documents.tiabImport, accessDenied: true, error: '前回のエラー' },
       },
     });
-    mockReadTiabSheet.mockResolvedValue({ references: [], decisions: [], fulltextPoolRule: null, fulltextAssignmentStatus: 'configured' as const, activeFulltextAiRound: null });
+    mockReadTiabSheet.mockResolvedValue({ references: [], decisions: [], fulltextPoolRule: null, fulltextAssignmentStatus: 'configured' as const, activeFulltextAiRound: null, keyOpened: true, activeTiabLlmIds: new Set<string>() });
     await previewTiabImport(store, makeDeps(), SHEET_URL);
     expect(store.getState().documents.tiabImport.accessDenied).toBe(false);
   });
@@ -474,7 +489,7 @@ describe('grantTiabSheetAccess（issue #142。docs/ui-states.md §3 tiab カー�
           doi: null,
           pmid: '123',
           fulltextSet: 'set',
-          relatedRefId: null,
+          relatedRefId: null, duplicateOf: null,
           fulltextUrl: null,
         },
       ],
@@ -487,7 +502,7 @@ describe('grantTiabSheetAccess（issue #142。docs/ui-states.md §3 tiab カー�
           clientVersion: null, screeningPhase: 'fulltext',
         },
       ],
-      fulltextPoolRule: null, fulltextAssignmentStatus: 'configured' as const, activeFulltextAiRound: null,
+      fulltextPoolRule: null, fulltextAssignmentStatus: 'configured' as const, activeFulltextAiRound: null, keyOpened: true, activeTiabLlmIds: new Set<string>(),
     });
     const store = makeDeniedStore();
     await grantTiabSheetAccess(store, makeDeps());
@@ -686,6 +701,17 @@ describe('applyTiabImport', () => {
 });
 
 describe('runTiabHandoffImport（S3 tiab-review 引き継ぎパネル。ui-states.md §3 / ※Q2）', () => {
+  test('キー未開封は Picker を開かず、エラーと引き継ぎ状態を残す', async () => {
+    const store = withHandoff();
+    mockReadTiabSheet.mockResolvedValue({ ...includedSheetResponse(), keyOpened: false });
+    await runTiabHandoffImport(store, makeDeps());
+    expect(mockOpenProjectFilesPicker).not.toHaveBeenCalled();
+    expect(mockRemoveLocal).not.toHaveBeenCalled();
+    expect(store.getState().documents.tiabHandoff).toEqual({
+      tiabSheetId: HANDOFF_SHEET_ID, running: false, error: t('documents.tiabHandoffKeyClosed'),
+    });
+  });
+
   test('プロジェクト未選択・handoff なし・running 中・importing 中・tiabImport.loading・tiabImport.applying は no-op', async () => {
     await runTiabHandoffImport(makeStore({ withProject: false }), makeDeps());
     expect(mockReadTiabSheet).not.toHaveBeenCalled();
@@ -755,7 +781,7 @@ describe('runTiabHandoffImport（S3 tiab-review 引き継ぎパネル。ui-state
           doi: null,
           pmid: null,
           fulltextSet: 'set',
-          relatedRefId: null,
+          relatedRefId: null, duplicateOf: null,
           fulltextUrl: 'https://drive.google.com/file/d/src-9/view',
         },
         {
@@ -767,7 +793,7 @@ describe('runTiabHandoffImport（S3 tiab-review 引き継ぎパネル。ui-state
           pmid: null,
           // r1 と同じ Drive ファイル（重複除去の対象）
           fulltextSet: 'set',
-          relatedRefId: null,
+          relatedRefId: null, duplicateOf: null,
           fulltextUrl: 'https://drive.google.com/file/d/src-9/view',
         },
       ],
@@ -775,7 +801,7 @@ describe('runTiabHandoffImport（S3 tiab-review 引き継ぎパネル。ui-state
         { refId: 'r1', reviewerId: 'a@example.com', decision: 'include', decidedAt: 't1', clientVersion: null, screeningPhase: 'fulltext' },
         { refId: 'r2', reviewerId: 'a@example.com', decision: 'include', decidedAt: 't1', clientVersion: null, screeningPhase: 'fulltext' },
       ],
-      fulltextPoolRule: null, fulltextAssignmentStatus: 'configured' as const, activeFulltextAiRound: null,
+      fulltextPoolRule: null, fulltextAssignmentStatus: 'configured' as const, activeFulltextAiRound: null, keyOpened: true, activeTiabLlmIds: new Set<string>(),
     });
     mockOpenProjectFilesPicker.mockResolvedValue(null); // キャンセルで以降を省略
 

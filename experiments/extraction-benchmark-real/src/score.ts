@@ -72,7 +72,7 @@ async function main(): Promise<void> {
     const goldFile = gold.get(run.pdfId);
     if (goldFile !== undefined) perRun.push(computePerRunMetrics({ ...run, costUsd: cost.costUsd }, goldFile));
   }
-  console.log(`費用再計算: usageMetadata が無いため記録値を使用 ${recordedCostCount} 件`);
+  console.log(`費用再計算: 実行日時・使用量の欠落や失敗費用のため記録値を使用 ${recordedCostCount} 件`);
   const textRuns = perRun.filter((run) => run.inputMode === 'text_only');
   const imageRuns = perRun.filter((run) => run.inputMode === 'text_with_page_images');
   const textOnly = aggregate(textRuns);

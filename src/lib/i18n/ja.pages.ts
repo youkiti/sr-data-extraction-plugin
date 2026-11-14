@@ -54,6 +54,8 @@ export const jaPages = {
   'popup.tiabPicking': 'Picker でシートを選んでください…',
   'popup.tiabChecking': '選択したシートを確認しています…',
   'popup.tiabDetected': 'include {n} 件を検出しました。プロジェクト名を確認して作成してください。',
+  'popup.tiabKeyClosed':
+    'このシートは tiab-review のキーがまだ開封されていないため（他のレビュアーの判定が非表示の状態）、採用文献を確認できません。全員の判定が終わったら tiab-review のプロジェクト管理者にキーの開封を依頼し、開封後にもう一度選んでください。',
   'popup.tiabNoIncludes':
     'include の文献が見つかりませんでした。tiab-review 側の判定状況を確認してください。',
   'popup.tiabCreateSubmit': '作成して続行',

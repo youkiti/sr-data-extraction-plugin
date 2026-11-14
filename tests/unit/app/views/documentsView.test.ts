@@ -12,7 +12,7 @@ import {
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { StudyRecord } from '../../../../src/domain/study';
 import type { TiabImportPlan } from '../../../../src/features/documents/tiabReview';
-import { setUiLanguage } from '../../../../src/lib/i18n';
+import { setUiLanguage, t } from '../../../../src/lib/i18n';
 
 test('取り込み後にプレビュー警告とファイル名を表示する', () => {
   const state = makeState();
@@ -1084,6 +1084,7 @@ describe('renderDocumentsView: tiab-review 取り込みカード', () => {
       loading: false,
       error: null,
       accessDenied: false,
+      keyClosed: false,
       plan: null,
       applying: false,
       result: null,
@@ -1120,6 +1121,16 @@ describe('renderDocumentsView: tiab-review 取り込みカード', () => {
       ...overrides,
     };
   }
+
+  test('キー未開封は状態メッセージだけを表示し、採用リストと件数と警告を出さない', () => {
+    const { ctx } = makeCtx();
+    const view = renderDocumentsView(makeState({ tiabImport: tiabState({ keyClosed: true, plan: makePlan() }) }), ctx);
+    expect(view.querySelector('#tiab-key-closed')?.getAttribute('role')).toBe('status');
+    expect(view.querySelector('#tiab-key-closed')?.textContent).toBe(t('documents.tiabKeyClosed'));
+    for (const id of ['tiab-error', 'tiab-summary', 'tiab-or-summary', 'tiab-plan', 'tiab-apply', 'tiab-adjudication-warning', 'tiab-not-candidate-warning']) {
+      expect(view.querySelector('#' + id)).toBeNull();
+    }
+  });
 
   test('閉: 導線ボタンのみ表示し、クリックで onTiabOpen（取り込み中は disabled）', () => {
     const { ctx, callbacks } = makeCtx();
@@ -1227,7 +1238,7 @@ describe('renderDocumentsView: tiab-review 取り込みカード', () => {
       orIncludeCount: 3,
       adjudicationExcluded: [{
         refId: 'excluded', title: '<b>裁定で除外</b>', year: null,
-        authors: null, doi: null, pmid: null, fulltextUrl: null, fulltextSet: null, relatedRefId: null,
+        authors: null, doi: null, pmid: null, fulltextUrl: null, fulltextSet: null, relatedRefId: null, duplicateOf: null,
       }],
     });
     const view = renderDocumentsView(makeState({ tiabImport: tiabState({ plan }) }), ctx);
@@ -1248,7 +1259,7 @@ describe('renderDocumentsView: tiab-review 取り込みカード', () => {
     const { ctx } = makeCtx();
     const empty = makePlan({ items: [], includeCount: 0, adjudicationExcluded: [{
       refId: 'r', title: 'Excluded', year: null, authors: null, doi: null, pmid: null,
-      fulltextUrl: null, fulltextSet: null, relatedRefId: null,
+      fulltextUrl: null, fulltextSet: null, relatedRefId: null, duplicateOf: null,
     }] });
     const view = renderDocumentsView(makeState({ tiabImport: tiabState({ plan: empty }) }), ctx);
     expect(view.querySelector('#tiab-adjudication-warning')).not.toBeNull();
@@ -1262,7 +1273,7 @@ describe('renderDocumentsView: tiab-review 取り込みカード', () => {
     const { ctx } = makeCtx();
     const plan = makePlan({ orIncludeCount: 3, notCandidateExcluded: [{
       refId: 'r', title: '<b>候補外</b>', year: null, authors: null, doi: null, pmid: null,
-      fulltextUrl: null, fulltextSet: null, relatedRefId: null,
+      fulltextUrl: null, fulltextSet: null, relatedRefId: null, duplicateOf: null,
     }] });
     const view = renderDocumentsView(makeState({ tiabImport: tiabState({ plan }) }), ctx);
     expect(view.querySelector('#tiab-not-candidate-warning')?.getAttribute('role')).toBe('alert');

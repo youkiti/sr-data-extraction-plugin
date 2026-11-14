@@ -2,6 +2,8 @@
 
 # sr-data-extraction-plugin
 
+See [Known issues](KNOWN_ISSUES.en.md) for bugs affecting values, decisions, aggregates or Methods, their affected versions, and checks and remedies for your sheet.
+
 > The [Japanese README](README.md) is canonical. This page summarizes it for English-speaking readers. The three sections most likely to drift are "What it does", "Data flow", and "Setup for users"; a pull request that changes any of them in the Japanese README also updates the corresponding section here.
 
 An MIT-licensed, open-source Chrome extension that supports the **data extraction stage** of systematic reviews (SR) and scoping reviews. It is the third tool in a trilogy for SR workflows: [sr-query-builder](https://github.com/youkiti/sr-query-builder-plugin) (search strategy) → [tiab-review](https://github.com/youkiti/tiab-review-plugin) (screening) → this extension (data extraction).
@@ -93,7 +95,7 @@ No build tools are needed. Install from the Chrome Web Store, then connect your 
 
 ## Development
 
-Requires Node.js ≥ 18. These steps are for building from source; ordinary users do not need them.
+Requires Node.js `^22.15.0 || >=24`. These steps are for building from source; ordinary users do not need them.
 
 ```bash
 git clone https://github.com/youkiti/sr-data-extraction-plugin
