@@ -23,6 +23,8 @@ This is the public changelog of this extension. Any change that can alter AI out
   Added `app_version` at the end of Decisions records. Existing decision sheet headers are extended before writing, leaving historical decision rows blank. Extraction runs use the existing ExtractionRuns.extension_version column. Audit CSV now appends the decision version as `app_version` and the extraction version as `run_app_version` (2026-11-13, PR #501).
 - pdfjs-dist を 6.5.438 に更新し、悪意ある PDF を開いたときに任意の JavaScript が実行される脆弱性（GHSA-hq66-cqwq-w95j）を修正しました。あわせて本番依存のセキュリティ更新を取り込みました（2026-11-13・PR #511）。  
   Updated pdfjs-dist to 6.5.438 to fix arbitrary JavaScript execution when opening malicious PDFs (GHSA-hq66-cqwq-w95j), and applied security updates to production dependencies (2026-11-13, PR #511).
+- 値・判定・集計・エクスポート・Methods に影響した既知の不具合を、影響する版・シートでの確認方法・対処とともに日英で公開し、README・ヘルプから案内しました。リリース手順に該当する修正の追記を加えました（2026-11-13・PR #505）。
+  Published known issues affecting values, decisions, aggregates, exports and Methods in Japanese and English, with affected versions, sheet checks and remedies, linked from the READMEs and help. Added issue-list maintenance to the release procedure (2026-11-13, PR #505).
 
 ## v0.34.0（2026-11-13）
 
