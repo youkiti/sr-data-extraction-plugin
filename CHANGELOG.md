@@ -19,6 +19,8 @@ This is the public changelog of this extension. Any change that can alter AI out
   Accessible names of buttons and links now include their visible Japanese and English labels, fixing WCAG 2.5.3 Label in Name mismatches without changing their appearance (2026-11-14, #535).
 - stylelint 18 への更新に伴い、開発に必要な Node.js の要件を `^22.22.2 || ^24.15.0 || >=26` に引き上げました（2026-11-14） #536。
   Raised the Node.js requirement for development to `^22.22.2 || ^24.15.0 || >=26` for the update to stylelint 18 (2026-11-14) #536.
+- mermaid 12 への更新後も検証画面のフロー図プレビューを描画できるよう、同梱する dagre レイアウトを明示しました。数式ラベルは従来どおり未対応の理由を表示します（2026-11-14）。
+  Explicitly selected the bundled dagre layout so verification flowchart previews render after updating to mermaid 12. Math labels continue to display the unsupported reason (2026-11-14).
 - 公開ヘルプのエクスポート節に、audit.csv の `app_version`・`run_app_version` の意味と、空欄・構造的欠損になる場合の説明を日英で追加しました（2026-11-14・#520）。
   Added Japanese and English explanations of the audit.csv `app_version` and `run_app_version` columns, including when they are blank or structurally missing, to the export section of the public help (2026-11-14, #520).
 - tiab-review の Config・LLM_Runs・LLM_Executions の読み込み失敗時はエラーで中断し、採用リストと件数を表示しないようにしました。HTTP 400 のタブ欠落だけは、古いシートとの互換のため空として扱います（2026-11-14）。
