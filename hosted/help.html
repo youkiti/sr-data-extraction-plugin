@@ -2309,6 +2309,12 @@
             </table>
           </div>
           <p>
+            <span class="ja" lang="ja"><code>audit.csv</code> の末尾の <code>app_version</code> は判定をシートへ追記したときのアプリの版（オフライン再送も追記時の版）、<code>run_app_version</code> は添付した AI 根拠の抽出実行時のアプリの版です。
+              古い行や取得不能で版が未記録なら空欄、対応する判定がない未検証行の <code>app_version</code> や、添付した AI 根拠または対応する実行がない行の <code>run_app_version</code> は <code>.</code>（構造的欠損）になります。</span>
+            <span class="en" lang="en">The final columns of <code>audit.csv</code> are <code>app_version</code>, the app version when the decision was appended to the sheet (including when an offline decision is resent), and <code>run_app_version</code>, the app version used for the extraction run of the attached AI evidence.
+              A version is blank if it was not recorded in an older row or could not be obtained; <code>app_version</code> is <code>.</code> (structural missingness) for an unverified row with no decision, as is <code>run_app_version</code> when there is no attached AI evidence or corresponding run.</span>
+          </p>
+          <p>
             <span class="ja" lang="ja">確認途中で考察やミーティングの準備に使うときは、「未確認分を AI の値で補う（仮エクスポート）」をオンにします（既定はオフ）。study_wide / results_long のみ、未確認の文献・セルを AI の値で補います。最終データではありません。人が確認していない AI の値を含みます。wide の各項目の <code>{field}__source</code> 列、long の <code>source</code> 列で <code>human</code>（人の確認済み）/ <code>consensus</code>（裁定済み）/ <code>ai_unverified</code>（未確認）を区別し、ファイル名に <code>_draft</code> が付きます。audit・R セット・Methods 文案・根拠の表には影響しません。最終データを出すときはオフに戻してください。</span>
             <span class="en" lang="en">For discussion or meeting preparation while verification is ongoing, enable “Fill unverified cells with AI values (draft export)” (off by default). Only study_wide and results_long fill unverified studies and cells with AI values. This is not final data: it includes AI values that have not been verified by a human. Each wide field has a <code>{field}__source</code> column; long has a <code>source</code> column: <code>human</code> (verified), <code>consensus</code> (adjudicated), or <code>ai_unverified</code> (unverified). Filenames include <code>_draft</code>. Audit, R sets, Methods text and evidence quotes remain unchanged. Turn this option off when exporting final data.</span>
           </p>
@@ -2923,6 +2929,10 @@
                 when you use a free tier.</span
               >
             </p>
+            <p>
+              <span class="ja" lang="ja">Gemini 3.6 / 3.7 / 3.8 Flash の概算単価は、2027-01-01 0:00 UTC に入力 $0.75 / 出力 $3.75 から入力 $1.50 / 出力 $7.50（100 万トークンあたり）へ切り替わります。キャッシュ入力は入力単価 × 0.10 の導出値です。送信前の見積もりは現在時刻、実績は API 呼び出しの開始時刻で単価を選びます。保存済みの費用は再計算しません。</span>
+              <span class="en" lang="en">Estimated rates for Gemini 3.6 / 3.7 / 3.8 Flash switch from $0.75 input / $3.75 output to $1.50 input / $7.50 output per million tokens at 00:00 UTC on January 1, 2027. Cached input is derived as input × 0.10. Estimates use the current time; actual costs use the API call start time. Stored costs are not recalculated.</span>
+            </p>
           </details>
 
           <details class="faq" id="faq-model">
@@ -2966,13 +2976,13 @@
                 >既定モデル・プロンプトの版数・推論の強さの既定・集計方法など、AI の結果に影響する変更は、版ごとに公開の<a
                   href="https://github.com/youkiti/sr-data-extraction-plugin/blob/master/CHANGELOG.md"
                   >変更履歴（CHANGELOG）</a
-                >に載せています。更新のあとに結果の傾向が変わったと感じたら、まずここを確かめてください。</span
+                >に載せています。更新のあとに結果の傾向が変わったと感じたら、まずここを確かめてください。値・判定・集計・エクスポート・Methods に影響した不具合の版の範囲と、シートでの確認・対処は<a href="https://github.com/youkiti/sr-data-extraction-plugin/blob/master/KNOWN_ISSUES.md">既知の不具合</a>にまとめています。</span
               >
               <span class="en" lang="en"
                 >Every change that affects AI output, such as the default model, prompt versions, the default reasoning effort or counting methods, is listed version by version in the public <a
                   href="https://github.com/youkiti/sr-data-extraction-plugin/blob/master/CHANGELOG.md"
                   >CHANGELOG</a
-                >. If results seem to shift after an update, check it first.</span
+                >. If results seem to shift after an update, check it first. For bugs affecting values, decisions, aggregates, exports or Methods, see <a href="https://github.com/youkiti/sr-data-extraction-plugin/blob/master/KNOWN_ISSUES.en.md">Known issues</a> for affected versions, sheet checks and remedies.</span
               >
             </p>
           </details>

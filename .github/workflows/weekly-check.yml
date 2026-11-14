@@ -1,0 +1,69 @@
+# 時間経過で壊れうるモデル ID・本番依存・操作ツアーを独立して点検する。
+name: weekly-check
+
+on:
+  schedule:
+    # UTC 日曜 22:17、日本時間 月曜 07:17
+    - cron: '17 22 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-check
+  cancel-in-progress: false
+
+jobs:
+  models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: AI モデル ID の生存確認
+        run: npm run check:models
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: 本番依存の脆弱性（high 以上で失敗）
+        run: npm audit --omit=dev --audit-level=high
+
+  tours:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run video:fixtures
+      - run: npm run build:demo
+      - name: 操作ツアーの通し検証
+        env:
+          LANGUAGE: ja
+        run: xvfb-run -a npm run check:tours
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: tour-screenshots
+          path: .tmp/guide-tour-check/*.png
+          if-no-files-found: warn
+          retention-days: 14

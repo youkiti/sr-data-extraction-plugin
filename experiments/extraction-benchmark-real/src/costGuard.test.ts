@@ -211,6 +211,7 @@ test('billedCostUsd: 両単価表に無いモデルは費用不明', () => {
 });
 
 const costRun: RecordedCostRun = {
+  executedAt: '2026-10-04T00:00:00Z',
   runId: 'model__pdf__r1', model: 'gemini-3.5-flash', tokensIn: 100_000,
   tokensOut: 30_000, thoughtsTokens: 20_000, cachedTokensIn: 50_000, costUsd: 0.5325,
   rawResponse: { usageMetadata: { candidatesTokenCount: 10_000, thoughtsTokenCount: 20_000 } },
@@ -229,6 +230,44 @@ test('採点費用: 使用量があれば再計算し、無い場合だけ記録
     { costUsd: costRun.costUsd, usedRecordedCost: true });
   assert.deepEqual(recalculateRunCost({ ...costRun, model: 'no-such-model-xyz' }),
     { costUsd: null, usedRecordedCost: false });
+});
+
+test('採点費用: 改定直前の実行は旧単価で計算する', (t) => {
+  t.mock.method(Date, 'now', () => Date.parse('2027-02-01T00:00:00Z'));
+  for (const model of ['gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash']) {
+    const run = { ...costRun, model, executedAt: '2026-12-31T23:59:59.999Z' };
+    assert.deepEqual(recalculateRunCost(run), { costUsd: 0.15375, usedRecordedCost: false });
+  }
+});
+
+test('採点費用: 改定開始時刻以降の実行は新単価で計算する', () => {
+  for (const model of ['gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash']) {
+    const run = { ...costRun, model, executedAt: '2027-01-01T00:00:00Z' };
+    assert.deepEqual(recalculateRunCost(run), { costUsd: 0.3075, usedRecordedCost: false });
+  }
+});
+
+test('採点費用: 実行日時の欠落・不正は記録費用を維持する', (t) => {
+  t.mock.method(Date, 'now', () => Date.parse('2027-02-01T00:00:00Z'));
+  for (const executedAt of [undefined, '', 'invalid']) {
+    const run = { ...costRun, model: 'gemini-3.8-flash', executedAt };
+    assert.deepEqual(recalculateRunCost(run), { costUsd: run.costUsd, usedRecordedCost: true });
+    const entry = { ...costEntry, costUsd: 0.5 };
+    assert.deepEqual(recalculateLedger([entry], new Map([[run.runId, run]])), {
+      recalculatedCount: 0, recordedCount: 1, recordedTotalUsd: 0.5, totalUsd: 0.5,
+    });
+  }
+});
+
+test('billedCostUsd: 日時を省略した新しい実行は現在の単価で見積もる', (t) => {
+  for (const [now, costUsd] of [
+    ['2026-12-31T23:59:59.999Z', 0.15375],
+    ['2027-01-01T00:00:00Z', 0.3075],
+  ] as const) {
+    t.mock.method(Date, 'now', () => Date.parse(now));
+    assert.equal(billedCostUsd({ ...costRun, model: 'gemini-3.8-flash',
+      cachedTokensIn: 50_000, rawResponse: costRun.rawResponse }).costUsd, costUsd);
+  }
 });
 
 test('レジャ再計算: トークン値が一致する古い行だけ数え直し、上限判定に使う', () => {
