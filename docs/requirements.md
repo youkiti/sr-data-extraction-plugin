@@ -94,7 +94,7 @@ tiab-review-plugin / sr-query-builder-plugin の構成に準拠。
 | LLM（MVP） | Gemini API（認証は `x-goog-api-key` ヘッダーで送り、URL に API キーを含めない。工場出荷の既定モデル = `gemini-3.8-flash`。実データ抽出ベンチマークで確定 ※Q8。tiab-review の固定バージョン ID 方針を踏襲） |
 | LLM（MVP 追加） | OpenRouter（OpenAI 互換 API。`OpenRouterProvider` を sr-query-builder から移植・2026-07-04）+ 利用者指定の OpenAI 互換 Chat Completions API（Issue #27。HTTPS を原則とし、HTTP は `localhost` / `127.0.0.1` / `[::1]` のみ許可。非標準ポート、loopback の認証なし接続、構造化出力の互換性フォールバックに対応）。モデルセレクタの「その他（直接入力）」で任意モデル ID を指定可。カスタムモデルの一覧管理 UI は P1 |
 | LLM（接続方式・issue #127） | 上記に加え **Anthropic ネイティブ**（Messages API。`AnthropicProvider`。固定エンドポイント `https://api.anthropic.com/v1/messages` + `x-api-key` / `anthropic-version` 認証。PR1 で provider 層のみ実装・PR2 で Options 配線）+ **Azure OpenAI**（PR3 で実装済み。新規 provider クラスは作らず `OpenAICompatibleProvider` を `api-key` 認証で流用。利用者が入力するクエリ文字列付き完全 URL + デプロイメント名をモデル欄に入力）。§10 Q11 のとおり、これらに限って「独自認証は投機実装しない」の不採用宣言を明示的に覆す（実需 — 公開ユーザーが持っているキーの 2 大勢力のため。プロバイダごとに**固定の**認証方式を実装し、利用者が自由にヘッダーを追加できる汎用の任意ヘッダー入力 UI は引き続き不採用） |
-| Node.js | ≥ 18 |
+| Node.js | `^22.15.0 \|\| >=24` |
 
 ### 2.1 OAuth スコープ
 
