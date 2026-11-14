@@ -154,7 +154,7 @@ src/
 │   │                              #   GitHub Pages へデプロイ）+ externally_connectable メッセージングで実装
 │   │                              #   【決定 2026-07-02。トークンは URL に載せず ready 応答で受け渡す】
 │   ├── pdf/
-│   │   ├── loadPdf.ts             # pdfjs-dist 初期化（worker は同梱、CSP 準拠。バージョンは 6.1.200 固定。古い Chrome でも動くよう legacy 版を使う。§3.1）
+│   │   ├── loadPdf.ts             # pdfjs-dist 初期化（worker は同梱、CSP 準拠。バージョンは 6.5.438 固定。古い Chrome でも動くよう legacy 版を使う。§3.1）
 │   │   └── textLayer.ts           # ページ別テキスト + span 座標の取得（anchor-spike の抽出ロジックを正式化）
 │   ├── docx/
 │   │   └── extractDocxText.ts     # mammoth.extractRawText のラッパ（features/protocol の DocxExtractor 実装）
@@ -270,6 +270,7 @@ anchorQuote() ──文字範囲──▶ highlightMap() ──span 座標──
 - `mammoth` / `pdfjs-dist` 本体は dynamic import で `dist/chunks/mammoth.js` / `dist/chunks/pdfjs.js` へ分割し、docx テキスト抽出 / PDF ロードの初回呼び出し時に取得する。ロード中の Promise は共有し、取得失敗時には次回呼び出しで再試行する。
 - mermaid はフロー図に必要なチャンクだけを出力する。動的 import の許可判定は `tools/bundle/mermaidFlowchartOnly.js` に置き、webpack の全ビルドで適用する。
 - `pdfjs-dist` の **worker（`pdf.worker.min.mjs`）は `copy-webpack-plugin` で `dist/` へ同梱**（CDN 参照不可、MV3 CSP 準拠）。`GlobalWorkerOptions.workerSrc` は `chrome.runtime.getURL()` で解決
+- pdfjs-dist 6.5.438 でも、文書の解放は `PDFDocumentProxy.loadingTask.destroy()`、ページ描画は `render({ canvas, viewport })` を使う。任意の描画用 worker（`pdf.renderer.*`）は `GlobalWorkerOptions.rendererSrc` を設定した場合に使われるため、設定していない本拡張では追加同梱しない。
 - **pdfjs-dist は本番も legacy 版を使う**（main は `webpack.config.js` の `resolve.alias`（`pdfjs-dist$` を `legacy/build/pdf.mjs` へ）、worker は `legacy/build/pdf.worker.min.mjs` を同梱。出力名は `pdf.worker.min.mjs` のまま）。通常版は `Uint8Array.prototype.toHex`（Chrome 140 で追加）・`Map.prototype.getOrInsertComputed`・`Math.sumPrecise` などの新しい組み込みを前提にし、PDF の指紋を作る処理で `toHex()` を必ず呼ぶため、古い Chrome ではどの PDF も「n.toHex is not a function」で取り込みに失敗する。legacy 版はその代わりの実装を同梱する。main と worker は必ず同じ系統（両方 legacy）にそろえる。cmaps・wasm・standard_fonts・iccs は legacy 版が持たず通常版と共通なので、コピー元は変えない。回帰は `tests/e2e/pdf-ccitt.spec.ts` が、これらの組み込みを消した状態で描画できることで検知する
 - **既定 CMap（`cmaps/*.bcmap`）も同様に `dist/cmaps/` へ同梱**し、`getDocument` の `cMapUrl` に `chrome.runtime.getURL('cmaps/')` を渡す（issue #95: 和文 PDF の CID フォントは既定 CMap がないとテキスト抽出がほぼ空になる）
 - **画像デコーダの wasm（`dist/wasm/`）・標準 14 フォント（`dist/standard_fonts/`）・既定 ICC プロファイル（`dist/iccs/`）も同梱**し、`getDocument` にそれぞれ `wasmUrl` / `standardFontDataUrl` / `iccUrl` を渡す。pdfjs-dist 6.x は CCITTFax/JBIG2・JPEG2000・ICC のデコーダが wasm 実装になっており、`wasmUrl` 未指定だと `Jbig2Error` 等で初期化に失敗し、スキャン PDF の該当ページ（CCITTFaxDecode 等）が白紙になる（テキスト層は無事なためハイライトだけ出る症状）。`quickjs-eval.*`（PDF 内 JavaScript の隔離実行用）は本拡張が使わないため同梱から除外する。manifest には `content_security_policy.extension_pages` に `'wasm-unsafe-eval'` を追加している。この CSP による wasm の実行許可を前提として、画像デコーダの JavaScript 版フォールバック（`*_nowasm_fallback.js`）は同梱しない。
