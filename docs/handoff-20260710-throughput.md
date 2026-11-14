@@ -97,7 +97,7 @@ Tier 3（RPM 1800 → 間隔 33ms）ではスロットル間隔は無視でき�
 - **`LLMApiLog`**（`src/domain/llmApiLog.ts`）: 1 呼び出し = 1 行。`latencyMs` / `tokensIn` / `tokensOut` / `timestamp` / `error` / `model` / `purpose`。リトライの各試行も `withLogging`（`apiLogger.ts`）が別行で残す。→ レイテンシ分布・429 率・TPM 見積りはここから。
 - **`logs/llm/{log_id}.json`**（Drive）: リクエスト/レスポンスのフル payload。429 の本文（`quotaMetric` / `retryDelay`）を確認するならこれ。
 - **`ExtractionRuns`**: `started_at` / `finished_at`（2 行プロトコル）/ `tokens_in` / `tokens_out` / `status`。run 全体の所要時間・完了率。
-- 集計は Sheets を CSV で落として手元スクリプトで叩くのが早い（実験系は `experiments/` に置く運用。gitignore 済みの実データは別建て。CLAUDE.md 参照）。
+- 集計は Sheets を CSV で落として手元スクリプトで叩くのが早い（実験系は `experiments/` に置く運用。gitignore 済みの実データは別建て。AGENTS.md 参照）。
 
 ## 6. 触るべきファイル早見
 

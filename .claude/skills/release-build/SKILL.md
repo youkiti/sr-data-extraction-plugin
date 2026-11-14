@@ -19,7 +19,7 @@ npm run release -- minor    # 機能追加を含む ／ patch = 修正のみ ／
 
 [`tools/release/release.ps1`](../../../tools/release/release.ps1) が **前提チェック → version バンプ（3 ファイル）+ `docs/project-facts.md` 再生成・`hosted/help.html` 対象バージョン更新・`CHANGELOG.md` の「未リリース」を新しい版の見出しへ切り替え（3 ファイル）→ commit → `npm run build` → `pack.ps1`（key 除去・zip 化・検証）→ origin/master へ push** まで通す。所要 1 分弱。**どこかで NG が出れば非 0 終了する**ので、壊れた提出物も、検証を飛ばした push も発生しない。人間が判断するのは「どのバンプ種別か」と、出来た zip を Store へ出す（手順 3）ことだけ。
 
-- **なぜ PR を経由しないか**: 差分が version 3 ファイルと現在値・ヘルプ対象版・CHANGELOG の文書 3 ファイルで、直前の master が CI green であることをスクリプトが `gh run list` で機械チェックするため。**CLAUDE.md 作業原則 1（master で直接作業しない）の明示的な例外**であり、version バンプ commit にのみ適用する。機能変更を混ぜようとしても作業ツリーの汚れチェックで止まる。
+- **なぜ PR を経由しないか**: 差分が version 3 ファイルと現在値・ヘルプ対象版・CHANGELOG の文書 3 ファイルで、直前の master が CI green であることをスクリプトが `gh run list` で機械チェックするため。**AGENTS.md 作業原則 1（master で直接作業しない）の明示的な例外**であり、version バンプ commit にのみ適用する。機能変更を混ぜようとしても作業ツリーの汚れチェックで止まる。
 - 主なオプション（`npm run release -- patch -NoPush` のように渡す）:
   - `-Submit` — push 後にストアへ審査提出（`-NoPush`・`-IncludeKeyPem` と併用不可。バンプ前の認証・提出可否チェックは `-Force` でも解除不可）
   - `-NoPush` — push せずローカル commit + zip まで

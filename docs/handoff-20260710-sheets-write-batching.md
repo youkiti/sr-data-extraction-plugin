@@ -151,7 +151,7 @@
 
 ## 6. 実装の進め方（推奨手順）
 
-> 作業原則（[CLAUDE.md](../CLAUDE.md) / tiab-review-plugin/AGENTS.md）: **master で直接作業しない**・**日本語でコミット/コメント**・**jest カバレッジ 100% 必須**・**テスト後に `npm run dev` で webpack 確認**・**UI/ルーティングに触れたら `npm run test:e2e`**。
+> 作業原則（[AGENTS.md](../AGENTS.md) / tiab-review-plugin/AGENTS.md）: **master で直接作業しない**・**日本語でコミット/コメント**・**jest カバレッジ 100% 必須**・**テスト後に `npm run dev` で webpack 確認**・**UI/ルーティングに触れたら `npm run test:e2e`**。
 
 1. **ブランチを切る**: `git switch -c feat/sheets-write-batching`。
 2. **② から先に**（小さくて独立・すぐ効く）: `googleFetch` にリトライを追加。

@@ -37,4 +37,6 @@ export interface Decision {
   seenAiValue?: string | null;
   consensusSource?: ConsensusSource | null;
   adoptedAiAccept?: AdoptedAiAccept | null;
+  /** シートへ追記したアプリの版。列導入前の行・取得不能は null。 */
+  appVersion?: string | null;
 }
