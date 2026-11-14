@@ -146,3 +146,78 @@ test('取得失敗は秘密をログに出さず報告し、次の provider も�
   assert.equal(logs.join('\n').includes('secret-'), false);
   assert.equal(await checkModels(collectModelIds(sources), env, async () => { throw null; }, () => {}), 1);
 });
+
+test('Anthropic の一覧にない別名だけを個別取得し、200 なら正式 ID を報告して成功する', async () => {
+  const alias = 'claude-haiku-4-5';
+  const canonical = 'claude-haiku-4-5-20251001';
+  const models = [canonical, alias, 'claude-alias/with?reserved#文字'].map(id => ({
+    id, provider: 'anthropic', usedBy: ['MODEL_PRICING'],
+  }));
+  const logs = [];
+  const urls = [];
+  assert.equal(await checkModels(models, { ANTHROPIC_API_KEY: 'fixture-key' }, async (url, init) => {
+    urls.push(url.href);
+    assert.deepEqual(init.headers, { 'x-api-key': 'fixture-key', 'anthropic-version': '2023-06-01' });
+    assert.ok(init.signal);
+    assert.equal(url.href.includes('fixture-key'), false);
+    if (url.pathname === '/v1/models') {
+      return response({ data: [{ id: canonical }] });
+    }
+    return { status: 200, json: async () => ({ id: canonical }) };
+  }, line => logs.push(line)), 0);
+  assert.deepEqual(urls, [
+    'https://api.anthropic.com/v1/models',
+    `https://api.anthropic.com/v1/models/${alias}`,
+    `https://api.anthropic.com/v1/models/${encodeURIComponent(models[2].id)}`,
+  ]);
+  assert.ok(logs[0].includes(`一覧に存在: ${canonical}`));
+  assert.ok(logs[1].includes(`${alias} → ${canonical} (MODEL_PRICING)`));
+  assert.equal(logs.join('\n').includes('fixture-key'), false);
+});
+
+test('Anthropic の個別取得が 404 なら欠落として失敗する', async () => {
+  const logs = [];
+  let calls = 0;
+  const models = [{ id: 'claude-missing', provider: 'anthropic', usedBy: ['MODEL_PRICING'] }];
+  assert.equal(await checkModels(models, { ANTHROPIC_API_KEY: 'fixture-key' }, async url => {
+    calls += 1;
+    if (url.pathname === '/v1/models') {
+      return response({ data: [] });
+    }
+    return { status: 404 };
+  }, line => logs.push(line)), 1);
+  assert.equal(calls, 2);
+  assert.deepEqual(logs, ['anthropic: 見つからない: claude-missing (MODEL_PRICING)']);
+});
+
+test('Anthropic の個別取得が 500・429・通信失敗・不正応答なら欠落とせず確認不能で失敗する', async () => {
+  const models = [
+    { id: 'claude-alias', provider: 'anthropic', usedBy: ['MODEL_PRICING'] },
+    { id: 'org/priced', provider: 'openrouter', usedBy: ['MODEL_PRICING'] },
+  ];
+  for (const retrieve of [
+    async () => ({ status: 500 }),
+    async () => ({ status: 429 }),
+    async () => { throw new Error('fixture-key'); },
+    async () => { throw null; },
+    async () => ({ status: 200, json: async () => { throw new Error('fixture-key'); } }),
+    async () => ({ status: 200, json: async () => null }),
+    async () => ({ status: 200, json: async () => ({ id: '' }) }),
+  ]) {
+    const logs = [];
+    assert.equal(await checkModels(models, { ANTHROPIC_API_KEY: 'fixture-key', OPENROUTER_API_KEY: 'router-key' }, async url => {
+      if (url.hostname === 'openrouter.ai') {
+        return response({ data: [{ id: 'org/priced' }] });
+      }
+      if (url.pathname === '/v1/models') {
+        return response({ data: [] });
+      }
+      return retrieve();
+    }, line => logs.push(line)), 1);
+    assert.ok(logs[0].includes('確認できなかった: claude-alias (MODEL_PRICING)'));
+    assert.ok(logs[1].includes('openrouter: 一覧に存在'));
+    assert.equal(logs.join('\n').includes('見つからない'), false);
+    assert.equal(logs.join('\n').includes('fixture-key'), false);
+    assert.equal(logs.join('\n').includes('router-key'), false);
+  }
+});

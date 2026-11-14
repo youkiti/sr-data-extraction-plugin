@@ -138,9 +138,37 @@ export async function checkModels(models, env, fetchImpl = globalThis.fetch, log
     }
     const missing = new Set(compareModelIds(expected.map(model => model.id), available));
     for (const model of expected) {
+      if (provider === 'anthropic' && missing.has(model.id)) {
+        try {
+          const url = new URL(`https://api.anthropic.com/v1/models/${encodeURIComponent(model.id)}`);
+          const response = await fetchImpl(url, {
+            headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+            signal: AbortSignal.timeout(15000),
+          });
+          if (response.status !== 404) {
+            if (response.status !== 200) {
+              throw new Error(`HTTP ${response.status}`);
+            }
+            const body = await response.json();
+            if (typeof body?.id !== 'string' || !body.id) {
+              throw new Error('モデル ID の形式が不正です');
+            }
+            log(`${provider}: 別名を解決: ${model.id} → ${body.id} (${model.usedBy.join(', ')})`);
+            continue;
+          }
+        } catch (error) {
+          // 通信例外・応答本文の詳細には鍵が含まれうるため出さない。
+          const detail = /^HTTP \d{3}$/.test(error?.message) ? error.message : '通信・応答形式を確認してください';
+          log(`${provider}: 確認できなかった: ${model.id} (${model.usedBy.join(', ')})（${detail}）`);
+          failed = true;
+          continue;
+        }
+      }
       log(`${provider}: ${missing.has(model.id) ? '見つからない' : '一覧に存在'}: ${model.id} (${model.usedBy.join(', ')})`);
+      if (missing.has(model.id)) {
+        failed = true;
+      }
     }
-    if (missing.size) failed = true;
   }
   return failed ? 1 : 0;
 }

@@ -167,14 +167,14 @@ Actions の `weekly-check` → `Run workflow` から手動実行し、次の独�
 
 | ジョブ | 確認する内容 | 失敗時の対処 |
 |---|---|---|
-| `models` | `npm ci` 後、`npm run check:models` で工場出荷の既定モデル、ヘルプ相談の固定モデル、単価表の ID を収集し、Gemini・Anthropic・OpenRouter のモデル一覧と完全一致で照合する。Gemini と Anthropic は全ページを辿る。推論リクエストは送らない | ログと Step summary のモデル ID・出典を確認する。一覧にない場合は公式の提供終了案内や別名の扱い、キーのアクセス権を確認してから、該当定数・単価表を修正する。提供終了とは即断しない。HTTP 401/403 は secret の権限・有効期限、429/5xx・通信失敗はサービス状況を確認し再実行する。応答形式・ページ送りの異常はスクリプトと fixture を更新する |
+| `models` | `npm ci` 後、`npm run check:models` で工場出荷の既定モデル、ヘルプ相談の固定モデル、単価表の ID を収集し、Gemini・Anthropic・OpenRouter のモデル一覧と完全一致で照合する。Gemini と Anthropic は全ページを辿る。Anthropic で一覧にない ID だけ、ID を `encodeURIComponent` で符号化して `GET /v1/models/{id}` で確認する。200 は別名 → 正式 ID をログに出して存在扱い、404 は欠落、それ以外の失敗は確認不能とする。推論リクエストは送らない | ログと Step summary のモデル ID・出典を確認する。一覧にない場合は公式の提供終了案内や別名の扱い、キーのアクセス権を確認してから、該当定数・単価表を修正する。提供終了とは即断しない。HTTP 401/403 は secret の権限・有効期限、429/5xx・通信失敗はサービス状況を確認し再実行する。応答形式・ページ送りの異常はスクリプトと fixture を更新する |
 | `audit` | lockfile を使って `npm audit --omit=dev --audit-level=high`。本番依存の high / critical で失敗する | audit の依存経路を確認し、直接依存または親パッケージを安全な版へ更新して通常の CI を通す。レジストリへの接続失敗もジョブ失敗になるためログで区別する |
 | `tours` | `npm ci`、Chromium と OS 依存の導入、`npm run video:fixtures`、`npm run build:demo` の後、`LANGUAGE=ja` の Xvfb 上で `npm run check:tours` を実行する | 準備段階の失敗なら依存・デモ生成を確認する。ツアーの失敗ならログのシナリオ・手順・待ち条件と `tour-screenshots` artifact（14 日保存）を確認し、対象セレクタ・ツアー定義・画面の動作を修正する |
 
 モデル確認に使う repository secrets は `GEMINI_API_KEY`・`ANTHROPIC_API_KEY`・`OPENROUTER_API_KEY`。
 各キーが未設定または空なら、その provider は「スキップ」と未確認件数をログと Step summary に残す。
 全キー未設定でもモデル確認ジョブは成功するが、生存確認済みにはならない。手動実行時もスキップの有無を確認する。
-キーがある provider のモデル欠落または一覧取得失敗は終了コード 1。他の provider の確認は続ける。
+キーがある provider のモデル欠落・一覧取得失敗・Anthropic の個別取得の確認不能は終了コード 1。確認不能を欠落とは数えない。他のモデル・provider の確認は続ける。
 OpenRouter もキーがある場合だけ取得する。Azure や利用者の私設 API は組み込み ID の対象に含めない。
 キーはヘッダーで送り、応答本文と通信例外の詳細は出力しない。
 
