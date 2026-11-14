@@ -40,7 +40,11 @@ describe('parseMermaid', () => {
     await expect(wrapper.parseMermaid('flowchart TD\n  A --> B')).resolves.toEqual({ valid: true });
     await expect(wrapper.parseMermaid('flowchart TD\n  B --> C')).resolves.toEqual({ valid: true });
     expect(mockInitialize).toHaveBeenCalledTimes(1);
-    expect(mockInitialize).toHaveBeenCalledWith({ startOnLoad: false, securityLevel: 'strict' });
+    expect(mockInitialize).toHaveBeenCalledWith({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      layout: 'dagre',
+    });
     expect(mockParse).toHaveBeenCalledWith('flowchart TD\n  A --> B');
   });
 
@@ -79,6 +83,23 @@ describe('parseMermaid', () => {
 });
 
 describe('renderMermaid', () => {
+  test.each([
+    'flowchart TD\n  A["$$n=100$$"] --> B',
+    'graph TD\n  A["$$n=100$$"] --> B',
+    '---\ntitle: Test\n---\nflowchart TD\n  A["$$n=100$$"] --> B',
+  ])('数式ラベルは描画せず未対応の理由を返す: %s', async (source) => {
+    const wrapper = await loadWrapper();
+    const container = document.createElement('div');
+    container.textContent = '描画中…';
+    await expect(wrapper.renderMermaid(source, container)).resolves.toEqual({
+      ok: false,
+      error: '数式（$$…$$）を含むラベルには対応していません',
+    });
+    expect(container.textContent).toBe('描画中…');
+    expect(mockInitialize).not.toHaveBeenCalled();
+    expect(mockRender).not.toHaveBeenCalled();
+  });
+
   test('成功: 一意 id で描画し、SVG を container へ差し込む', async () => {
     const wrapper = await loadWrapper();
     mockRender.mockResolvedValue({ svg: '<svg data-kind="flow"><g></g></svg>' });

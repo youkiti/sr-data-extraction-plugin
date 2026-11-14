@@ -30,7 +30,8 @@ let mermaidLoad: Promise<MermaidApi> | null = null;
 function loadMermaid(): Promise<MermaidApi> {
   if (mermaidLoad === null) {
     mermaidLoad = import(/* webpackChunkName: "mermaid" */ 'mermaid').then((module) => {
-      module.default.initialize({ startOnLoad: false, securityLevel: 'strict' });
+      // mermaid 12 の既定は elk だが、同梱しているレイアウトは dagre のみ。
+      module.default.initialize({ startOnLoad: false, securityLevel: 'strict', layout: 'dagre' });
       return module.default;
     });
     mermaidLoad.catch(() => {
@@ -89,6 +90,10 @@ export async function renderMermaid(
   source: string,
   container: HTMLElement,
 ): Promise<MermaidRenderResult> {
+  // 数式の未対応表示を、KaTeX の読み込み失敗や描画処理の実装に依存させない。
+  if (/\$\$.*?\$\$/.test(source)) {
+    return { ok: false, error: t('verify.mermaidUnsupportedMath') };
+  }
   try {
     const mermaid = await loadMermaid();
     renderSeq += 1;

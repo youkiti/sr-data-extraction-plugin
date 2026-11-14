@@ -15,6 +15,8 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ### その他の変更 / Other changes
 
+- mermaid 12 への更新後も検証画面のフロー図プレビューを描画できるよう、同梱する dagre レイアウトを明示しました。数式ラベルは従来どおり未対応の理由を表示します（2026-11-14）。
+  Explicitly selected the bundled dagre layout so verification flowchart previews render after updating to mermaid 12. Math labels continue to display the unsupported reason (2026-11-14).
 - 公開ヘルプのエクスポート節に、audit.csv の `app_version`・`run_app_version` の意味と、空欄・構造的欠損になる場合の説明を日英で追加しました（2026-11-14・#520）。
   Added Japanese and English explanations of the audit.csv `app_version` and `run_app_version` columns, including when they are blank or structurally missing, to the export section of the public help (2026-11-14, #520).
 - tiab-review の Config・LLM_Runs・LLM_Executions の読み込み失敗時はエラーで中断し、採用リストと件数を表示しないようにしました。HTTP 400 のタブ欠落だけは、古いシートとの互換のため空として扱います（2026-11-14）。
