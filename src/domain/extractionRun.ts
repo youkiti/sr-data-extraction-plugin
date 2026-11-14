@@ -61,9 +61,9 @@ export type RunWarning = ArmCompletenessRunWarning | EvidenceRowCountRunWarning 
 
 /**
  * audit.csv の Evidence 結合（buildAuditCsv）と runRepository.readRunAuditInfos が共有する
- * run の最小情報。schema_version の突合と started_at の新旧比較にだけ使う
+ * run の最小情報。スキーマ版の突合・実行時刻の比較・アプリの版の出力に使う
  */
-export type RunAuditInfo = Pick<ExtractionRun, 'runId' | 'schemaVersion' | 'startedAt'>;
+export type RunAuditInfo = Pick<ExtractionRun, 'runId' | 'schemaVersion' | 'startedAt' | 'extensionVersion'>;
 
 export interface ExtractionRun {
   runId: string;

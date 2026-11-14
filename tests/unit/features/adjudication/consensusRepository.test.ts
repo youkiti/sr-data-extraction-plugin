@@ -118,7 +118,7 @@ describe('applyConsensusWrites', () => {
     expect(decisionsPosts).toHaveLength(1);
     const decisionsBody = JSON.parse(String(decisionsPosts[0]?.[1].body)) as { values: unknown[][] };
     expect(decisionsBody.values).toEqual([
-      ['t-now', 'judge@example.com', 'study-1', 'f-1', '-', 'consensus', 'consensus', 1, 'accept', '120', '', '', '', 'bulk_match', 'none'],
+      ['t-now', 'judge@example.com', 'study-1', 'f-1', '-', 'consensus', 'consensus', 1, 'accept', '120', '', '', '', 'bulk_match', 'none', '0.0.0-test'],
     ]);
   });
 
