@@ -2796,7 +2796,7 @@ describe('createVerificationPanel: フォーカスモード（issue #38）', () 
       expect(matrixButtons(panel.root)).toHaveLength(4);
       expect(detailValue(panel.root)).toBe('5.2');
       const focused = panel.root.querySelector('.focus-card__matrix-btn--focused');
-      expect(focused?.getAttribute('aria-label')).toBe('平均値 × 介入群: 5.2');
+      expect(focused?.getAttribute('aria-label')).toBe('5.2未検証: 平均値 × 介入群: 5.2');
       panel.dispose();
     });
 
@@ -2806,7 +2806,7 @@ describe('createVerificationPanel: フォーカスモード（issue #38）', () 
       expect(detailValue(panel.root)).toBe('1.0');
       expect(
         panel.root.querySelector('.focus-card__matrix-btn--focused')?.getAttribute('aria-label'),
-      ).toBe('SD × 対照群: 1.0');
+      ).toBe('1.0未検証: SD × 対照群: 1.0');
       panel.dispose();
     });
 

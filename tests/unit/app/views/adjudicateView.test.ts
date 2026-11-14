@@ -1022,7 +1022,7 @@ describe('renderAdjudicateView: 裁定中（working）', () => {
     );
     const button = root.querySelector<HTMLButtonElement>('.adjudicate__evidence-button');
     expect(button).not.toBeNull();
-    expect(button?.getAttribute('aria-label')).toBe('総サンプルサイズ の AI 根拠を PDF で表示');
+    expect(button?.getAttribute('aria-label')).toBe('根拠を表示: 総サンプルサイズ の AI 根拠を PDF で表示');
   });
 
   test('AI 根拠（Evidence）が無いセルには「根拠を表示」ボタンを出さない（human_independent 由来等）', () => {
@@ -1336,8 +1336,9 @@ describe('enum 項目の第 3 の値 UI（issue #254）', () => {
     expect(root.textContent).toContain('low | some_concerns');
     expect(root.querySelectorAll('[aria-pressed="true"]')).toHaveLength(0);
     expect(root.querySelector('.verify__edit-cancel')).toBeNull();
-    root.querySelector<HTMLButtonElement>('.verify__enum-chip[aria-label="low"]')!.click();
-    root.querySelector<HTMLButtonElement>('.verify__enum-chip[aria-label="high"]')!.click();
+    const chips = [...root.querySelectorAll<HTMLButtonElement>('.verify__enum-chip')];
+    chips.find((chip) => chip.querySelector('.verify__enum-chip-value')?.textContent === 'low')!.click();
+    chips.find((chip) => chip.querySelector('.verify__enum-chip-value')?.textContent === 'high')!.click();
     expect(callbacks.onCustomValue).not.toHaveBeenCalled();
     root.querySelector<HTMLButtonElement>('.verify__edit-confirm')!.click();
     expect(callbacks.onCustomValue).toHaveBeenCalledWith(cell.cellKey, 'low|high');
