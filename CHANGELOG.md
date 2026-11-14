@@ -25,6 +25,10 @@ This is the public changelog of this extension. Any change that can alter AI out
   Updated pdfjs-dist to 6.5.438 to fix arbitrary JavaScript execution when opening malicious PDFs (GHSA-hq66-cqwq-w95j), and applied security updates to production dependencies (2026-11-13, PR #511).
 - 値・判定・集計・エクスポート・Methods に影響した既知の不具合を、影響する版・シートでの確認方法・対処とともに日英で公開し、README・ヘルプから案内しました。リリース手順に該当する修正の追記を加えました（2026-11-13・PR #505）。
   Published known issues affecting values, decisions, aggregates, exports and Methods in Japanese and English, with affected versions, sheet checks and remedies, linked from the READMEs and help. Added issue-list maintenance to the release procedure (2026-11-13, PR #505).
+### AI の結果に影響する変更 / Changes that affect AI output
+
+- Gemini 3.6 / 3.7 / 3.8 Flash の費用を日時で切り替えるようにしました。2027-01-01T00:00:00Z 以降は入力 $1.50 / 出力 $7.50（100 万トークンあたり）、それ以前は $0.75 / $3.75 を使います。キャッシュ入力は入力単価 × 0.10 の導出値（$0.075 / $0.15）です。事前見積もりは現在時刻、実績は API 呼び出しの開始時刻を使い、保存済みの費用は変更しません（2026-11-13・PR #500）。
+  Costs for Gemini 3.6 / 3.7 / 3.8 Flash now follow the effective date: $1.50 input / $7.50 output per million tokens from 2027-01-01T00:00:00Z, and $0.75 / $3.75 before then. Cached input is derived as input × 0.10 ($0.075 / $0.15). Estimates use the current time and actual costs use the API call start time; stored costs remain unchanged (2026-11-13, PR #500).
 
 ## v0.34.0（2026-11-13）
 

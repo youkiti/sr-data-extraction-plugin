@@ -88,6 +88,6 @@ export function estimateAskPaperCost(input: {
   );
   return {
     tokensIn,
-    costUsd: estimateCostUsd(input.model, tokensIn, ASK_PAPER_ESTIMATED_OUTPUT_TOKENS, null, input.fallbackPricing),
+    costUsd: estimateCostUsd(input.model, tokensIn, ASK_PAPER_ESTIMATED_OUTPUT_TOKENS, null, input.fallbackPricing, Date.now()),
   };
 }

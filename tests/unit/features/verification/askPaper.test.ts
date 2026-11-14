@@ -120,3 +120,17 @@ test.each([null, 'owner', 'reviewer_with_ai', 'adjudicator', 'reviewer_independe
     );
   },
 );
+
+test('質問前の見積もりは現在日時で Gemini Flash の単価を選ぶ', () => {
+  jest.useFakeTimers().setSystemTime(new Date('2026-12-31T23:59:59.999Z'));
+  try {
+    const input = { model: 'gemini-3.8-flash', prefixChars: 100, historyChars: 0, questionChars: 20 };
+    const before = estimateAskPaperCost(input);
+    jest.setSystemTime(new Date('2027-01-01T00:00:00Z'));
+    const after = estimateAskPaperCost(input);
+    expect(before.costUsd).toBeGreaterThan(0);
+    expect(after.costUsd).toBeCloseTo(before.costUsd! * 2, 12);
+  } finally {
+    jest.useRealTimers();
+  }
+});

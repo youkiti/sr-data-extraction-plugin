@@ -223,8 +223,38 @@ describe('resolveThinkingOutputMultiplier', () => {
         outputPerMillion: 3.75,
         cachedInputPerMillion: 0.075,
       });
-      expect(estimateCostUsd(model, 1_000_000, 1_000_000)).toBe(4.5);
+      expect(estimateCostUsd(model, 1_000_000, 1_000_000, null, undefined, Date.parse('2026-12-31T23:59:59.999Z'))).toBe(4.5);
       expect(resolveModelImageInputSupport('gemini', model)).toBe('supported');
     },
   );
+});
+
+describe('Gemini Flash の改定日時による費用', () => {
+  test.each(['gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash'])(
+    '%s の直前・境界・以後とキャッシュ単価を UTC で選ぶ', (model) => {
+      for (const [timestamp, input, output, cached] of [
+        ['2026-12-31T23:59:59.999Z', 0.75, 3.75, 0.075],
+        ['2027-01-01T00:00:00Z', 1.5, 7.5, 0.15],
+        ['2027-02-01T00:00:00Z', 1.5, 7.5, 0.15],
+        ['2027-01-01T09:00:00+09:00', 1.5, 7.5, 0.15],
+      ] as const) {
+        const at = Date.parse(timestamp);
+        const fallback = { inputPerMillion: 99, outputPerMillion: 99 };
+        expect(estimateCostUsd(model, 1_000_000, 0, null, fallback, at)).toBe(input);
+        expect(estimateCostUsd(model, 0, 1_000_000, null, undefined, at)).toBe(output);
+        expect(estimateCostUsd(model, 1_000_000, 0, 1_000_000, undefined, at)).toBe(cached);
+      }
+    },
+  );
+
+  test('現在時刻が改定後でも過去の日時による費用は変わらない', () => {
+    jest.useFakeTimers().setSystemTime(new Date('2027-02-01T00:00:00Z'));
+    try {
+      expect(estimateCostUsd('gemini-3.8-flash', 1_000_000, 1_000_000)).toBe(9);
+      expect(estimateCostUsd('gemini-3.8-flash', 1_000_000, 1_000_000, null, undefined,
+        Date.parse('2026-12-31T23:59:59Z'))).toBe(4.5);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });
