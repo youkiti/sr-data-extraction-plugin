@@ -249,6 +249,7 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     'seen_ai_value',
     'consensus_source',
     'adopted_ai_accept',
+    'app_version',
   ],
   LLMApiLog: [
     'log_id',

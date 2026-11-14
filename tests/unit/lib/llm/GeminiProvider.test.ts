@@ -101,6 +101,10 @@ describe('GeminiProvider.chat', () => {
       adjustments: ['thinking_config_dropped'],
     });
     expect(fetch).toHaveBeenCalledTimes(2);
+    for (const [url, init] of fetch.mock.calls) {
+      expect(new URL(url as string).search).toBe('');
+      expect(init.headers).toEqual({ 'Content-Type': 'application/json', 'x-goog-api-key': 'k' });
+    }
   });
 
   test.each([false, true])('再送も失敗ならそのエラーを返す（本文読み取り失敗: %s）', async (broken) => {
@@ -198,7 +202,8 @@ describe('GeminiProvider.chat', () => {
     expect(provider.model).toBe('gemini-3.5-flash');
     const [url, init] = fetch.mock.calls[0];
     expect(url).toContain('/models/gemini-3.5-flash:generateContent');
-    expect(url).toContain('key=k');
+    expect(new URL(url as string).search).toBe('');
+    expect(init.headers).toEqual({ 'Content-Type': 'application/json', 'x-goog-api-key': 'k' });
     const body = JSON.parse((init as RequestInit).body as string);
     expect(body.contents).toEqual([{ role: 'user', parts: [{ text: 'hi' }] }]);
     expect(JSON.stringify(body)).not.toContain('logContext');
