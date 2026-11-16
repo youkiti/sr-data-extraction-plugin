@@ -600,12 +600,15 @@ export async function loadPilotVerification(
     await loadPilotMatrix(store, deps, {
       decisions: bundle.allDecisions, annotator: bundle.verification.annotator, evidence: allEvidence,
     });
-    const migrationEvidence = outcomeList === null
-      // 論文を開くたびに Evidence タブを読み直さず、パイロットが持っている run の Evidence で判定する
-      ? allEvidence ?? evidence
-      : [];
+    const hasOutcomeKeys = (rows: readonly { entityKey: string }[]): boolean =>
+      rows.some((row) => parseEntityKey(row.entityKey)?.level === 'outcome_result');
+    // プロジェクト全体の Evidence で判定する。論文を切り替えるたびに Evidence タブを読み直さないよう、
+    // 全件を渡されていない読み込みでは、前に開いた論文での判定結果を使い回す
+    const previousRequired = state.pilot.verification?.outcomeMigrationRequired;
     bundle.verification.outcomeMigrationRequired = outcomeList === null
-      && [...migrationEvidence, ...bundle.allDecisions].some((row) => parseEntityKey(row.entityKey)?.level === 'outcome_result');
+      && (hasOutcomeKeys(bundle.allDecisions) || (allEvidence !== undefined
+        ? hasOutcomeKeys(allEvidence)
+        : previousRequired ?? hasOutcomeKeys(await readEvidenceRows(project.spreadsheetId, deps.google))));
     patchPilot(store, {
       verifyLoading: false,
       verification: bundle.verification,

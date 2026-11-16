@@ -1223,6 +1223,16 @@ describe('loadPilotVerification', () => {
     expect(store.getState().pilot.verification?.outcomeMigrationRequired).toBe(true);
   });
 
+  test('論文を切り替えても移行の判定のために Evidence タブを読み直さない', async () => {
+    readEvidenceRowsMock.mockResolvedValue([makeEvidence({ studyId: 'outside', entityKey: 'outcome:old' })]);
+    const store = makeRanStore();
+    await loadPilotVerification(store, makeDeps(), 'study-doc-1');
+    const reads = readEvidenceRowsMock.mock.calls.length;
+    await loadPilotVerification(store, makeDeps(), 'study-doc-2');
+    expect(readEvidenceRowsMock.mock.calls.length).toBe(reads);
+    expect(store.getState().pilot.verification?.outcomeMigrationRequired).toBe(true);
+  });
+
   test('埋め込み検証は現行一覧を共有し、study 切替で読み直さない', async () => {
     jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ aliases: [] as string[], schemaVersion: 2, outcomeId: 'pain' } as SchemaOutcome]);
     jest.mocked(listSchemaVersions).mockResolvedValue([{ schemaVersion: 2 } as SchemaVersion]);
