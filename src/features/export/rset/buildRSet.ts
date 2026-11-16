@@ -16,6 +16,7 @@ import { buildMaCsv } from './buildMaCsv';
 import { buildRobCsv } from './buildRobCsv';
 import { buildTab1Csv } from './buildTab1Csv';
 import { isEntityKeyInOutcomeList, type OutcomeListContext } from '../../schema/outcomeListContext';
+import { applyOutcomeAliases } from '../../schema/applyOutcomeAliases';
 import {
   collectResultsDataDroppedFieldIssues,
   collectResultsDataDuplicateKeyIssues,
@@ -72,10 +73,11 @@ export function buildRSet(materials: RSetMaterials, meta: RSetManifestMeta): Bui
   const { studies, studyRows, armStructureRows, documentStudyIds, fields } =
     materials;
   const outcomeList = materials.outcomeList ?? null;
+  const aliased = applyOutcomeAliases({ evidence: materials.evidences, decisions: materials.decisions, resultsRows: materials.resultsRows }, outcomeList);
   const included = (row: { entityKey: string }): boolean => isEntityKeyInOutcomeList(row.entityKey, outcomeList);
-  const resultsRows = materials.resultsRows.filter(included);
-  const decisions = materials.decisions.filter(included);
-  const evidences = materials.evidences.filter(included);
+  const resultsRows = aliased.resultsRows.filter(included);
+  const decisions = aliased.decisions.filter(included);
+  const evidences = aliased.evidence.filter(included);
 
   const tab1 = buildTab1Csv(studies, studyRows, evidences, documentStudyIds, fields);
   const ma = buildMaCsv(studies, resultsRows, decisions, evidences, armStructureRows, fields, outcomeList, studyRows);
@@ -97,7 +99,7 @@ export function buildRSet(materials: RSetMaterials, meta: RSetManifestMeta): Bui
   const files: RSetFile[] = [
     { name: 'acceptance_criteria.csv', rowCount: materials.acceptanceCriteria?.length ?? 0,
       content: buildAcceptanceCriteriaCsv(materials.acceptanceCriteria ?? [], buildComparisonCells({ studies, fields, studyRows,
-        resultRows: resultsRows, evidence: evidences, runs: materials.comparisonRuns ?? [], outcomeList }).cells,
+        resultRows: resultsRows, evidence: evidences, decisions, runs: materials.comparisonRuns ?? [], outcomeList }).cells,
       materials.pilotRuns ?? [], new Set(studies.map((study) => study.studyId))) },
     { name: 'tab1.csv', content: tab1.csv, rowCount: tab1.rowCount },
     { name: 'tab1_status.csv', content: tab1.statusCsv, rowCount: tab1.rowCount },

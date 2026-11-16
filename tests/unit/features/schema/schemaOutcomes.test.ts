@@ -5,7 +5,7 @@ import type { SchemaVersion } from '../../../../src/domain/schemaVersion';
 import { countJudgedCellsForOutcome, isOutcomeListMode, outcomesForVersion, restorableOutcomes, slugifyOutcomeLabel, validateOutcomeRows } from '../../../../src/features/schema/schemaOutcomes';
 
 const outcome = (patch: Partial<SchemaOutcome> = {}): SchemaOutcome => ({
-  schemaVersion: 1, outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
+  schemaVersion: 1, aliases: [], outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
   description: null, typicalTimepoints: null, addedVia: 'schema_editor', note: null, ...patch,
 });
 const versions = [4, 3, 2, 1].map((schemaVersion) => ({ schemaVersion } as SchemaVersion));
@@ -17,8 +17,8 @@ const decision = (patch: Partial<Decision> = {}): Decision => ({
 
 test('指定版を優先し、欠けた版だけ直近の前版の一覧を順序つきで読む', () => {
   const first = outcome();
-  const second = outcome({ schemaVersion: 2, outcomeIndex: 2, outcomeLabel: '変更後' });
-  const head = outcome({ schemaVersion: 2, outcomeIndex: 1, outcomeId: 'pain' });
+  const second = outcome({ schemaVersion: 2, aliases: [], outcomeIndex: 2, outcomeLabel: '変更後' });
+  const head = outcome({ schemaVersion: 2, aliases: [], outcomeIndex: 1, outcomeId: 'pain' });
   const all = [second, first, head];
   expect(outcomesForVersion(all, versions, 2)).toEqual({ outcomes: [head, second], sourceVersion: 2 });
   expect(outcomesForVersion(all, versions, 4)).toEqual({ outcomes: [head, second], sourceVersion: 2 });

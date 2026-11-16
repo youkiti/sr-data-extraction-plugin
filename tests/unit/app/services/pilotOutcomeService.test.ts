@@ -22,11 +22,11 @@ jest.mock('../../../../src/app/services/schemaService', () => ({
 }));
 
 const outcome = (schemaVersion: number, outcomeId = 'pain', patch: Partial<SchemaOutcome> = {}): SchemaOutcome => ({
-  schemaVersion, outcomeId, outcomeIndex: 1, outcomeLabel: outcomeId, description: null,
+  schemaVersion, outcomeId, aliases: [], outcomeIndex: 1, outcomeLabel: outcomeId, description: null,
   typicalTimepoints: null, addedVia: 'schema_editor', note: null, ...patch,
 });
 const row: SchemaOutcomeEditorRow = {
-  outcomeId: 'sleep', outcomeLabel: '睡眠', description: null, typicalTimepoints: null,
+  aliases: [], outcomeId: 'sleep', outcomeLabel: '睡眠', description: null, typicalTimepoints: null,
   addedVia: 'pilot_verify', note: null, idLocked: false, idEdited: false,
 };
 
@@ -35,7 +35,7 @@ function setup() {
   const store = createStore({ ...state,
     currentProject: { spreadsheetId: 'sheet' } as NonNullable<typeof state.currentProject>,
     role: { ...state.role, role: 'owner' },
-    pilot: { ...state.pilot, verifyStudyId: 'study', outcomeList: { schemaVersion: 1, outcomes: [outcome(1)], currentIds: new Set(['pain']), everIds: new Set(['pain']) } },
+    pilot: { ...state.pilot, verifyStudyId: 'study', outcomeList: { schemaVersion: 1, outcomes: [outcome(1)], currentIds: new Set(['pain']), aliasToId: new Map(), everIds: new Set(['pain']) } },
   });
   const fields = [{ schemaVersion: 3, fieldId: 'f', fieldName: 'value', fieldLabel: '値', section: '結果', entityLevel: 'outcome_result', dataType: 'text', extractionInstruction: '', multiSelect: null } as SchemaField];
   jest.mocked(listSchemaVersions).mockResolvedValue([{ schemaVersion: 3 } as SchemaVersion]);

@@ -183,14 +183,14 @@ describe('schemaExportFilename / importNoteDefault', () => {
 
 test('JSON の一覧は版と追加経路を含まず往復し、古いファイルでは null', () => {
   const outcomes = [
-    { schemaVersion: 3, outcomeIndex: 2, outcomeId: 'pain', outcomeLabel: '疼痛', description: null, typicalTimepoints: null, note: null, addedVia: 'migration' as const },
-    { schemaVersion: 3, outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡', description: '定義', typicalTimepoints: '30d|90d', note: '注記', addedVia: 'schema_editor' as const },
+    { schemaVersion: 3, aliases: [], outcomeIndex: 2, outcomeId: 'pain', outcomeLabel: '疼痛', description: null, typicalTimepoints: null, note: null, addedVia: 'migration' as const },
+    { schemaVersion: 3, aliases: ['old'], outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡', description: '定義', typicalTimepoints: '30d|90d', note: '注記', addedVia: 'schema_editor' as const },
   ];
   const text = serializeSchemaExport([makeField()], SOURCE, outcomes);
   const raw = JSON.parse(text);
   expect(raw.formatVersion).toBe(1);
   expect(raw.outcomes.map((row: { outcomeId: string }) => row.outcomeId)).toEqual(['mortality', 'pain']);
-  expect(Object.keys(raw.outcomes[0]).sort()).toEqual(['description', 'note', 'outcomeId', 'outcomeLabel', 'typicalTimepoints']);
+  expect(Object.keys(raw.outcomes[0]).sort()).toEqual(['aliases', 'description', 'note', 'outcomeId', 'outcomeLabel', 'typicalTimepoints']);
   expect(parseSchemaExport(text).outcomes).toEqual(raw.outcomes.map((row: object) => ({ ...row, addedVia: 'file_import', idLocked: false, idEdited: true })));
   raw.outcomes[0].addedVia = 'ai_draft';
   expect(parseSchemaExport(JSON.stringify(raw)).outcomes?.[0]?.addedVia).toBe('file_import');

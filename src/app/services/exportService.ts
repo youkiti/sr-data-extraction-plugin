@@ -199,7 +199,7 @@ export async function loadExportData(
       acceptanceCriteria: acceptance.versions,
       pilotRuns,
       comparisonCells: buildComparisonCells({ studies, fields, studyRows: studySheet.rows,
-        resultRows: resultsRows, evidence: evidences, runs: completedRuns, outcomeList }).cells,
+        resultRows: resultsRows, evidence: evidences, decisions, runs: completedRuns, outcomeList }).cells,
       toolVersion,
       activeStudyIds: studies.map((study) => study.studyId),
       documents,

@@ -1,5 +1,6 @@
 import { addPilotOutcome } from './services/pilotOutcomeService';
 import { addEditorOutcome, updateEditorOutcome, moveEditorOutcome, restoreEditorOutcome, requestRemoveEditorOutcome, confirmRemoveEditorOutcome, cancelRemoveEditorOutcome } from './services/schemaService';
+import { updateOutcomeMigration, confirmOutcomeMigration } from './services/schemaService';
 import { suggestEnum, updateEnumSuggestion, applyEnumSuggestion, cancelEnumSuggestion } from './services/schemaEnumService';
 import { initGuide } from './guide';
 import { loadCriteria, changeCriteriaDraft, saveCriteria, cancelCriteriaConfirmation, calculateCriteria } from './services/acceptanceCriteriaService';
@@ -713,6 +714,10 @@ export async function bootstrapApp(
         updateEditorRow(store, index, patch);
       },
       onAddOutcome: () => addEditorOutcome(store),
+      onEditOutcomeMigration: (id, patch) => updateOutcomeMigration(store, id, patch),
+      onConfirmOutcomeMigration: (acknowledge) => {
+        void confirmOutcomeMigration(store, deps, acknowledge);
+      },
       onEditOutcome: (index, patch) => updateEditorOutcome(store, index, patch),
       onMoveOutcome: (from, to) => moveEditorOutcome(store, from, to),
       onRestoreOutcome: (id) => restoreEditorOutcome(store, id),

@@ -197,16 +197,16 @@ test('アウトカムの全行を同じ版で項目の後に追記し、文字�
     spreadsheetId: 's', rows: [makeRow()], listModeBefore: true,
     parentVersion: 1, protocolVersion: 1, createdByType: 'user_edit' as const, createdBy: 'a', note: null,
     outcomes: [
-      { outcomeId: ' mortality ', outcomeLabel: ' 全死亡 ', description: ' 定義 ', typicalTimepoints: ' 30d|90d ',
+      { aliases: [' old '], outcomeId: ' mortality ', outcomeLabel: ' 全死亡 ', description: ' 定義 ', typicalTimepoints: ' 30d|90d ',
         addedVia: 'migration' as const, note: ' 注記 ', idLocked: true, idEdited: false },
-      { outcomeId: 'pain', outcomeLabel: '疼痛', description: ' ', typicalTimepoints: null,
+      { aliases: [], outcomeId: 'pain', outcomeLabel: '疼痛', description: ' ', typicalTimepoints: null,
         addedVia: 'schema_editor' as const, note: null, idLocked: false, idEdited: false },
     ],
   };
   const result = await saveSchemaVersion(params, { google });
   expect(result.outcomes).toEqual([
-    { schemaVersion: 2, outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡', description: '定義', typicalTimepoints: '30d|90d', addedVia: 'migration', note: '注記' },
-    { schemaVersion: 2, outcomeIndex: 2, outcomeId: 'pain', outcomeLabel: '疼痛', description: null, typicalTimepoints: null, addedVia: 'schema_editor', note: null },
+    { schemaVersion: 2, aliases: ['old'], outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡', description: '定義', typicalTimepoints: '30d|90d', addedVia: 'migration', note: '注記' },
+    { schemaVersion: 2, aliases: [], outcomeIndex: 2, outcomeId: 'pain', outcomeLabel: '疼痛', description: null, typicalTimepoints: null, addedVia: 'schema_editor', note: null },
   ]);
   expect(appendSchemaOutcomes).toHaveBeenCalledWith('s', result.outcomes, google);
   expect(jest.mocked(appendSchemaOutcomes).mock.invocationCallOrder[0]).toBeGreaterThan(appendFieldsMock.mock.invocationCallOrder[0]!);

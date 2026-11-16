@@ -56,18 +56,20 @@ export interface OutcomeValidationError {
 }
 
 /** id・表示名と一覧作成後の最低件数を検証する。 */
-export function validateOutcomeRows(rows: readonly Pick<SchemaOutcomeEditorRow, 'outcomeId' | 'outcomeLabel'>[], options: { listModeBefore: boolean }): OutcomeValidationError[] {
+export function validateOutcomeRows(rows: readonly (Pick<SchemaOutcomeEditorRow, 'outcomeId' | 'outcomeLabel'> & Partial<Pick<SchemaOutcomeEditorRow, 'aliases'>>)[], options: { listModeBefore: boolean }): OutcomeValidationError[] {
   const errors: OutcomeValidationError[] = [];
   const seen = new Set<string>();
   rows.forEach((row, index) => {
-    const id = row.outcomeId.trim();
-    if (!/^[a-z][a-z0-9_]*$/.test(id) || id.length > 64) {
-      errors.push({ index, message: t('schema.outcomeInvalidId') });
+    for (const value of [row.outcomeId, ...(row.aliases ?? [])]) {
+      const id = value.trim();
+      if (!/^[a-z][a-z0-9_]*$/.test(id) || id.length > 64) {
+        errors.push({ index, message: t('schema.outcomeInvalidId') });
+      }
+      if (seen.has(id)) {
+        errors.push({ index, message: t('schema.outcomeDuplicateId') });
+      }
+      seen.add(id);
     }
-    if (seen.has(id)) {
-      errors.push({ index, message: t('schema.outcomeDuplicateId') });
-    }
-    seen.add(id);
     if (row.outcomeLabel.trim() === '') {
       errors.push({ index, message: t('schema.outcomeEmptyLabel') });
     }

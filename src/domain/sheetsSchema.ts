@@ -56,7 +56,7 @@ export const META_BUDGET_COLUMNS = ['budget_usd', 'budget_updated_by', 'budget_u
  * StudyData は固定列のみ（値列は buildStudyDataHeader で動的生成）。
  */
 export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
-  SchemaOutcomes: ['schema_version', 'outcome_index', 'outcome_id', 'outcome_label', 'description', 'typical_timepoints', 'added_via', 'note'],
+  SchemaOutcomes: ['schema_version', 'outcome_index', 'outcome_id', 'outcome_label', 'description', 'typical_timepoints', 'added_via', 'note', 'aliases'],
   AcceptanceCriteria: [
     // 保存済みの版を読むため保存名は維持する。表示名は偽陽性 / 偽陰性 / 誤分類。
     'version', 'confirmed_at', 'confirmed_by', 'comparator', 'entity_levels', 'min_accuracy',

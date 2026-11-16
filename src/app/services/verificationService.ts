@@ -11,6 +11,7 @@
 //   バージョントークンとして期待値検証する。競合検出時はキュー退避せず conflict を返す
 //   （キューは「オフライン」を扱うためのものであり、競合をキューに入れても解決しない）
 import type { OutcomeListContext } from '../../features/schema/outcomeListContext';
+import { applyOutcomeAliases } from '../../features/schema/applyOutcomeAliases';
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import { isConsultAction, type Decision } from '../../domain/decision';
@@ -286,7 +287,8 @@ export async function loadVerificationBundle(
   // enum 候補（issue #254。プロジェクト横断で集める）を同時に導出する。
   // readDecisionsByStudy 自体が readAllDecisions + クライアント側フィルタの実装なので
   // **GET 数は変わらない**
-  const allDecisions = await readAllDecisions(spreadsheetId, deps.google);
+  const rawDecisions = await readAllDecisions(spreadsheetId, deps.google);
+  const { decisions: allDecisions } = applyOutcomeAliases({ decisions: rawDecisions }, input.outcomeList ?? null);
   const decisions = allDecisions.filter((decision) => decision.studyId === study.studyId);
   const enumCandidates = buildEnumCandidates(allDecisions, annotator, input.annotatorType);
   const studySheet = await readStudyDataSheet(spreadsheetId, deps.google);
@@ -354,7 +356,7 @@ export async function loadVerificationBundle(
     documents,
     fields: input.fields,
     outcomeList: input.outcomeList,
-    evidence: input.evidence,
+    evidence: applyOutcomeAliases({ evidence: input.evidence }, input.outcomeList ?? null).evidence,
     decisions,
     annotator,
     annotatorType: input.annotatorType,

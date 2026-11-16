@@ -24,6 +24,7 @@ export const HELP_TOPICS = {
   adjudicate: { tourId: 'dual-review', route: '#/adjudicate', helpAnchor: 'dual-review' },
   options: { route: '#/options', helpAnchor: 'options' },
   'schema-outcomes': { helpAnchor: 'schema-outcomes' },
+  'schema-outcome-migration': { helpAnchor: 'schema-outcomes' },
   'schema-enum': { helpAnchor: 'schema-enum' },
   'ask-paper': { tourId: 'verify-basics', helpAnchor: 'verify-ask-paper' },
   'review-sets': { tourId: 'dual-review', helpAnchor: 'project-review-sets' },

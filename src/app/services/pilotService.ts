@@ -2,6 +2,7 @@
 // - パイロット実行: extractionService.runExtraction（runType = 'pilot'）を配線する
 // - 検証データ束の組み立て / 判定・群構成の永続化は S8 と共有の verificationService へ委譲する
 import { readCurrentOutcomeList } from './outcomeListService';
+import { parseEntityKey } from '../../utils/entityKey';
 import { isConsultAction, type Decision } from '../../domain/decision';
 import { resolveFetchedPricing } from '../fetchedPricing';
 import type { DocumentRecord } from '../../domain/document';
@@ -599,6 +600,11 @@ export async function loadPilotVerification(
     await loadPilotMatrix(store, deps, {
       decisions: bundle.allDecisions, annotator: bundle.verification.annotator, evidence: allEvidence,
     });
+    const migrationEvidence = outcomeList === null
+      ? allEvidence ?? await readEvidenceRows(project.spreadsheetId, deps.google)
+      : [];
+    bundle.verification.outcomeMigrationRequired = outcomeList === null
+      && [...migrationEvidence, ...bundle.allDecisions].some((row) => parseEntityKey(row.entityKey)?.level === 'outcome_result');
     patchPilot(store, {
       verifyLoading: false,
       verification: bundle.verification,

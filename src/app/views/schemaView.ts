@@ -32,6 +32,9 @@ import type {
   RobinsIEffect,
 } from '../../features/schema/presets/robTemplates';
 import { restorableOutcomes } from '../../features/schema/schemaOutcomes';
+import { countJudgedCellsForOutcome } from '../../features/schema/schemaOutcomes';
+import { migrationContext } from '../../features/schema/outcomeMigration';
+import { applyOutcomeAliases } from '../../features/schema/applyOutcomeAliases';
 import { isCsvImportSource } from '../../features/schema/schemaTransfer';
 import type { SchemaEditorRow } from '../../features/schema/types';
 import type { FieldValidationError } from '../../features/schema/validateField';
@@ -1999,13 +2002,16 @@ export function renderSchemaView(state: AppState, ctx: ViewContext): HTMLElement
     );
   } else {
     children.push(renderBody(state, ctx));
+    if (state.schema.outcomeMigration) {
+      children.push(renderOutcomeMigration(state.schema, ctx));
+    }
   }
   return el('section', { className: 'view view--schema' }, children);
 }
 
 /** 一覧へのリンクではエディタを開かず、現在表示中の欄へ移動する。 */
 export function focusSchemaOutcomes(doc: Document): void {
-  const target = doc.getElementById('schema-outcomes') ?? doc.getElementById('schema-outcomes-summary');
+  const target = doc.getElementById('schema-outcome-migration') ?? doc.getElementById('schema-outcomes') ?? doc.getElementById('schema-outcomes-summary');
   target?.scrollIntoView?.({ block: 'start' });
 }
 
@@ -2017,6 +2023,9 @@ function outcomeButton(text: string, action: () => void, disabled = false): HTML
 }
 
 function renderOutcomeEditor(schema: SchemaState, ctx: ViewContext): HTMLElement {
+  if (schema.outcomeMigration) {
+    return el('section', { id: 'schema-outcomes' }, [migrationLink()]);
+  }
   const children: HTMLElement[] = [
     headingWithHelp('h3', t('schema.outcomeTitle'), 'schema-outcomes'),
     el('p', { text: t('schema.outcomeLead') }),
@@ -2104,6 +2113,9 @@ function renderOutcomeSummary(schema: SchemaState, version: number): HTMLElement
   const children: HTMLElement[] = [headingWithHelp('h3', t('schema.outcomeTitle'), 'schema-outcomes')];
   if (outcomes.length === 0) {
     children.push(el('p', { text: t('schema.outcomeEmpty') }));
+    if (schema.outcomeMigration) {
+      children.push(migrationLink());
+    }
   } else {
     children.push(el('table', { className: 'schema__table' }, [
       el('thead', {}, [el('tr', {}, ['schema.outcomeLabel', 'schema.outcomeId', 'schema.outcomeDescription', 'schema.outcomeTimepoints'].map((key) => el('th', { text: t(key as MessageKey) })))]),
@@ -2117,4 +2129,48 @@ function renderOutcomeSummary(schema: SchemaState, version: number): HTMLElement
     }
   }
   return el('section', { id: 'schema-outcomes-summary' }, children);
+}
+
+function migrationLink(): HTMLElement {
+  const link = el('a', { text: t('schema.migrationLink'), attributes: { href: '#/schema?outcomes' } });
+  link.addEventListener('click', () => document.getElementById('schema-outcome-migration')?.scrollIntoView());
+  return link;
+}
+
+function renderOutcomeMigration(schema: SchemaState, ctx: ViewContext): HTMLElement {
+  const migration = schema.outcomeMigration!;
+  const children: HTMLElement[] = [headingWithHelp('h3', t('schema.migrationTitle'), 'schema-outcome-migration')];
+  for (const row of migration.rows) {
+    const selected = el('input', { attributes: { type: 'checkbox', 'aria-label': row.id } });
+    selected.checked = row.selected;
+    selected.disabled = schema.confirming;
+    selected.addEventListener('change', () => ctx.schema.onEditOutcomeMigration?.(row.id, { selected: selected.checked }));
+    const label = el('input', { attributes: { type: 'text', 'aria-label': `${t('schema.outcomeLabel')} ${row.id}` } });
+    label.value = row.label;
+    label.disabled = schema.confirming;
+    label.addEventListener('change', () => ctx.schema.onEditOutcomeMigration?.(row.id, { label: label.value }));
+    const target = el('select', { attributes: { 'aria-label': `${t('schema.migrationTarget')} ${row.id}` } }, [
+      el('option', { text: t('schema.migrationNone'), attributes: { value: '' } }),
+      ...migration.rows.filter((other) => other.id !== row.id && other.selected && other.target === null).map((other) =>
+        el('option', { text: other.id, attributes: { value: other.id } })),
+    ]);
+    target.value = row.target ?? '';
+    target.disabled = schema.confirming || migration.rows.some((other) => other.target === row.id);
+    target.addEventListener('change', () => ctx.schema.onEditOutcomeMigration?.(row.id, { target: target.value || null }));
+    children.push(el('div', {}, [selected, el('span', { text: row.id }), label,
+      el('span', { text: t('schema.migrationStudies', { n: row.studies }) }),
+      el('span', { text: t('schema.migrationJudged', { n: row.judgedCells }) }), target]));
+  }
+  const { collisionCount } = applyOutcomeAliases(migration, migrationContext(migration.rows));
+  children.push(el('p', { attributes: { role: 'status' }, text: t('schema.migrationCollision', { n: collisionCount }) }));
+  if (migration.confirmingExclusions) {
+    const excluded = migration.rows.filter((row) => !row.selected && row.target === null);
+    const cells = excluded.reduce((sum, row) => sum + row.judgedCells, 0);
+    const studies = [...new Set(migration.decisions.map((row) => row.studyId))].filter((id) => excluded.some((row) =>
+      countJudgedCellsForOutcome(migration.decisions.filter((decision) => decision.studyId === id), row.id).cells > 0)).length;
+    children.push(el('p', { attributes: { role: 'alert' }, text: t('schema.migrationExcluded', { n: cells, m: studies }) }));
+  }
+  children.push(...schema.editorOutcomeErrors.map((error) => el('p', { className: 'schema__error', text: error.message })));
+  children.push(outcomeButton(t('schema.migrationConfirm'), () => ctx.schema.onConfirmOutcomeMigration?.(migration.confirmingExclusions), schema.confirming));
+  return el('section', { id: 'schema-outcome-migration' }, children);
 }

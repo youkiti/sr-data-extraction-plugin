@@ -111,6 +111,55 @@ test('パイロットで一覧に追加したアウトカムが別の論文に�
   expect(values.SchemaOutcomes!.some((row) => String(row[0]) === '2' && row[2] === 'sleep_quality')).toBe(true);
 });
 
+test('移行のカードで別名をまとめると検証では一つのアウトカムになる', async ({ page }) => {
+  const values: Record<string, string[][]> = {
+    Protocol: [PROTOCOL_ROW],
+    SchemaVersions: [['1', '', '1', 'user_edit', '2026-07-01T00:00:00Z', 'e2e@example.com', '']],
+    SchemaFields: [['1', 'f-outcome', '1', 'results', 'outcome_name', 'アウトカム名', 'outcome_result', 'text', '', '', 'TRUE', '原文どおり', '', 'FALSE', '']],
+    Evidence: ['pain', 'pain_score'].map((id) => [`ev-${id}`, 'run-1', 'study-1', 'f-outcome', 'doc-1', `outcome:${id}|arm:1`, 'Pain', 'FALSE', QUOTE, '1', 'high', 'exact']),
+    ExtractionRuns: [['run-1', 'pilot', '1', 'study-1', 'gemini', 'gemini-test', '', 'text_only', 'done', 't1', 't2', '', '', '']],
+    ArmStructures: [['study-1', '1', 'arm:1', '全体', 'e2e@example.com', 'human_with_ai', 't1', '']],
+  };
+  await page.route('https://sheets.googleapis.com/**', async (route) => {
+    const request = route.request();
+    const url = decodeURIComponent(request.url());
+    if (url.includes('values:batchGet')) {
+      const ranges = new URL(request.url()).searchParams.getAll('ranges');
+      await route.fulfill({ json: { valueRanges: ranges.map((range) => {
+        const name = range.split('!')[0] as keyof typeof SHEET_HEADERS;
+        return { range, values: [[...SHEET_HEADERS[name]], ...(values[name] ?? [])] };
+      }) } });
+      return;
+    }
+    const tab = Object.keys(SHEET_HEADERS).find((name) => url.includes(`/values/${name}`)) as keyof typeof SHEET_HEADERS | undefined;
+    if (tab !== undefined && request.method() === 'POST') {
+      values[tab] = [...(values[tab] ?? []), ...(request.postDataJSON() as { values: string[][] }).values];
+    }
+    await route.fulfill({ json: tab === undefined
+      ? { sheets: Object.keys(SHEET_HEADERS).map((title) => ({ properties: { title } })) }
+      : { values: [[...SHEET_HEADERS[tab]], ...(values[tab] ?? [])] } });
+  });
+  await page.route('https://www.googleapis.com/**', async (route) => {
+    await route.fulfill(route.request().url().includes('txt-1')
+      ? { contentType: 'text/plain', body: QUOTE }
+      : { contentType: 'application/pdf', body: minimalPdf(QUOTE) });
+  });
+  await initApp(page, { documents: [DOCUMENT], schema: { versions: null, currentFields: null }, route: '#/verify' });
+  await expect(page.locator('#verify-study')).toHaveValue('study-1');
+  await page.evaluate(() => { location.hash = '#/schema?outcomes'; });
+  const card = page.locator('#schema-outcome-migration');
+  await card.getByLabel('別名としてまとめる先 pain_score', { exact: true }).selectOption('pain');
+  await expect(card).toContainText('両方にあるセルが 1 個');
+  await card.getByRole('button', { name: 'この内容で一覧を作る' }).click();
+  await expect.poll(() => values.SchemaOutcomes?.[0]?.[8]).toBe('pain_score');
+  await page.evaluate(() => { location.hash = '#/verify'; });
+  await expect(page.locator('#verify-study')).toHaveValue('study-1');
+  await page.locator('.verify__tab', { hasText: 'アウトカム' }).click();
+  await page.locator('#verify-layout-toggle').click();
+  await expect(page.locator('.verify__cell[data-cell-key*="outcome:pain|"]')).toHaveCount(1);
+  await expect(page.locator('.verify__cell[data-cell-key*="pain_score"]')).toHaveCount(0);
+});
+
 test.beforeEach(async ({ page }) => {
   await page.route('https://sheets.googleapis.com/**', async (route) => {
     const url = decodeURIComponent(route.request().url());
@@ -197,10 +246,12 @@ async function initApp(
     pilot?: PilotStatePatch;
     documents?: Record<string, unknown>[];
     apiKey?: string;
+    schema?: Record<string, unknown>;
+    route?: string;
   } = {},
 ): Promise<void> {
   await page.addInitScript(
-    ({ pilot, documents, apiKey }) => {
+    ({ pilot, documents, apiKey, schema }) => {
       const win = window as unknown as Record<string, unknown>;
       // AI へ送る前の同意（issue #381）は同意済みにする（同意画面は app-ai-consent.spec.ts で検証）
       const stored: Record<string, unknown> = {
@@ -327,6 +378,7 @@ async function initApp(
           editorErrors: [],
           editorOrigin: 'user_edit',
           confirming: false,
+          ...schema,
         },
         pilot,
       };
@@ -344,9 +396,10 @@ async function initApp(
       },
       documents: options.documents ?? [DOCUMENT, NO_TEXT_DOCUMENT],
       apiKey: options.apiKey ?? null,
+      schema: options.schema ?? {},
     },
   );
-  await page.goto('/app/app.html#/pilot');
+  await page.goto(`/app/app.html${options.route ?? '#/pilot'}`);
 }
 
 test('未実行: 文献セレクタ（no_text_layer は既定選択されないが選択可）+ コスト概算 + API キー未設定エラー', async ({ page }) => {

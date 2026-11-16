@@ -16,6 +16,8 @@ import { buildResultsLongCsv } from './buildResultsLongCsv';
 import { buildStudyWideCsv } from './buildStudyWideCsv';
 import { parseCsv } from './parseCsv';
 import { isEntityKeyInOutcomeList, type OutcomeListContext } from '../schema/outcomeListContext';
+import { applyOutcomeAliases } from '../schema/applyOutcomeAliases';
+import { bundleEvidence } from '../verification/evidenceBundles';
 
 /**
  * このモジュール（buildExport.ts）が扱う「単一 CSV を返す」従来 3 形式。
@@ -106,6 +108,12 @@ export function toStudyLabels(
 }
 
 export function buildExport(format: ClassicExportFormat, materials: ExportMaterials, draft = false): BuiltExport {
+  if (format !== 'audit') {
+    const aliased = applyOutcomeAliases({ evidence: materials.evidences, decisions: materials.decisions, resultsRows: materials.resultsRows }, materials.outcomeList ?? null);
+    const bundlesByStudy = new Map([...materials.bundlesByStudy].map(([studyId, bundles]) => [studyId,
+      bundleEvidence(applyOutcomeAliases({ evidence: [...bundles.values()].flatMap((bundle) => [bundle.evidence, ...bundle.quotes]) }, materials.outcomeList ?? null).evidence)]));
+    materials = { ...materials, bundlesByStudy, evidences: aliased.evidence, decisions: aliased.decisions, resultsRows: aliased.resultsRows };
+  }
   const { studies, fields } = materials;
   const included = (row: { entityKey: string }): boolean => isEntityKeyInOutcomeList(row.entityKey, materials.outcomeList ?? null);
   switch (format) {

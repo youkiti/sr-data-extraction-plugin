@@ -24,7 +24,7 @@ import type { SchemaOutcome } from '../../../../src/domain/schemaOutcome';
 test.each(['owner', 'adjudicator'] as const)('一覧モードの裁定は案内と AI の一覧外候補を欄外に出す: %s', (role) => {
   const { ctx } = makeCtx();
   const working = makeWorking({
-    outcomeList: { schemaVersion: 2, outcomes: [{ outcomeId: 'pain' } as SchemaOutcome], currentIds: new Set(['pain']), everIds: new Set(['pain']) },
+    outcomeList: { schemaVersion: 2, outcomes: [{ outcomeId: 'pain' } as SchemaOutcome], currentIds: new Set(['pain']), aliasToId: new Map(), everIds: new Set(['pain']) },
   });
   working.quoteAiEvidence = [makeEvidence({ studyId: working.study.studyId, entityKey: 'outcome:candidate', quote: '候補の引用', page: null, anchorStatus: role === 'owner' ? null : 'exact' })];
   const state = makeState({ rows: [], working });
@@ -37,7 +37,7 @@ test.each(['owner', 'adjudicator'] as const)('一覧モードの裁定は案内�
 
 test('一覧モードでも候補が無ければ候補欄を出さない', () => {
   const { ctx } = makeCtx();
-  const working = makeWorking({ outcomeList: { schemaVersion: 2, outcomes: [], currentIds: new Set(), everIds: new Set() } });
+  const working = makeWorking({ outcomeList: { schemaVersion: 2, outcomes: [], currentIds: new Set(), aliasToId: new Map(), everIds: new Set() } });
   const root = render(makeState({ rows: [], working }), ctx);
   expect(root.querySelector('#adjudicate-outcome-candidates')).toBeNull();
 });
@@ -45,7 +45,7 @@ test('一覧モードでも候補が無ければ候補欄を出さない', () =>
 test('裁定の一覧外候補の引用は出所文書の番号で開く', () => {
   const show = jest.spyOn(adjudicatePdfPane, 'showAdjudicateCitation').mockImplementation(() => undefined);
   const { ctx } = makeCtx();
-  const working = makeWorking({ outcomeList: { schemaVersion: 1, outcomes: [], currentIds: new Set(), everIds: new Set() } });
+  const working = makeWorking({ outcomeList: { schemaVersion: 1, outcomes: [], currentIds: new Set(), aliasToId: new Map(), everIds: new Set() } });
   working.documents = ['doc-first', 'doc-second'].map((documentId) => ({
     documentId, studyId: working.study.studyId, documentRole: 'article', driveFileId: 'pdf',
     sourceFileId: null, filename: `${documentId}.pdf`, pmid: null, doi: null, textRef: null,

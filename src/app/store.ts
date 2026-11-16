@@ -46,6 +46,7 @@ import type { PresetDialogState } from '../features/schema/presets/prespecDialog
 import type { RedraftDiff, RedraftSelection, RevertSource } from '../features/schema/redraftDiff';
 import type { SchemaImportSource } from '../features/schema/schemaTransfer';
 import type { SchemaOutcome } from '../domain/schemaOutcome';
+import type { OutcomeMigrationRow } from '../features/schema/outcomeMigration';
 import type { OutcomeValidationError } from '../features/schema/schemaOutcomes';
 import type { SchemaEditorRow, SchemaOutcomeEditorRow } from '../features/schema/types';
 import type { FieldValidationError } from '../features/schema/validateField';
@@ -325,6 +326,8 @@ export interface SchemaState {
     items: { outcomeId: string; outcomeLabel: string; cells: number; studies: number }[];
   } | null;
   outcomeDecisions: Decision[] | null;
+  /** 論文単位モードから一覧を作るための候補と衝突の素材。 */
+  outcomeMigration?: { rows: OutcomeMigrationRow[]; evidence: Evidence[]; decisions: Decision[]; confirmingExclusions: boolean } | null;
   /** 自由記述から選択肢への変換案（未反映の下書き）。 */
   enumSuggestion?: EnumSuggestion | null;
   /** パイロットから移動した項目。通常の入場時は未設定。 */

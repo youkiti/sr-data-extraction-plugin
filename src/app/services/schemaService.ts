@@ -4,6 +4,10 @@
 // 全呼び出しを LLMApiLog + Drive（logs/llm/）に残す
 import { multiSelectConfigOf } from '../../domain/multiSelect';
 import type { SchemaOutcome } from '../../domain/schemaOutcome';
+import type { OutcomeMigrationRow } from '../../features/schema/outcomeMigration';
+import { buildOutcomeMigrationRows, migrationOutcomes } from '../../features/schema/outcomeMigration';
+import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
+import { schemaFieldToEditorRow } from '../../features/schema/redraftDiff';
 import type { Protocol } from '../../domain/protocol';
 import type { DocumentRecord } from '../../domain/document';
 import { readDocuments } from '../../features/documents/documentRepository';
@@ -191,8 +195,13 @@ export async function loadSchema(
         ? currentModel
         : ((await (deps.loadDefaultModel ?? loadDefaultModel)()) ?? FACTORY_DEFAULT_MODEL);
     const after = store.getState();
+    const migrationMaterials = latest !== undefined && !isOutcomeListMode(allOutcomes)
+      ? await Promise.all([readEvidenceRows(state.currentProject.spreadsheetId, deps.google), readAllDecisions(state.currentProject.spreadsheetId, deps.google)])
+      : null;
+    const migrationRows = migrationMaterials === null ? [] : buildOutcomeMigrationRows(migrationMaterials[0], migrationMaterials[1], currentFields);
     store.setState({
-      schema: { ...after.schema, loading: false, loadError: null, versions, currentFields, model, allOutcomes, currentOutcomes: resolved.outcomes, currentOutcomesSourceVersion: resolved.sourceVersion },
+      schema: { ...after.schema, loading: false, loadError: null, versions, currentFields, model, allOutcomes, currentOutcomes: resolved.outcomes, currentOutcomesSourceVersion: resolved.sourceVersion,
+        outcomeMigration: migrationMaterials !== null && migrationRows.length > 0 ? { rows: migrationRows, evidence: migrationMaterials[0], decisions: migrationMaterials[1], confirmingExclusions: false } : null },
       counts: { ...after.counts, schemaVersions: versions.length },
     });
   } catch (err) {
@@ -956,6 +965,7 @@ export async function confirmSchema(
         currentOutcomes: outcomes,
         currentOutcomesSourceVersion: outcomes.length > 0 ? version.schemaVersion : null,
         allOutcomes: [...(after.schema.allOutcomes ?? []), ...outcomes],
+        outcomeMigration: outcomes.length > 0 ? null : after.schema.outcomeMigration,
         editorOutcomes: [],
         editorOutcomeErrors: [],
         outcomeRemoval: null,
@@ -984,8 +994,66 @@ export function outcomeEditorRows(outcomes: readonly SchemaOutcome[]): SchemaOut
   return outcomes.map((row) => ({
     outcomeId: row.outcomeId, outcomeLabel: row.outcomeLabel, description: row.description,
     typicalTimepoints: row.typicalTimepoints, addedVia: row.addedVia, note: row.note,
+    aliases: [...row.aliases],
     idLocked: true, idEdited: false,
   }));
+}
+
+/** 移行の候補を更新し、別名の連鎖や選択を外したまとめ先を防ぐ。 */
+export function updateOutcomeMigration(store: Store, id: string, patch: Partial<Pick<OutcomeMigrationRow, 'selected' | 'label' | 'target'>>): void {
+  const migration = store.getState().schema.outcomeMigration;
+  if (!migration || store.getState().schema.confirming) {
+    return;
+  }
+  const target = patch.target;
+  if (target && (target === id || !migration.rows.some((row) => row.id === target && row.selected && row.target === null)
+    || migration.rows.some((row) => row.target === id))) {
+    return;
+  }
+  const rows = migration.rows.map((row) => ({ ...row, ...(row.id === id ? patch : {}) }));
+  for (const row of rows) {
+    if (row.target !== null && !rows.some((candidate) => candidate.id === row.target && candidate.selected && candidate.target === null)) {
+      row.target = null;
+    }
+  }
+  patchSchema(store, { outcomeMigration: { ...migration, rows, confirmingExclusions: false } });
+}
+
+/** 現行の項目を保ち、移行で選んだ最初の一覧を版として確定する。 */
+export async function confirmOutcomeMigration(store: Store, deps: SchemaServiceDeps, acknowledge = false): Promise<void> {
+  const schema = store.getState().schema;
+  const migration = schema.outcomeMigration;
+  if (!migration || !schema.currentFields || schema.confirming || isOutcomeListMode(schema.allOutcomes ?? [])) {
+    return;
+  }
+  const outcomes = migrationOutcomes(migration.rows);
+  const errors = validateOutcomeRows(outcomes, { listModeBefore: true });
+  if (errors.length > 0) {
+    patchSchema(store, { editorOutcomeErrors: errors });
+    return;
+  }
+  if (!acknowledge && migration.rows.some((row) => !row.selected && row.target === null && row.judgedCells > 0)) {
+    patchSchema(store, { outcomeMigration: { ...migration, confirmingExclusions: true } });
+    return;
+  }
+  patchSchema(store, {
+    editorRows: schema.currentFields.map(schemaFieldToEditorRow), editorOutcomes: outcomes, editorOutcomeErrors: [],
+    editorOrigin: 'user_edit', editorParentVersion: schema.versions?.[0]?.schemaVersion ?? null,
+  });
+  await confirmSchema(store, deps, 'アウトカムの一覧を作成（移行）');
+  const after = store.getState();
+  if (after.schema.outcomeMigration !== null) {
+    return;
+  }
+  void after.verify.verification?.disposePdf?.();
+  void after.adjudicate.working?.disposePdf();
+  store.setState({
+    verify: { ...after.verify, targets: null, selectedStudyId: null, verification: null, studyValues: null, studyRowUpdatedAt: null, resultsRowUpdatedAt: {} },
+    home: { ...after.home, assignedProgress: null, assignedProgressError: null },
+    dashboard: { ...after.dashboard, data: null, reviewSetProgress: null, comparison: { loading: false, error: null, data: null } },
+    adjudicate: { ...after.adjudicate, rows: null, selectedStudyId: null, working: null, agreement: null, calibrationAgreement: null },
+    export: { ...after.export, built: null, materials: null, rSetMaterials: null, rSet: null, methodsFacts: null },
+  });
 }
 
 /** ファイルの一覧が無いときは現行版を引き継ぐ。既存の id は固定する。 */
@@ -1051,6 +1119,9 @@ function patchEditorOutcomes(store: Store, rows: SchemaOutcomeEditorRow[]): void
 
 /** 編集中の一覧に未確定のアウトカムを追加する。 */
 export function addEditorOutcome(store: Store): void {
+  if (store.getState().schema.outcomeMigration) {
+    return;
+  }
   const schema = store.getState().schema;
   if (schema.editorRows === null) {
     return;
@@ -1058,6 +1129,7 @@ export function addEditorOutcome(store: Store): void {
   patchEditorOutcomes(store, [...schema.editorOutcomes, {
     outcomeId: slugifyOutcomeLabel('', schema.editorOutcomes.map((row) => row.outcomeId)),
     outcomeLabel: '', description: null, typicalTimepoints: null, addedVia: 'schema_editor', note: null,
+    aliases: [],
     idLocked: false, idEdited: false,
   }]);
 }

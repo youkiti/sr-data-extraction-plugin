@@ -414,6 +414,7 @@ beforeEach(() => {
     webViewLink: `https://drive.example/${name}`,
   }));
   readAllDecisionsMock.mockResolvedValue([]);
+  readEvidenceRowsMock.mockResolvedValue([]);
   readStudiesMock.mockResolvedValue([]);
   readStudyDataSheetMock.mockResolvedValue({ fieldNames: [], rows: [] });
   readResultsDataRowsMock.mockResolvedValue([]);
@@ -1215,8 +1216,15 @@ describe('loadPilotVerification', () => {
     });
   }
 
+  test('ほかの研究だけに既存のキーがあっても移行が必要になる', async () => {
+    readEvidenceRowsMock.mockResolvedValue([makeEvidence({ studyId: 'outside', entityKey: 'outcome:old' })]);
+    const store = makeRanStore();
+    await loadPilotVerification(store, makeDeps(), 'study-doc-1');
+    expect(store.getState().pilot.verification?.outcomeMigrationRequired).toBe(true);
+  });
+
   test('埋め込み検証は現行一覧を共有し、study 切替で読み直さない', async () => {
-    jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ schemaVersion: 2, outcomeId: 'pain' } as SchemaOutcome]);
+    jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ aliases: [] as string[], schemaVersion: 2, outcomeId: 'pain' } as SchemaOutcome]);
     jest.mocked(listSchemaVersions).mockResolvedValue([{ schemaVersion: 2 } as SchemaVersion]);
     const store = makeRanStore();
     await loadPilotVerification(store, makeDeps(), 'study-doc-1');
@@ -1227,7 +1235,7 @@ describe('loadPilotVerification', () => {
   });
 
   test('一覧キャッシュを無効化した後は検証中の同じ論文でも現行一覧を読み直す', async () => {
-    jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ schemaVersion: 2, outcomeId: 'pain' } as SchemaOutcome]);
+    jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ aliases: [] as string[], schemaVersion: 2, outcomeId: 'pain' } as SchemaOutcome]);
     jest.mocked(listSchemaVersions).mockResolvedValue([{ schemaVersion: 2 } as SchemaVersion]);
     const store = makeRanStore();
     const deps = makeDeps();
@@ -1236,7 +1244,7 @@ describe('loadPilotVerification', () => {
     expect(store.getState().pilot.verification?.outcomeList?.currentIds).toEqual(new Set(['pain']));
 
     store.setState({ pilot: { ...store.getState().pilot, outcomeList: undefined } });
-    jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ schemaVersion: 3, outcomeId: 'sleep' } as SchemaOutcome]);
+    jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ aliases: [] as string[], schemaVersion: 3, outcomeId: 'sleep' } as SchemaOutcome]);
     jest.mocked(listSchemaVersions).mockResolvedValue([{ schemaVersion: 3 } as SchemaVersion]);
     await loadPilotVerification(store, deps, 'study-doc-1');
 

@@ -75,9 +75,9 @@ describe('parseDraftSchemaResponse', () => {
     }));
     expect(result.rows).toHaveLength(1);
     expect(result.outcomes).toEqual([
-      { outcomeId: 'mortality', outcomeLabel: '全死亡', description: null, typicalTimepoints: '30d|90d',
+      { aliases: [], outcomeId: 'mortality', outcomeLabel: '全死亡', description: null, typicalTimepoints: '30d|90d',
         addedVia: 'ai_draft', idLocked: false, idEdited: false, note: null },
-      { outcomeId: 'pain', outcomeLabel: '疼痛', description: '定義', typicalTimepoints: null,
+      { aliases: [], outcomeId: 'pain', outcomeLabel: '疼痛', description: '定義', typicalTimepoints: null,
         addedVia: 'ai_draft', idLocked: false, idEdited: false, note: null },
     ]);
   });

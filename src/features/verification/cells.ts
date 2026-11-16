@@ -17,6 +17,7 @@ import { cellKeyOf, deriveCellStates, emptyCellState, type CellState } from './c
 import { robOverrideFieldNames } from './robEstimateFields';
 import { bundleEvidence, type EvidenceBundle } from './evidenceBundles';
 import { isEntityKeyInOutcomeList, outcomeIdOfEntityKey, type OutcomeListContext } from '../schema/outcomeListContext';
+import { applyOutcomeAliases } from '../schema/applyOutcomeAliases';
 
 export interface VerificationCell {
   cellKey: string;
@@ -134,6 +135,7 @@ export function entityInstances(
   decisions: readonly Decision[],
   options: TabModelOptions = {},
 ): string[] {
+  ({ evidence, decisions } = applyOutcomeAliases({ evidence, decisions }, options.outcomeList ?? null));
   const keys = new Set<string>();
   for (const item of evidence) {
     if (parseEntityKey(item.entityKey)?.level === level) {
@@ -294,6 +296,7 @@ export function buildTabModel(
   decisions: readonly Decision[],
   options: TabModelOptions = {},
 ): TabModel {
+  ({ evidence, decisions } = applyOutcomeAliases({ evidence, decisions }, options.outcomeList ?? null));
   const tabFields = fields
     .filter((field) => field.entityLevel === tab)
     .sort((a, b) => a.fieldIndex - b.fieldIndex);

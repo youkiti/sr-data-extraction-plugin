@@ -448,7 +448,7 @@ beforeEach(() => {
 describe('loadAdjudicateTargets', () => {
   test('一覧の文脈を一覧読込から裁定へ引き継ぎ、開き直しても再取得しない', async () => {
     setupTwoAnnotatorsReady();
-    jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ schemaVersion: 1, outcomeId: 'pain' } as SchemaOutcome]);
+    jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ aliases: [] as string[], schemaVersion: 1, outcomeId: 'pain' } as SchemaOutcome]);
     const store = seedStore();
     await loadAdjudicateTargets(store, makeDeps());
     await openAdjudicateStudy(store, makeDeps(), 'study-1');

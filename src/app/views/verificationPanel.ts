@@ -96,7 +96,7 @@ import type { VerifyLayoutMode, VerifyPaneLayout } from '../../lib/storage/setti
 import type { renderPdfPageToCanvas } from '../../lib/pdf/renderPage';
 import { getUiLanguage, t, type UiLanguage } from '../../lib/i18n';
 import { nowIso8601 } from '../../utils/iso8601';
-import { nextOutcomeId } from '../../utils/entityKey';
+import { nextOutcomeId, parseEntityKey } from '../../utils/entityKey';
 import { documentRoleLabel } from '../ui/documentRoleLabel';
 import { buildAskPaperHighlight } from '../ui/askPaperHighlight';
 import { el } from '../ui/dom';
@@ -328,6 +328,8 @@ export function createVerificationPanel(
   const { data } = options;
   let progressListener = options.onProgressChange;
   const now = options.now ?? nowIso8601;
+  const needsOutcomeMigration = options.pilot && data.outcomeList == null
+    && (data.outcomeMigrationRequired || [...data.evidence, ...data.decisions].some((row) => parseEntityKey(row.entityKey)?.level === 'outcome_result'));
   const outcomeAdd = options.pilot && data.canEditSchema && data.outcomeList != null && options.onOutcomeAdd
     ? createPilotOutcomeAdd(data.outcomeList, options.onOutcomeAdd) : null;
   // 独立入力モード（独立二重レビュー機能。design §5.2）: data.annotatorType から導出する
@@ -2173,7 +2175,7 @@ export function createVerificationPanel(
           }
         : null,
       outcomeAdd:
-        activeTab === 'outcome_result' && armStructure !== null && data.outcomeList == null
+        activeTab === 'outcome_result' && armStructure !== null && data.outcomeList == null && !needsOutcomeMigration
           ? { outcomeKey: outcomeKeyDraft, time: outcomeTimeDraft, error: outcomeError }
           : null,
       robEstimateAdd: robEstimateAddModel(),
@@ -2204,6 +2206,9 @@ export function createVerificationPanel(
     // heightSplitter（issue #193）は refreshForm のたびに作り直される内容の末尾へ
     // 常に再付与する（sticky 配置で bottom:0 に固定され続ける）
     const form = renderVerificationForm(model, handlers);
+      if (activeTab === 'outcome_result' && needsOutcomeMigration) {
+        form.prepend(el('a', { text: t('schema.migrationLink'), attributes: { href: '#/schema?outcomes' } }));
+      }
     if (activeTab === 'outcome_result' && data.outcomeList != null) {
       if (outcomeAdd !== null) {
         form.append(outcomeAdd.root);

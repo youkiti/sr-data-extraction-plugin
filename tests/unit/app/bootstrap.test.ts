@@ -2305,7 +2305,7 @@ describe('bootstrapApp: #/pilot', () => {
   test('パイロットの一覧への追加をサービスへ渡す', async () => {
     const add = jest.spyOn(pilotOutcomeService, 'addPilotOutcome').mockResolvedValue(undefined);
     const field = { ...FIELD, entityLevel: 'outcome_result' as const };
-    const outcomeList = { schemaVersion: 1, outcomes: [], currentIds: new Set<string>(), everIds: new Set<string>() };
+    const outcomeList = { schemaVersion: 1, outcomes: [], currentIds: new Set<string>(), aliasToId: new Map(), everIds: new Set<string>() };
     const stub = createWindowStub(pilotPreloaded({
       run: { ...RUN, provider: 'gemini' }, runFields: [field], evidence: [], verifyStudyId: 'study-1', outcomeList,
       verification: {
@@ -5759,6 +5759,38 @@ describe('bootstrapApp: 担当セットの配線', () => {
   });
 });
 
+test('移行のカードの編集と確定をサービスへ配線する', async () => {
+  installChromeMock();
+  document.body.innerHTML = APP_TEMPLATE;
+  const state = createInitialState();
+  state.currentProject = PROJECT;
+  state.role.role = 'owner';
+  state.home.countsLoaded = true;
+  state.counts.protocolVersions = 1;
+  state.protocol.records = [];
+  state.documents.records = [];
+  state.schema.versions = [];
+  state.schema.currentFields = [matrixField()];
+  state.schema.outcomeMigration = { rows: [{ id: 'pain', label: '痛み', selected: true, target: null, studies: 1, judgedCells: 0 }], evidence: [], decisions: [], confirmingExclusions: false };
+  const stub = createWindowStub(state);
+  const { deps } = createFakeDeps([]);
+  const edit = jest.spyOn(schemaServices, 'updateOutcomeMigration').mockImplementation(() => undefined);
+  const confirm = jest.spyOn(schemaServices, 'confirmOutcomeMigration').mockResolvedValue(undefined);
+  try {
+    await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/schema?outcomes';
+    stub.fireHashChange();
+    await flush();
+    document.querySelector<HTMLInputElement>('#schema-outcome-migration input[type="checkbox"]')!.dispatchEvent(new Event('change'));
+    Array.from(document.querySelectorAll<HTMLButtonElement>('#schema-outcome-migration button')).find((button) => button.textContent === 'この内容で一覧を作る')!.click();
+    expect(edit).toHaveBeenCalled();
+    expect(confirm).toHaveBeenCalled();
+  } finally {
+    edit.mockRestore();
+    confirm.mockRestore();
+  }
+});
+
 test('アウトカム一覧のクエリと編集操作をサービスへ配線する', async () => {
   installChromeMock();
   document.body.innerHTML = APP_TEMPLATE;
@@ -5772,7 +5804,7 @@ test('アウトカム一覧のクエリと編集操作をサービスへ配線�
   state.schema.versions = [];
   state.schema.currentFields = [matrixField()];
   const outcome = {
-    schemaVersion: 1, outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
+    schemaVersion: 1, aliases: [], outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
     description: null, typicalTimepoints: null, addedVia: 'schema_editor' as const, note: null,
   };
   state.schema.allOutcomes = [outcome, { ...outcome, outcomeId: 'pain' }];

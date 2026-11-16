@@ -51,6 +51,8 @@ export interface VerificationData {
   fields: readonly SchemaField[];
   /** 現行のアウトカムの一覧。論文単位モードは null。 */
   outcomeList?: OutcomeListContext | null;
+  /** 既存のキーがあり、一覧の作成に移行が必要か。 */
+  outcomeMigrationRequired?: boolean;
   /** study の全文書ぶんの AI 根拠（表示中の run のもの。各行は document_id で出所を持つ） */
   evidence: readonly Evidence[];
   /** 当該 study の判定履歴（全 annotator。パネル側で自分の行に絞る） */

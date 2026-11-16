@@ -6,7 +6,7 @@ const context: OutcomeListContext = {
   schemaVersion: 2,
   outcomes: [{ outcomeId: 'pain', outcomeLabel: '痛み' } as SchemaOutcome],
   currentIds: new Set(['pain']),
-  everIds: new Set(['pain', 'removed']),
+  aliasToId: new Map(), everIds: new Set(['pain', 'removed']),
 };
 
 function setup(onAdd = jest.fn().mockResolvedValue(undefined)) {

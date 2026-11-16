@@ -10,6 +10,8 @@ import { listSchemaVersions, getSchemaFieldsByVersion } from '../../../../src/fe
 import { makeField, makeEvidence, makeRun } from '../../features/verification/pilotMatrixFixtures';
 import { downloadTextFile } from '../../../../src/app/ui/download';
 import { readAllSchemaOutcomes } from '../../../../src/features/schema/schemaOutcomeRepository';
+import { readAllDecisions } from '../../../../src/features/verification/decisionRepository';
+jest.mock('../../../../src/features/verification/decisionRepository');
 
 jest.mock('../../../../src/features/schema/schemaOutcomeRepository');
 
@@ -70,7 +72,7 @@ test('手動計算、再計算、CSV 2 本、無効化', async () => {
 });
 
 test('比較に現行の一覧を渡し、一覧外の AI の結果を数えない', async () => {
-  jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ schemaVersion: 1, outcomeIndex: 1,
+  jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ schemaVersion: 1, aliases: [], outcomeIndex: 1,
     outcomeId: 'current', outcomeLabel: '共通名', description: null, typicalTimepoints: null,
     addedVia: 'schema_editor', note: null }]);
   jest.mocked(getSchemaFieldsByVersion).mockResolvedValue([makeField({ entityLevel: 'outcome_result' })]);
@@ -82,6 +84,15 @@ test('比較に現行の一覧を渡し、一覧外の AI の結果を数えな�
   await loadAiHumanComparison(store, deps);
   expect(store.getState().dashboard.comparison.data?.cells.map((cell) => cell.entityKey))
     .toEqual(['outcome:current|arm:1', 'outcome:current|arm:1']);
+});
+
+test('別名を含む比較は判定履歴も読み、一覧の id に統合する', async () => {
+  jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ schemaVersion: 1, outcomeIndex: 1, outcomeId: 'pain', aliases: ['old'], outcomeLabel: '痛み', description: null, typicalTimepoints: null, addedVia: 'migration', note: null }]);
+  jest.mocked(readAllDecisions).mockResolvedValue([]);
+  const store = setup();
+  await loadAiHumanComparison(store, deps);
+  expect(readAllDecisions).toHaveBeenCalled();
+  expect(store.getState().dashboard.comparison.error).toBeNull();
 });
 
 test('未選択・レビュアーは読まず、裁定者と null のロールは読める', async () => {
