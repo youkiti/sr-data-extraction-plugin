@@ -47,6 +47,15 @@ describe('値を先に見る分類', () => {
 });
 
 describe('比較セルと対象者', () => {
+  test('一覧外の結果と estimate 別 RoB を比較から除く', () => {
+    const keys = ['outcome:current|arm:1', 'outcome:removed|arm:1', 'rob:overall|outcome:removed|arm:1'];
+    const outcome = makeField({ fieldId: 'f-arm', entityLevel: 'outcome_result' });
+    const report = buildComparisonCells(input({ fields: [outcome],
+      resultRows: keys.map((entityKey) => resultRow({ entityKey })),
+      evidence: keys.map((entityKey) => makeEvidence({ fieldId: 'f-arm', entityKey })),
+      outcomeList: { schemaVersion: 2, outcomes: [], currentIds: new Set(['current']), everIds: new Set(['current', 'removed']) } }));
+    expect(report.cells.map((cell) => cell.entityKey)).toEqual(['outcome:current|arm:1', 'outcome:current|arm:1']);
+  });
   test('独立の人と最終値を分け、Evidence なしの対象研究を含める', () => {
     const report = buildComparisonCells(input({ studies: ['study-1', 'study-2', 'study-3'].map((studyId) => ({ studyId, studyLabel: studyId })),
       runs: [makeRun({ studyIds: ['study-1', 'study-2'] })], studyRows: [studyRow(), studyRow({ studyId: 'study-2' })] }));

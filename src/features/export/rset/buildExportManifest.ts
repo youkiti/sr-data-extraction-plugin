@@ -15,6 +15,8 @@ export interface RSetManifestFileEntry {
 
 export interface BuildExportManifestInput {
   schemaVersion: number;
+  /** 一覧モードで使用したアウトカム一覧のスキーマ版 */
+  outcomeListSchemaVersion?: number;
   /** ISO 8601。呼び出し側（exportService 等）が Date.now() 相当を解決してから渡す */
   exportedAt: string;
   appVersion: string;
@@ -27,6 +29,8 @@ export interface BuildExportManifestInput {
 export interface RSetManifest {
   export_format_version: string;
   schema_version: number;
+  /** 一覧モードで使用したアウトカム一覧のスキーマ版 */
+  outcome_list_schema_version?: number;
   exported_at: string;
   app_version: string;
   review_mode: string;
@@ -41,6 +45,7 @@ export function buildExportManifest(input: BuildExportManifestInput): RSetManife
     issuesSummary[issue.issueType] = (issuesSummary[issue.issueType] ?? 0) + 1;
   }
   return {
+    ...(input.outcomeListSchemaVersion === undefined ? {} : { outcome_list_schema_version: input.outcomeListSchemaVersion }),
     export_format_version: EXPORT_FORMAT_VERSION,
     schema_version: input.schemaVersion,
     exported_at: input.exportedAt,

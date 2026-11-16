@@ -9,6 +9,9 @@ import { readCompletedRunMetas } from '../../../../src/features/extraction/runRe
 import { listSchemaVersions, getSchemaFieldsByVersion } from '../../../../src/features/schema/schemaRepository';
 import { makeField, makeEvidence, makeRun } from '../../features/verification/pilotMatrixFixtures';
 import { downloadTextFile } from '../../../../src/app/ui/download';
+import { readAllSchemaOutcomes } from '../../../../src/features/schema/schemaOutcomeRepository';
+
+jest.mock('../../../../src/features/schema/schemaOutcomeRepository');
 
 jest.mock('../../../../src/features/documents/studyRepository', () => ({
   ...jest.requireActual('../../../../src/features/documents/studyRepository'), readStudies: jest.fn(),
@@ -30,6 +33,7 @@ const deps = { google: {}, profile: {}, loadPdf: jest.fn(), now: () => '2026-11-
 
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.mocked(readAllSchemaOutcomes).mockResolvedValue([]);
   (readStudies as jest.Mock).mockResolvedValue([{ studyId: 'study-1', studyLabel: '研究 1' }]);
   (readDocuments as jest.Mock).mockResolvedValue([{ studyId: 'study-1' }]);
   (readStudyDataSheet as jest.Mock).mockResolvedValue({ rows: [{ studyId: 'study-1', annotator: 'human',
@@ -63,6 +67,21 @@ test('手動計算、再計算、CSV 2 本、無効化', async () => {
   expect(download).toHaveBeenCalledTimes(2);
   invalidateDashboard(store);
   expect(store.getState().dashboard.comparison).toEqual({ loading: false, error: null, data: null });
+});
+
+test('比較に現行の一覧を渡し、一覧外の AI の結果を数えない', async () => {
+  jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ schemaVersion: 1, outcomeIndex: 1,
+    outcomeId: 'current', outcomeLabel: '共通名', description: null, typicalTimepoints: null,
+    addedVia: 'schema_editor', note: null }]);
+  jest.mocked(getSchemaFieldsByVersion).mockResolvedValue([makeField({ entityLevel: 'outcome_result' })]);
+  jest.mocked(readEvidenceRows).mockResolvedValue([
+    makeEvidence({ entityKey: 'outcome:current|arm:1' }),
+    makeEvidence({ entityKey: 'outcome:outside|arm:1' }),
+  ]);
+  const store = setup();
+  await loadAiHumanComparison(store, deps);
+  expect(store.getState().dashboard.comparison.data?.cells.map((cell) => cell.entityKey))
+    .toEqual(['outcome:current|arm:1', 'outcome:current|arm:1']);
 });
 
 test('未選択・レビュアーは読まず、裁定者と null のロールは読める', async () => {

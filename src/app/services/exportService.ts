@@ -7,6 +7,8 @@
 import { getToolVersion as defaultGetToolVersion } from '../../utils/toolVersion';
 import { isConsultAction } from '../../domain/decision';
 import { readQuoteSetRows } from '../../features/verification/quoteSetRepository';
+import { readAllSchemaOutcomes } from '../../features/schema/schemaOutcomeRepository';
+import { buildOutcomeListContext } from '../../features/schema/outcomeListContext';
 import { readCompletedRunMetas, readPilotRuns } from '../../features/extraction/runRepository';
 import { readAcceptanceCriteria } from '../../features/verification/acceptanceCriteriaRepository';
 import { buildComparisonCells } from '../../features/verification/aiHumanComparison';
@@ -123,6 +125,7 @@ export async function loadExportData(
       llmApiLogs,
       acceptance,
       pilotRuns,
+      outcomes,
     ] = await Promise.all([
       readDocuments(spreadsheetId, deps.google),
       readStudies(spreadsheetId, deps.google),
@@ -140,6 +143,7 @@ export async function loadExportData(
       readLlmApiLogEntries(spreadsheetId, deps.google),
       readAcceptanceCriteria(spreadsheetId, deps.google),
       readPilotRuns(spreadsheetId, deps.google),
+      readAllSchemaOutcomes(spreadsheetId, deps.google),
     ]);
     const latest = versions[0]; // listSchemaVersions は降順
     if (latest === undefined) {
@@ -147,11 +151,13 @@ export async function loadExportData(
       throw new Error(t('export.svcNoSchema'));
     }
     const fields = await getSchemaFieldsByVersion(spreadsheetId, latest.schemaVersion, deps.google);
+    const outcomeList = buildOutcomeListContext(outcomes, versions, latest.schemaVersion);
     // エクスポートはアクティブ study（Documents から参照される study）のみ・作成順（§4.5）
     const studies = resolveActiveStudies(allStudies, documents);
     const bundlesByStudy = new Map([...composeEvidenceByStudy(evidences, completedRuns)]
       .map(([studyId, entry]) => [studyId, bundleEvidence(entry.evidence)]));
     const materials: ExportMaterials = {
+      outcomeList,
       documents,
       quoteSetRows,
       bundlesByStudy,
@@ -169,6 +175,7 @@ export async function loadExportData(
     // R セット（issue #60）。素材は generateExport が正確な exported_at で再構築できるよう保持し、
     // ここでの構築結果はサマリ・プレビュー表示専用（rSetMaterials 参照。design-r-export.md §13）
     const rSetMaterials: RSetMaterials = {
+      outcomeList,
       acceptanceCriteria: acceptance.versions,
       comparisonRuns: completedRuns,
       pilotRuns,
@@ -192,7 +199,7 @@ export async function loadExportData(
       acceptanceCriteria: acceptance.versions,
       pilotRuns,
       comparisonCells: buildComparisonCells({ studies, fields, studyRows: studySheet.rows,
-        resultRows: resultsRows, evidence: evidences, runs: completedRuns }).cells,
+        resultRows: resultsRows, evidence: evidences, runs: completedRuns, outcomeList }).cells,
       toolVersion,
       activeStudyIds: studies.map((study) => study.studyId),
       documents,

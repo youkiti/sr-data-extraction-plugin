@@ -13,6 +13,9 @@ import { readEvidenceRows } from '../../../../src/features/extraction/evidenceRe
 import { listSchemaVersions, getSchemaFieldsByVersion } from '../../../../src/features/schema/schemaRepository';
 import { makeRun } from '../../features/verification/pilotMatrixFixtures';
 import { setUiLanguage } from '../../../../src/lib/i18n';
+import { readAllSchemaOutcomes } from '../../../../src/features/schema/schemaOutcomeRepository';
+
+jest.mock('../../../../src/features/schema/schemaOutcomeRepository');
 
 jest.mock('../../../../src/features/verification/acceptanceCriteriaRepository');
 jest.mock('../../../../src/features/extraction/runRepository');
@@ -33,6 +36,7 @@ function storeOf() {
   return createStore(state);
 }
 beforeEach(() => {
+  jest.mocked(readAllSchemaOutcomes).mockResolvedValue([]);
   setUiLanguage('ja');
   jest.mocked(readAcceptanceCriteria).mockResolvedValue({ versions: [criteria], ignoredCount: 0 });
   jest.mocked(readPilotRuns).mockResolvedValue([makeRun(), makeRun({ runType: 'full' })]);

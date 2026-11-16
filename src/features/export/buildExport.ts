@@ -15,6 +15,7 @@ import { buildAuditCsv } from './buildAuditCsv';
 import { buildResultsLongCsv } from './buildResultsLongCsv';
 import { buildStudyWideCsv } from './buildStudyWideCsv';
 import { parseCsv } from './parseCsv';
+import { isEntityKeyInOutcomeList, type OutcomeListContext } from '../schema/outcomeListContext';
 
 /**
  * このモジュール（buildExport.ts）が扱う「単一 CSV を返す」従来 3 形式。
@@ -43,6 +44,8 @@ export interface ExportMaterials {
   runs: readonly RunAuditInfo[];
   /** 最新確定版の全項目 */
   fields: readonly SchemaField[];
+  /** 出力対象を絞るアウトカム一覧。未指定なら論文単位モード */
+  outcomeList?: OutcomeListContext | null;
 }
 
 /** 1 形式ぶんの構築結果（サマリ・警告ダイアログ・プレビュー・ExportLog の素材） */
@@ -104,6 +107,7 @@ export function toStudyLabels(
 
 export function buildExport(format: ClassicExportFormat, materials: ExportMaterials, draft = false): BuiltExport {
   const { studies, fields } = materials;
+  const included = (row: { entityKey: string }): boolean => isEntityKeyInOutcomeList(row.entityKey, materials.outcomeList ?? null);
   switch (format) {
     case 'study_wide': {
       const result = buildStudyWideCsv(studies, materials.studyRows, fields, materials.decisions, draft);
@@ -117,7 +121,7 @@ export function buildExport(format: ClassicExportFormat, materials: ExportMateri
       );
     }
     case 'results_long': {
-      const result = buildResultsLongCsv(studies, materials.resultsRows, fields, materials.decisions, draft);
+      const result = buildResultsLongCsv(studies, materials.resultsRows.filter(included), fields, materials.decisions.filter(included), draft);
       return finish(
         format,
         result.csv,
@@ -130,7 +134,7 @@ export function buildExport(format: ClassicExportFormat, materials: ExportMateri
     case 'evidence_quotes': {
       const result = buildEvidenceQuotesCsv({ ...materials,
         studyDataRows: materials.studyRows, resultsDataRows: materials.resultsRows });
-      const audit = buildAuditCsv(studies, materials.decisions, materials.evidences, materials.runs, fields);
+      const audit = buildAuditCsv(studies, materials.decisions.filter(included), materials.evidences.filter(included), materials.runs, fields);
       return finish(format, result.csv, result.studyCount, audit.undecidedCellCount, [], 0);
     }
     case 'audit': {

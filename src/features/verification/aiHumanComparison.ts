@@ -11,6 +11,7 @@ import { STUDY_ENTITY_KEY } from '../../utils/entityKey';
 import { composeEvidenceByStudy } from './composeEvidence';
 import { bundleEvidence, type EvidenceBundle } from './evidenceBundles';
 import { cellKeyOf } from './cellState';
+import { isEntityKeyInOutcomeList, type OutcomeListContext } from '../schema/outcomeListContext';
 
 export type ComparisonGroup = 'independent' | 'consensus' | 'human_independent' | 'human_with_ai';
 export type ComparisonCategory = 'match' | 'misclassification' | 'false_positive' | 'false_negative' | 'incomparable';
@@ -37,6 +38,8 @@ export interface ComparisonCell {
 export interface ComparisonInput {
   studies: readonly { studyId: string; studyLabel: string }[];
   fields: readonly SchemaField[];
+  /** 比較対象を絞るアウトカム一覧。未指定なら論文単位モード */
+  outcomeList?: OutcomeListContext | null;
   studyRows: readonly StudyDataRow[];
   resultRows: readonly ResultsDataRow[];
   evidence: readonly Evidence[];
@@ -126,6 +129,9 @@ export function buildComparisonCells(input: ComparisonInput): ComparisonReport {
         ])].sort();
         const targeted = runs.some((run) => run.fieldIds === null || run.fieldIds.length === 0 || run.fieldIds.includes(field.fieldId));
         for (const entityKey of keys) {
+          if (!isEntityKeyInOutcomeList(entityKey, input.outcomeList ?? null)) {
+            continue;
+          }
           const key = cellKeyOf(field.fieldId, entityKey);
           const result = resultIndex.get(key);
           const human = field.entityLevel === 'study' ? study?.values[field.fieldName] ?? null

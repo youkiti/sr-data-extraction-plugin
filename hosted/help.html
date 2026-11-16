@@ -1319,6 +1319,11 @@
             <span class="ja" lang="ja">判定済みのセルがあるアウトカムを外すときは、セル数と論文数を示す確認が出ます。判定の記録は消えません。「外したアウトカムを戻す」で過去の id を選ぶと、最後に載っていた版の名称・説明・主な時点で戻せます。一覧モードでは最後のアウトカムは外せません。JSON のスキーマファイルには一覧も含まれ、CSV には含まれません。</span>
             <span class="en" lang="en">Removing an outcome with judged cells asks for confirmation and shows the numbers of cells and papers. Decision records are retained. Select a past id under “Restore a removed outcome” to restore its name, description, and typical timepoints from the last version that included it. In list mode, the last outcome cannot be removed. JSON schema files include the list; CSV files do not.</span>
           </p>
+
+          <p>
+            <span class="ja" lang="ja">一覧のアウトカムは AI が見つけなくても、確定済みの群ごとの空セルとして出ます。人が not_reported などで判定してください。AI が一覧に無いアウトカムを見つけると、欄外に「一覧外の候補」として出ます。パイロットでは候補から表のデザインに追加でき、本番の検証と裁定では owner がスキーマ編集画面から追加します。</span>
+            <span class="en" lang="en">Listed outcomes appear as empty cells for confirmed arms even when AI finds no result. A person must judge them, for example as not_reported. Outcomes found by AI outside the list appear separately as “Candidates outside the list”. During the pilot, candidates can be added to the schema directly; during verification and adjudication, the owner adds them from the schema editor.</span>
+          </p>
         </section>
 
         <section id="pilot">
@@ -1965,6 +1970,11 @@
               >Verification, pilot and “Resolve conflicts” screens show the number of pending saves, for example “Saving (1)”. Keep the tab open until the indicator disappears. If you try to close, reload or otherwise leave the page while saves are pending, the browser asks for confirmation.</span
             >
           </p>
+
+          <p>
+            <span class="ja" lang="ja">一覧のアウトカムは AI が見つけなくても、確定済みの群ごとの空セルとして出ます。人が not_reported などで判定してください。AI が一覧に無いアウトカムを見つけると、欄外に「一覧外の候補」として出ます。パイロットでは候補から表のデザインに追加でき、本番の検証と裁定では owner がスキーマ編集画面から追加します。</span>
+            <span class="en" lang="en">Listed outcomes appear as empty cells for confirmed arms even when AI finds no result. A person must judge them, for example as not_reported. Outcomes found by AI outside the list appear separately as “Candidates outside the list”. During the pilot, candidates can be added to the schema directly; during verification and adjudication, the owner adds them from the schema editor.</span>
+          </p>
         </section>
 
         <section id="dashboard">
@@ -2445,6 +2455,11 @@
             <span class="en" lang="en"
               >On the export screen, the owner presses “Generate usage CSV” under “Cost and usage CSV”. This writes calls, tokens and estimated costs for all purposes, as totals and by run and month, to <code>usage.csv</code> in Drive. After generation, “Save locally” is also available. This is separate from exporting extracted data and does not require confirmation about unverified cells.</span
             >
+          </p>
+
+          <p>
+            <span class="ja" lang="ja">一覧に無いアウトカムと、それを参照する RoB の評価は、audit.csv を除くエクスポートに出ません。追加したアウトカムの空セルも未検証の警告に含みます。ma.csv の outcome_label は一覧の表示名になり、論文ごとの表記は outcome_name 列にだけ残ります。</span>
+            <span class="en" lang="en">Outcomes outside the list and RoB assessments referring to them are excluded from exports except audit.csv. Empty cells for added outcomes also count toward unverified warnings. In ma.csv, outcome_label uses the list display name; paper-specific wording remains only in outcome_name.</span>
           </p>
         </section>
 
