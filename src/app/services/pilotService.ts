@@ -601,7 +601,8 @@ export async function loadPilotVerification(
       decisions: bundle.allDecisions, annotator: bundle.verification.annotator, evidence: allEvidence,
     });
     const migrationEvidence = outcomeList === null
-      ? allEvidence ?? await readEvidenceRows(project.spreadsheetId, deps.google)
+      // 論文を開くたびに Evidence タブを読み直さず、パイロットが持っている run の Evidence で判定する
+      ? allEvidence ?? evidence
       : [];
     bundle.verification.outcomeMigrationRequired = outcomeList === null
       && [...migrationEvidence, ...bundle.allDecisions].some((row) => parseEntityKey(row.entityKey)?.level === 'outcome_result');
