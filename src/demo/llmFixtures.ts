@@ -187,7 +187,7 @@ export function buildGenerateContentResponseText(body: unknown): string {
       : '下のリンクからヘルプの該当箇所を開き、手順を確認してください。';
   }
   if (promptText.startsWith('## Review protocol\n') && promptText.includes('## Sample article:')) {
-    return JSON.stringify(DEMO_SCHEMA_FIELDS.map(field => ({
+    return JSON.stringify({ fields: DEMO_SCHEMA_FIELDS.map(field => ({
       section: field.section,
       field_name: field.fieldName,
       field_label: field.fieldLabel,
@@ -198,7 +198,11 @@ export function buildGenerateContentResponseText(body: unknown): string {
       required: field.required,
       extraction_instruction: field.extractionInstruction,
       example: field.example,
-    })));
+    })), outcomes: [
+      { outcome_id: 'six_minute_walk', outcome_label: '6分間歩行距離', description: null, typical_timepoints: null },
+      { outcome_id: 'ponv_incidence', outcome_label: '術後悪心・嘔吐', description: null, typical_timepoints: null },
+      { outcome_id: 'postop_los', outcome_label: '術後在院日数', description: null, typical_timepoints: null },
+    ] });
   }
   if (isRelocateQuotePrompt(promptText)) {
     return buildRelocateQuoteResponseText(promptText);

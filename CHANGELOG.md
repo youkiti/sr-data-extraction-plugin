@@ -15,6 +15,9 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ### AI の結果に影響する変更 / Changes that affect AI output
 
+- draft-schema が初回の表のデザインでアウトカムの一覧の案も出すようにしました（プロンプト版数 5）。再ドラフトは現行の一覧を引き継ぎます（2026-11-16、issue #539）。
+  The initial draft-schema now proposes an outcome list alongside extraction fields (prompt version 5). Redrafts retain the current list (2026-11-16, issue #539).
+
 - 一覧モードの検証・進捗・ダッシュボード・裁定は現行のアウトカム一覧を使い、一覧外のキーを集計から除きます。AI と人の比較と一致度（κ）も一覧に無いキーを数えません。未抽出の一覧項目は確定済みの群ごとの空セルとして進捗に含め、AI の一覧外の候補は欄外に表示します（2026-11-16、issue #539）。
   Verification, progress, dashboards, and adjudication in list mode now use the current outcome list and exclude keys outside it. AI-human comparisons and agreement (κ) also exclude keys outside the list. Listed outcomes without extracted instances contribute empty cells for confirmed arms; AI candidates outside the list appear separately (2026-11-16, issue #539).
 

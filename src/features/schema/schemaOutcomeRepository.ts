@@ -5,7 +5,7 @@ import { addSheetTab, appendRows, getSheetTitles, getSheetValues, writeHeaderRow
 import type { GoogleApiDeps } from '../../lib/google/types';
 
 const TAB = 'SchemaOutcomes';
-const ADDED_VIA: readonly string[] = ['schema_editor', 'pilot_verify', 'pilot_candidate', 'migration', 'file_import'];
+const ADDED_VIA: readonly string[] = ['schema_editor', 'ai_draft', 'pilot_verify', 'pilot_candidate', 'migration', 'file_import'];
 
 async function validateHeader(spreadsheetId: string, deps: GoogleApiDeps): Promise<string[][]> {
   const values = await getSheetValues(spreadsheetId, TAB, deps);

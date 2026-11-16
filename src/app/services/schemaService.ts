@@ -346,12 +346,14 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
 
     const response = await provider.chat(
       [
-        { role: 'system', content: DRAFT_SCHEMA_SYSTEM_PROMPT },
+        { role: 'system', content: (store.getState().schema.versions?.length ?? 0) > 0
+          ? `${DRAFT_SCHEMA_SYSTEM_PROMPT}\nThis is a redraft of an existing schema. Return an empty outcomes array.`
+          : DRAFT_SCHEMA_SYSTEM_PROMPT },
         { role: 'user', content: buildDraftSchemaUserPrompt({ protocolText, samples }) },
       ],
       { responseFormat: 'json', responseSchema: DRAFT_SCHEMA_RESPONSE_SCHEMA },
     );
-    const rows = parseDraftSchemaResponse(response.text);
+    const { rows, outcomes } = parseDraftSchemaResponse(response.text);
     // 現行版の有無で分岐する（issue #197）: 0 版（初回ドラフト）は従来どおりエディタへ直行、
     // 1 件以上あるときはエディタへ直行せず差分承認画面（redraft）を経由させる
     // （既存項目がユーザーの明示的承認なしに消えないようにするため）
@@ -360,7 +362,7 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
       patchSchema(store, {
         drafting: false,
         editorRows: rows,
-        editorOutcomes: [],
+        editorOutcomes: outcomes,
         editorOutcomeErrors: [],
         outcomeRemoval: null,
         acknowledgedRemovedOutcomeIds: [],
