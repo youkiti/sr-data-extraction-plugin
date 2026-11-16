@@ -253,7 +253,7 @@ const EXPECTED = {
     actual: () => ({ version: HELP_CONSULT_PROMPT_VERSION, hash: helpConsultFingerprint() }),
   },
   'extract-data（EXTRACT_DATA_PROMPT_VERSION）': {
-    version: 16,
+    version: 17,
     hash: '59718e867fb906552734eef049fe0d9f',
     actual: () => ({ version: EXTRACT_DATA_PROMPT_VERSION, hash: extractDataFingerprint() }),
   },

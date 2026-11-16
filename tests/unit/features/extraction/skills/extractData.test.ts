@@ -110,6 +110,43 @@ function makeImageDoc(
 
 const DOCS = [makeDoc()];
 
+describe('アウトカムの一覧', () => {
+  const outcomeList = [
+    { outcomeId: 'mortality', outcomeLabel: '全死亡', description: 'All-cause death', typicalTimepoints: '30d|90d' },
+    { outcomeId: 'pain', outcomeLabel: '疼痛', description: null, typicalTimepoints: null },
+  ];
+
+  test('出所規則と既知キーの間に一覧・id・時点・一覧外の規則を載せる', () => {
+    const input = { fields: [OUTCOME_FIELD], documents: DOCS, knownOutcomeEntityKeys: ['outcome:mortality|time:30d'] };
+    const before = buildExtractDataUserPrompt(input);
+    const after = buildExtractDataUserPrompt({ ...input, outcomeList });
+    const start = after.indexOf('## Outcome list');
+    const end = after.indexOf('## Outcome entities already identified');
+    expect(after.slice(0, start).trimEnd().endsWith(EXTRACT_DATA_OUTCOME_SOURCE_RULE)).toBe(true);
+    expect(after.slice(start, end)).toContain('outcome:<outcome_id>');
+    expect(after.slice(start, end)).toContain('|time:<token>');
+    expect(after.slice(start, end)).toContain('new snake_case outcome id');
+    expect(after.slice(start, end)).toContain('do not fix or restrict the timepoints');
+    expect(after.slice(start, end)).toContain('- outcome_id: mortality; label: 全死亡; description: All-cause death; typical timepoints (reference only): 30d|90d');
+    expect(after.slice(start, end)).toContain('- outcome_id: pain; label: 疼痛\n');
+    expect(after.slice(0, start) + after.slice(end)).toBe(before);
+  });
+
+  test('空の一覧や outcome_result の無いバッチは文字列も画像入力も変えない', () => {
+    for (const fields of [[STUDY_FIELD], [OUTCOME_FIELD]]) {
+      for (const documents of [DOCS, [makeImageDoc()]]) {
+        const input = { fields, documents };
+        expect(buildExtractDataUserContent({ ...input, outcomeList: [] })).toEqual(buildExtractDataUserContent(input));
+        if (fields[0] === STUDY_FIELD) {
+          expect(buildExtractDataUserContent({ ...input, outcomeList })).toEqual(buildExtractDataUserContent(input));
+        } else {
+          expect(JSON.stringify(buildExtractDataUserContent({ ...input, outcomeList }))).toContain('## Outcome list');
+        }
+      }
+    }
+  });
+});
+
 describe('先行バッチの outcome_result キー', () => {
   const keys = ['outcome:mortality|arm:2|time:30d', 'outcome:mortality|arm:1|time:30d'];
   const heading = '## Outcome entities already identified';
@@ -180,8 +217,8 @@ describe('本文とページ画像の併用', () => {
 describe('extract-data skill 定数', () => {
   it('skill 名とプロンプト版数を公開する（LLMApiLog 記録用）', () => {
     expect(EXTRACT_DATA_SKILL_NAME).toBe('extract-data');
-    // v16: 抄録を結果に含め、設計の項目を方法・抄録から抽出すると明示
-    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(16);
+    // 一覧がある場合だけアウトカムの id と抽出のヒントを載せる。
+    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(17);
   });
 
   it('システムプロンプトに verbatim quote の規約（300 文字上限）と document_index の規約を含む', () => {

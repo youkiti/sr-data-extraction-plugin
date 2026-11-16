@@ -13,6 +13,11 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
+### AI の結果に影響する変更 / Changes that affect AI output
+
+- 表のデザインにアウトカムの一覧があるとき、extract-data のプロンプトに一覧を載せ、一覧の id で結果を返すよう指示するようにしました（プロンプト版数 17）。一覧が無いプロジェクトのプロンプトは変わりません（2026-11-16、issue #539）。
+  When the schema has an outcome list, the extract-data prompt now includes the list and instructs the model to return results using its ids (prompt version 17). Prompts for projects without an outcome list are unchanged (2026-11-16, issue #539).
+
 ### その他の変更 / Other changes
 
 - 表のデザインでアウトカムの一覧を追加・名称変更・並べ替え・外す・戻すことができ、版ごとに保存するようにしました。外すときは判定済みのセル数と論文数を確認できます。JSON の読み書きにも一覧を含めました（2026-11-16、issue #539）。

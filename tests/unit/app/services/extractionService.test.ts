@@ -1,4 +1,8 @@
 import { runExtraction } from '../../../../src/app/services/extractionService';
+import { readAllSchemaOutcomes } from '../../../../src/features/schema/schemaOutcomeRepository';
+import { listSchemaVersions } from '../../../../src/features/schema/schemaRepository';
+import type { SchemaOutcome } from '../../../../src/domain/schemaOutcome';
+import type { SchemaVersion } from '../../../../src/domain/schemaVersion';
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import * as aiAnnotationRowsModule from '../../../../src/features/extraction/aiAnnotationRows';
@@ -20,6 +24,8 @@ import type { ChatResponse, LLMProvider } from '../../../../src/lib/llm/LLMProvi
 import type { RateLimitPolicy } from '../../../../src/lib/llm/rateLimitPolicy';
 
 jest.mock('../../../../src/features/extraction/annotationRepository');
+jest.mock('../../../../src/features/schema/schemaOutcomeRepository');
+jest.mock('../../../../src/features/schema/schemaRepository');
 jest.mock('../../../../src/features/extraction/evidenceRepository');
 jest.mock('../../../../src/features/extraction/runRepository');
 jest.mock('../../../../src/features/verification/armStructureRepository');
@@ -142,9 +148,51 @@ function baseParams() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.mocked(readAllSchemaOutcomes).mockResolvedValue([]);
+  jest.mocked(listSchemaVersions).mockResolvedValue([]);
   mockedUpload.mockResolvedValue({ id: 'file-1', webViewLink: 'https://drive/log' });
   // 既定: ArmStructures は未確定（arm completeness チェックは応答内の自己整合のみ。issue #106）
   mockedReadArmRows.mockResolvedValue([]);
+});
+
+describe('アウトカムの一覧の抽出への受け渡し', () => {
+  test.each([1, 2])('実行版以前の一覧（保存版 %i）を渡し、一覧外の応答も Evidence と ai 行に保存する', async (schemaVersion) => {
+    const row = (version: number, outcomeId: string): SchemaOutcome => ({
+      schemaVersion: version, outcomeIndex: 1, outcomeId, outcomeLabel: '全死亡',
+      description: '死亡の所見', typicalTimepoints: '30d', addedVia: 'schema_editor', note: null,
+    });
+    jest.mocked(readAllSchemaOutcomes).mockResolvedValue([row(3, 'future'), row(schemaVersion, 'mortality')]);
+    jest.mocked(listSchemaVersions).mockResolvedValue([3, 2, 1].map((version) => ({ schemaVersion: version } as SchemaVersion)));
+    const entityKey = 'outcome:unexpected_pain|arm:1|time:60d';
+    const chat = jest.fn().mockResolvedValue({
+      ...AI_RESPONSE,
+      text: JSON.stringify([{
+        field_id: 'f-outcome', entity_key: entityKey, value: '120', not_reported: false,
+        quote: '120 patients', page: 1, document_index: 1, confidence: 'high',
+      }]),
+    });
+    await runExtraction({
+      ...baseParams(), fields: [makeField({ fieldId: 'f-outcome', entityLevel: 'outcome_result' })],
+    }, makeDeps(chat));
+    expect(jest.mocked(readAllSchemaOutcomes)).toHaveBeenCalledWith('sid', GOOGLE);
+    const prompt = chat.mock.calls[0]![0][1].content as string;
+    expect(prompt).toContain('## Outcome list');
+    expect(prompt).toContain('outcome_id: mortality; label: 全死亡; description: 死亡の所見; typical timepoints (reference only): 30d');
+    expect(prompt).not.toContain('outcome_id: future');
+    expect(mockedAppendEvidence).toHaveBeenCalledWith('sid', [expect.objectContaining({
+      entityKey, fieldId: 'f-outcome', value: '120',
+    })], GOOGLE);
+    expect(mockedUpsertResults).toHaveBeenCalledWith('sid', [expect.objectContaining({
+      entityKey, fieldId: 'f-outcome', value: '120', annotatorType: 'ai',
+    })], GOOGLE, { newUuid: expect.any(Function) });
+  });
+
+  test('一覧の無い旧プロジェクトでは一覧を渡さず版の追加読み込みもしない', async () => {
+    const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+    await runExtraction(baseParams(), makeDeps(chat));
+    expect(chat.mock.calls[0]![0][1].content).not.toContain('## Outcome list');
+    expect(listSchemaVersions).not.toHaveBeenCalled();
+  });
 });
 
 describe('抽出実行の再現情報', () => {
@@ -330,7 +378,7 @@ describe('runExtraction', () => {
     expect(promptCall?.parentId).toBe('folder-logs');
     expect(promptCall?.mimeType).toBe('application/json');
     expect(promptCall?.name).toMatch(/\.prompt\.json$/);
-    expect(JSON.parse(promptCall?.content ?? '{}').promptVersion).toBe(16); // EXTRACT_DATA_PROMPT_VERSION
+    expect(JSON.parse(promptCall?.content ?? '{}').promptVersion).toBe(17); // EXTRACT_DATA_PROMPT_VERSION
     expect(mockedUpload.mock.calls[1]?.[0].name).toMatch(/\.response\.json$/);
 
     expect(mockedAppendLog).toHaveBeenCalledTimes(1);
