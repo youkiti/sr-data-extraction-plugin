@@ -7,7 +7,7 @@ import {
 } from '../../../src/domain/sheetsSchema';
 
 describe('SHEET_TABS', () => {
-  test('合格基準を含む 19 タブを定義順に持つ', () => {
+  test('アウトカムの一覧を含む 20 タブを定義順に持つ', () => {
     expect(SHEET_TABS).toEqual([
       'Meta',
       'Protocol',
@@ -15,6 +15,7 @@ describe('SHEET_TABS', () => {
       'Documents',
       'SchemaVersions',
       'SchemaFields',
+      'SchemaOutcomes',
       'ExtractionRuns',
       'StudyData',
       'ResultsData',

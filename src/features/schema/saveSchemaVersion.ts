@@ -1,8 +1,9 @@
 // 「版として確定」パイプライン（S5）: エディタ行を検証し、
-// SchemaVersions（1 行）+ SchemaFields（N 行）を新しい schema_version で追記する。
+// SchemaVersions（1 行）→ SchemaFields（N 行）→ SchemaOutcomes（M 行）を新しい schema_version で追記する。
 // 追記型のため過去版は常に保持される（requirements.md §3.1）
 import { splitPipeList } from '../../domain/multiSelect';
 import type { SchemaField } from '../../domain/schemaField';
+import type { SchemaOutcome } from '../../domain/schemaOutcome';
 import type { SchemaCreatedByType, SchemaVersion } from '../../domain/schemaVersion';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { nowIso8601 } from '../../utils/iso8601';
@@ -12,12 +13,16 @@ import {
   appendSchemaVersion,
   getNextSchemaVersion,
 } from './schemaRepository';
-import type { SchemaEditorRow } from './types';
+import type { SchemaEditorRow, SchemaOutcomeEditorRow } from './types';
+import { appendSchemaOutcomes } from './schemaOutcomeRepository';
+import { validateOutcomeRows } from './schemaOutcomes';
 import { validateEditorRows } from './validateField';
 
 export interface SaveSchemaVersionParams {
   spreadsheetId: string;
   rows: readonly SchemaEditorRow[];
+  outcomes: readonly SchemaOutcomeEditorRow[];
+  listModeBefore: boolean;
   /** 派生元の版。初版は null */
   parentVersion: number | null;
   /** 依拠した Protocol.version */
@@ -37,6 +42,7 @@ export interface SaveSchemaVersionDeps {
 export interface SaveSchemaVersionResult {
   version: SchemaVersion;
   fields: SchemaField[];
+  outcomes: SchemaOutcome[];
 }
 
 /** バリデーション未通過のまま確定しようとしたときの失敗（UI 側は事前検証する前提の防衛線） */
@@ -70,6 +76,10 @@ export async function saveSchemaVersion(
   }
 
   const uuid = deps.newUuid ?? generateUuid;
+  const outcomeErrors = validateOutcomeRows(params.outcomes, { listModeBefore: params.listModeBefore });
+  if (outcomeErrors.length > 0) {
+    throw new SchemaValidationError(outcomeErrors.map((error) => error.message).join('。'));
+  }
   const now = deps.now ?? nowIso8601;
   const schemaVersion = await getNextSchemaVersion(params.spreadsheetId, deps.google);
 
@@ -107,5 +117,20 @@ export async function saveSchemaVersion(
 
   await appendSchemaVersion(params.spreadsheetId, version, deps.google);
   await appendSchemaFields(params.spreadsheetId, fields, deps.google);
-  return { version, fields };
+  const outcomes: SchemaOutcome[] = params.outcomes.map((row, index) => ({
+    schemaVersion,
+    outcomeIndex: index + 1,
+    outcomeId: row.outcomeId.trim(),
+    outcomeLabel: row.outcomeLabel.trim(),
+    description: row.description?.trim() || null,
+    typicalTimepoints: row.typicalTimepoints?.trim() || null,
+    addedVia: row.addedVia,
+    note: row.note?.trim() || null,
+  }));
+  try {
+    await appendSchemaOutcomes(params.spreadsheetId, outcomes, deps.google);
+  } catch (err) {
+    throw new Error(`版 ${schemaVersion} の項目は保存しましたが、アウトカムの一覧の保存に失敗しました。もう一度確定してください`, { cause: err });
+  }
+  return { version, fields, outcomes };
 }

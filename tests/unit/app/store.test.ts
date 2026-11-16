@@ -90,6 +90,13 @@ describe('createInitialState', () => {
         draftText: '',
       },
       schema: {
+        allOutcomes: null,
+        currentOutcomes: null,
+        currentOutcomesSourceVersion: null,
+        editorOutcomes: [],
+        editorOutcomeErrors: [],
+        outcomeRemoval: null,
+        outcomeDecisions: null,
         versions: null,
         currentFields: null,
         loading: false,

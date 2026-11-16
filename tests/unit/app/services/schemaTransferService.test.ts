@@ -340,3 +340,45 @@ describe('importSchemaFile（CSV。issue #469）', () => {
     expect(store.getState().schema.redraft).toBeNull();
   });
 });
+
+const transferOutcome = {
+  schemaVersion: 1, outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
+  description: null, typicalTimepoints: '30d', addedVia: 'migration' as const, note: null,
+};
+
+function seedTransferOutcomes(store: Store): void {
+  store.setState({ schema: { ...store.getState().schema, allOutcomes: [transferOutcome], currentOutcomes: [transferOutcome], currentOutcomesSourceVersion: 1 } });
+}
+
+test('書き出す版で欠けた一覧は前版を使い JSON に含める', async () => {
+  const store = storeOf();
+  seedTransferOutcomes(store);
+  const { deps, download } = makeDeps();
+  await exportSchemaFile(store, deps, 2);
+  expect(JSON.parse(download.mock.calls[0]![1]).outcomes).toEqual([
+    { outcomeId: 'mortality', outcomeLabel: '全死亡', description: null, typicalTimepoints: '30d', note: null },
+  ]);
+});
+
+test.each([false, true])('JSON の一覧を読み込み、差分反映でも保持する（既存版あり=%s）', async (hasVersion) => {
+  const store = hasVersion ? storeOf() : storeOf([], []);
+  seedTransferOutcomes(store);
+  await importSchemaFile(store, fileOf(serializeSchemaExport([makeField()], OTHER_SOURCE, [transferOutcome])));
+  if (hasVersion) {
+    applyRedraft(store);
+  }
+  expect(store.getState().schema.editorOutcomes).toEqual([
+    { outcomeId: 'mortality', outcomeLabel: '全死亡', description: null, typicalTimepoints: '30d', note: null, addedVia: 'file_import', idLocked: true, idEdited: true },
+  ]);
+});
+
+test.each(['json', 'csv'] as const)('一覧の無い %s は現行の一覧を引き継ぐ', async (format) => {
+  const store = storeOf();
+  seedTransferOutcomes(store);
+  const text = JSON.parse(serializeSchemaExport([makeField()], OTHER_SOURCE));
+  delete text.outcomes;
+  const file = format === 'json' ? fileOf(JSON.stringify(text)) : csvFileOf('section,field_name,field_label,entity_level,data_type,required,extraction_instruction\nmethods,pain,疼痛,outcome_result,text,false,Report pain\n');
+  await importSchemaFile(store, file, makeDecoder);
+  applyRedraft(store);
+  expect(store.getState().schema.editorOutcomes[0]).toMatchObject({ outcomeId: 'mortality', addedVia: 'migration', idLocked: true });
+});

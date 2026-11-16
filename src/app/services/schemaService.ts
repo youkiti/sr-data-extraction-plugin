@@ -1,8 +1,9 @@
-import { multiSelectConfigOf } from '../../domain/multiSelect';
 // #/schema（S5）のサービス層。features/schema + lib/llm を 1 段抽象化し、
 // 画面状態（AppState.schema）の遷移を一手に引き受ける（architecture.md §2.2）。
 // LLM 呼び出しは extractionService と同じくレート制限ポリシーとログ記録で包み、
 // 全呼び出しを LLMApiLog + Drive（logs/llm/）に残す
+import { multiSelectConfigOf } from '../../domain/multiSelect';
+import type { SchemaOutcome } from '../../domain/schemaOutcome';
 import type { Protocol } from '../../domain/protocol';
 import type { DocumentRecord } from '../../domain/document';
 import { readDocuments } from '../../features/documents/documentRepository';
@@ -38,6 +39,8 @@ import {
   listSchemaVersions,
 } from '../../features/schema/schemaRepository';
 import { saveSchemaVersion } from '../../features/schema/saveSchemaVersion';
+import { readAllSchemaOutcomes } from '../../features/schema/schemaOutcomeRepository';
+import { countJudgedCellsForOutcome, isOutcomeListMode, outcomesForVersion, restorableOutcomes, slugifyOutcomeLabel, validateOutcomeRows } from '../../features/schema/schemaOutcomes';
 import { importNoteDefault } from '../../features/schema/schemaTransfer';
 import { SCHEMA_PRESETS, type SchemaPresetKind } from '../../features/schema/presets';
 import { mergePresetDialogPatch } from '../../features/schema/presets/prespecDialog';
@@ -73,8 +76,9 @@ import {
   robinsIDialogToPrespec,
   validateRobinsIPrespecDialog,
 } from '../../features/schema/presets/robinsIPrespec';
-import type { SchemaEditorRow } from '../../features/schema/types';
+import type { SchemaEditorRow, SchemaOutcomeEditorRow } from '../../features/schema/types';
 import { validateEditorRows } from '../../features/schema/validateField';
+import { readAllDecisions } from '../../features/verification/decisionRepository';
 import { ensureChildFolder, getFileText, uploadTextFile } from '../../lib/google/drive';
 import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity';
 import type { GoogleApiDeps } from '../../lib/google/types';
@@ -164,7 +168,11 @@ export async function loadSchema(
   }
   patchSchema(store, { loading: true, loadError: null });
   try {
-    const versions = await listSchemaVersions(state.currentProject.spreadsheetId, deps.google);
+    const [versions, allOutcomes] = await Promise.all([
+      listSchemaVersions(state.currentProject.spreadsheetId, deps.google),
+      readAllSchemaOutcomes(state.currentProject.spreadsheetId, deps.google),
+    ]);
+    const resolved = outcomesForVersion(allOutcomes, versions, versions[0]?.schemaVersion ?? 0);
     const latest = versions[0];
     const currentFields =
       latest === undefined
@@ -184,7 +192,7 @@ export async function loadSchema(
         : ((await (deps.loadDefaultModel ?? loadDefaultModel)()) ?? FACTORY_DEFAULT_MODEL);
     const after = store.getState();
     store.setState({
-      schema: { ...after.schema, loading: false, loadError: null, versions, currentFields, model },
+      schema: { ...after.schema, loading: false, loadError: null, versions, currentFields, model, allOutcomes, currentOutcomes: resolved.outcomes, currentOutcomesSourceVersion: resolved.sourceVersion },
       counts: { ...after.counts, schemaVersions: versions.length },
     });
   } catch (err) {
@@ -352,6 +360,10 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
       patchSchema(store, {
         drafting: false,
         editorRows: rows,
+        editorOutcomes: [],
+        editorOutcomeErrors: [],
+        outcomeRemoval: null,
+        outcomeDecisions: null,
         editorErrors: [],
         editorOrigin: 'ai_draft',
       });
@@ -631,6 +643,10 @@ export function startEditorFromCurrent(store: Store): void {
     return;
   }
   patchSchema(store, {
+    editorOutcomes: outcomeEditorRows(store.getState().schema.currentOutcomes ?? []),
+    editorOutcomeErrors: [],
+    outcomeRemoval: null,
+    outcomeDecisions: null,
     editorRows: currentFields.map((field) => ({
       fieldId: field.fieldId,
       section: field.section,
@@ -722,6 +738,10 @@ export async function startRevertFromVersion(
 /** エディタを閉じる（下書きは破棄。開いたままの事前設定ダイアログ・差分承認も閉じる） */
 export function cancelEditor(store: Store): void {
   patchSchema(store, {
+    editorOutcomes: [],
+    editorOutcomeErrors: [],
+    outcomeRemoval: null,
+    outcomeDecisions: null,
     editorRows: null,
     editorErrors: [],
     draftError: null,
@@ -770,7 +790,17 @@ export function applyRedraft(store: Store): void {
   // 足すと旧版の拡張でシートを読めなくなる）
   if (redraft.revert !== undefined) {
     const rows = applyRevertDiff(redraft.diff, redraft.selection, redraft.revert.sourceFields);
+    const schema = store.getState().schema;
+    const allOutcomes = schema.allOutcomes ?? [];
+    const sourceOutcomes = outcomesForVersion(allOutcomes, schema.versions ?? [], redraft.revert.sourceVersion).outcomes;
+    const outcomes = sourceOutcomes.length === 0 && isOutcomeListMode(allOutcomes)
+      ? schema.currentOutcomes ?? []
+      : sourceOutcomes;
     patchSchema(store, {
+      editorOutcomes: outcomeEditorRows(outcomes),
+      editorOutcomeErrors: [],
+      outcomeRemoval: null,
+      outcomeDecisions: null,
       editorRows: rows,
       editorErrors: validateEditorRows(rows),
       editorOrigin: 'user_edit',
@@ -785,6 +815,10 @@ export function applyRedraft(store: Store): void {
   if (redraft.imported !== undefined) {
     const rows = applyImportDiff(redraft.diff, redraft.selection);
     patchSchema(store, {
+      editorOutcomes: importedOutcomeRows(store.getState().schema, redraft.importedOutcomes ?? null),
+      editorOutcomeErrors: [],
+      outcomeRemoval: null,
+      outcomeDecisions: null,
       editorRows: rows,
       editorErrors: validateEditorRows(rows),
       editorOrigin: 'user_edit',
@@ -796,6 +830,10 @@ export function applyRedraft(store: Store): void {
   }
   const rows = applyRedraftDiff(redraft.diff, redraft.selection);
   patchSchema(store, {
+    editorOutcomes: outcomeEditorRows(store.getState().schema.currentOutcomes ?? []),
+    editorOutcomeErrors: [],
+    outcomeRemoval: null,
+    outcomeDecisions: null,
     editorRows: rows,
     editorErrors: validateEditorRows(rows),
     editorOrigin: isRedraftSelectionPristine(redraft.diff, redraft.selection) ? 'ai_draft' : 'user_edit',
@@ -822,13 +860,15 @@ export async function confirmSchema(
   const state = store.getState();
   const project = state.currentProject;
   const rows = state.schema.editorRows;
-  if (!project || rows === null || state.schema.confirming) {
+  if (!project || rows === null || state.schema.confirming || state.schema.outcomeRemoval !== null) {
     return;
   }
   const errors = validateEditorRows(rows);
-  if (rows.length === 0 || errors.length > 0) {
+  const outcomeErrors = validateOutcomeRows(state.schema.editorOutcomes, { listModeBefore: isOutcomeListMode(state.schema.allOutcomes ?? []) });
+  if (rows.length === 0 || errors.length > 0 || outcomeErrors.length > 0) {
     patchSchema(store, {
       editorErrors: errors,
+      editorOutcomeErrors: outcomeErrors,
       draftError: rows.length === 0 ? t('schema.errNoRows') : null,
     });
     return;
@@ -838,10 +878,12 @@ export async function confirmSchema(
     const { protocol } = await resolveProtocol(store, deps, project.spreadsheetId);
     const createdBy = (await getCurrentUserEmail(deps.profile)) ?? '';
     const trimmedNote = note.trim();
-    const { version, fields } = await saveSchemaVersion(
+    const { version, fields, outcomes } = await saveSchemaVersion(
       {
         spreadsheetId: project.spreadsheetId,
         rows,
+        outcomes: state.schema.editorOutcomes,
+        listModeBefore: isOutcomeListMode(state.schema.allOutcomes ?? []),
         // 「前の版に戻す」（issue #318）でエディタへ入ったときは戻し元の版、それ以外は最新版
         parentVersion: state.schema.editorParentVersion ?? state.schema.versions?.[0]?.schemaVersion ?? null,
         // 確定時は常に「その時点の最新プロトコル版」を刻む（親版の protocolVersion を
@@ -880,6 +922,13 @@ export async function confirmSchema(
         confirming: false,
         versions,
         currentFields: fields,
+        currentOutcomes: outcomes,
+        currentOutcomesSourceVersion: outcomes.length > 0 ? version.schemaVersion : null,
+        allOutcomes: [...(after.schema.allOutcomes ?? []), ...outcomes],
+        editorOutcomes: [],
+        editorOutcomeErrors: [],
+        outcomeRemoval: null,
+        outcomeDecisions: null,
         editorRows: null,
         editorErrors: [],
         editorParentVersion: null,
@@ -892,5 +941,134 @@ export async function confirmSchema(
     showToast(t('schema.toastConfirmed', { version: version.schemaVersion, n: fields.length }));
   } catch (err) {
     patchSchema(store, { confirming: false, draftError: toMessage(err) });
+  }
+}
+
+/** 確定済みの id を固定してエディタへ引き継ぐ。 */
+export function outcomeEditorRows(outcomes: readonly SchemaOutcome[]): SchemaOutcomeEditorRow[] {
+  return outcomes.map((row) => ({
+    outcomeId: row.outcomeId, outcomeLabel: row.outcomeLabel, description: row.description,
+    typicalTimepoints: row.typicalTimepoints, addedVia: row.addedVia, note: row.note,
+    idLocked: true, idEdited: false,
+  }));
+}
+
+/** ファイルの一覧が無いときは現行版を引き継ぐ。既存の id は固定する。 */
+export function importedOutcomeRows(schema: SchemaState, rows: SchemaOutcomeEditorRow[] | null): SchemaOutcomeEditorRow[] {
+  if (rows === null) {
+    return outcomeEditorRows(schema.currentOutcomes ?? []);
+  }
+  return rows.map((row) => ({
+    ...row,
+    addedVia: 'file_import',
+    idLocked: (schema.allOutcomes ?? []).some((old) => old.outcomeId === row.outcomeId),
+  }));
+}
+
+function patchEditorOutcomes(store: Store, rows: SchemaOutcomeEditorRow[]): void {
+  patchSchema(store, {
+    editorOutcomes: rows,
+    editorOutcomeErrors: validateOutcomeRows(rows, { listModeBefore: isOutcomeListMode(store.getState().schema.allOutcomes ?? []) }),
+    editorOrigin: 'user_edit',
+    outcomeRemoval: null,
+  });
+}
+
+/** 編集中の一覧に未確定のアウトカムを追加する。 */
+export function addEditorOutcome(store: Store): void {
+  const schema = store.getState().schema;
+  if (schema.editorRows === null) {
+    return;
+  }
+  patchEditorOutcomes(store, [...schema.editorOutcomes, {
+    outcomeId: slugifyOutcomeLabel('', schema.editorOutcomes.map((row) => row.outcomeId)),
+    outcomeLabel: '', description: null, typicalTimepoints: null, addedVia: 'schema_editor', note: null,
+    idLocked: false, idEdited: false,
+  }]);
+}
+
+/** 確定済みの id を保ちながらアウトカムの入力を更新する。 */
+export function updateEditorOutcome(store: Store, index: number, patch: Partial<SchemaOutcomeEditorRow>): void {
+  const schema = store.getState().schema;
+  const row = schema.editorOutcomes[index];
+  if (schema.editorRows === null || !row) {
+    return;
+  }
+  const next = { ...row, ...patch, idLocked: row.idLocked };
+  if (row.idLocked) {
+    next.outcomeId = row.outcomeId;
+  } else if (patch.outcomeId !== undefined) {
+    next.idEdited = true;
+  } else if (patch.outcomeLabel !== undefined && !row.idEdited) {
+    next.outcomeId = slugifyOutcomeLabel(patch.outcomeLabel, schema.editorOutcomes.filter((_, i) => i !== index).map((item) => item.outcomeId));
+  }
+  patchEditorOutcomes(store, schema.editorOutcomes.map((item, i) => i === index ? next : item));
+}
+
+/** 編集中のアウトカムの表示順を変更する。 */
+export function moveEditorOutcome(store: Store, from: number, to: number): void {
+  const schema = store.getState().schema;
+  if (schema.editorRows === null || from < 0 || to < 0 || from >= schema.editorOutcomes.length || to >= schema.editorOutcomes.length || from === to) {
+    return;
+  }
+  const rows = [...schema.editorOutcomes];
+  rows.splice(to, 0, rows.splice(from, 1)[0]!);
+  patchEditorOutcomes(store, rows);
+}
+
+/** 過去に外したアウトカムを最後に載っていた内容で戻す。 */
+export function restoreEditorOutcome(store: Store, id: string): void {
+  const schema = store.getState().schema;
+  const row = restorableOutcomes(schema.allOutcomes ?? [], schema.editorOutcomes.map((item) => item.outcomeId)).find((item) => item.outcomeId === id);
+  if (schema.editorRows === null || !row) {
+    return;
+  }
+  patchEditorOutcomes(store, [...schema.editorOutcomes, ...outcomeEditorRows([row])]);
+}
+
+/** アウトカムを外す確認を取り消す。 */
+export function cancelRemoveEditorOutcome(store: Store): void {
+  patchSchema(store, { outcomeRemoval: null });
+}
+
+/** 判定済みセルの件数を確認したアウトカムを一覧から外す。 */
+export function confirmRemoveEditorOutcome(store: Store): void {
+  const schema = store.getState().schema;
+  if (schema.editorRows === null || !schema.outcomeRemoval?.counts) {
+    return;
+  }
+  patchEditorOutcomes(store, schema.editorOutcomes.filter((_, index) => index !== schema.outcomeRemoval!.index));
+}
+
+/** 判定済みセルを調べ、必要なら確認を待ってアウトカムを外す。 */
+export async function requestRemoveEditorOutcome(store: Store, deps: Pick<SchemaServiceDeps, 'google'>, index: number): Promise<void> {
+  const state = store.getState();
+  const row = state.schema.editorOutcomes[index];
+  if (!state.currentProject || state.schema.editorRows === null || !row) {
+    return;
+  }
+  if (!row.idLocked) {
+    patchEditorOutcomes(store, state.schema.editorOutcomes.filter((_, i) => i !== index));
+    return;
+  }
+  const removal = { index, loading: true, error: null, counts: null };
+  patchSchema(store, { outcomeRemoval: removal });
+  try {
+    const decisions = state.schema.outcomeDecisions ?? await readAllDecisions(state.currentProject.spreadsheetId, deps.google);
+    const after = store.getState();
+    if (after.schema.outcomeRemoval !== removal || after.schema.editorRows === null || after.currentProject !== state.currentProject) {
+      return;
+    }
+    patchSchema(store, { outcomeDecisions: decisions });
+    const counts = countJudgedCellsForOutcome(decisions, row.outcomeId);
+    if (counts.cells === 0) {
+      patchEditorOutcomes(store, after.schema.editorOutcomes.filter((_, i) => i !== index));
+    } else {
+      patchSchema(store, { outcomeRemoval: { index, loading: false, error: null, counts } });
+    }
+  } catch (err) {
+    if (store.getState().schema.outcomeRemoval === removal) {
+      patchSchema(store, { outcomeRemoval: { index, loading: false, error: toMessage(err), counts: null } });
+    }
   }
 }

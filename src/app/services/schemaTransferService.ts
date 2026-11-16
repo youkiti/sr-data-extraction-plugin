@@ -22,7 +22,8 @@ import { t } from '../../lib/i18n';
 import type { SchemaTransferState, Store } from '../store';
 import { downloadTextFile } from '../ui/download';
 import { showToast } from '../ui/toast';
-import type { SchemaServiceDeps } from './schemaService';
+import { importedOutcomeRows, type SchemaServiceDeps } from './schemaService';
+import { outcomesForVersion } from '../../features/schema/schemaOutcomes';
 
 export type SchemaTransferDeps = Pick<SchemaServiceDeps, 'google' | 'profile'> & {
   /** 書き出し日時（ISO 8601）。テストは固定値を注入する */
@@ -53,12 +54,12 @@ function isCsvFile(file: SchemaImportFile): boolean {
 async function parseImportFile(
   file: SchemaImportFile,
   makeDecoder: MakeTextDecoder | undefined,
-): Promise<{ source: SchemaImportSource; rows: ParsedSchemaImport['rows'] }> {
+): Promise<{ source: SchemaImportSource; rows: ParsedSchemaImport['rows']; outcomes: ParsedSchemaImport['outcomes'] }> {
   if (!isCsvFile(file)) {
     return parseSchemaExport(await file.text());
   }
   const text = decodeSchemaCsv(new Uint8Array(await file.arrayBuffer()), makeDecoder);
-  return { source: { kind: 'csv', fileName: file.name }, rows: parseSchemaCsv(text) };
+  return { source: { kind: 'csv', fileName: file.name }, rows: parseSchemaCsv(text), outcomes: null };
 }
 
 function toMessage(err: unknown): string {
@@ -125,7 +126,7 @@ export async function exportSchemaFile(
       exportedBy: (await getCurrentUserEmail(deps.profile)) ?? '',
       extractPromptVersion: EXTRACT_DATA_PROMPT_VERSION,
       appVersion: (deps.getAppVersion ?? defaultAppVersion)(),
-    });
+    }, outcomesForVersion(state.schema.allOutcomes ?? [], versions, version).outcomes);
     download(
       schemaExportFilename(project.name, version, exportedAt),
       content,
@@ -163,7 +164,7 @@ export async function importSchemaFile(
     if (file.size > SCHEMA_IMPORT_MAX_BYTES) {
       throw new SchemaImportError('schema.importTooLarge');
     }
-    const { source, rows } = await parseImportFile(file, makeDecoder);
+    const { source, rows, outcomes } = await parseImportFile(file, makeDecoder);
     // 読み込み中に別の操作（エディタを開く・AI 再ドラフト・確定・プロジェクト切替）が始まっていたら捨てる
     const after = store.getState();
     if (
@@ -180,6 +181,10 @@ export async function importSchemaFile(
           ...after.schema,
           transfer: { ...after.schema.transfer, importing: false },
           editorRows: rows,
+          editorOutcomes: importedOutcomeRows(after.schema, outcomes),
+          editorOutcomeErrors: [],
+          outcomeRemoval: null,
+          outcomeDecisions: null,
           editorErrors: validateEditorRows(rows),
           editorOrigin: 'user_edit',
           editorParentVersion: null,
@@ -192,7 +197,7 @@ export async function importSchemaFile(
         schema: {
           ...after.schema,
           transfer: { ...after.schema.transfer, importing: false },
-          redraft: { diff, selection: defaultRedraftSelection(diff), imported: source },
+          redraft: { diff, selection: defaultRedraftSelection(diff), imported: source, importedOutcomes: outcomes },
         },
       });
     }

@@ -1,3 +1,10 @@
+import { addEditorOutcome, updateEditorOutcome, moveEditorOutcome, restoreEditorOutcome, requestRemoveEditorOutcome, confirmRemoveEditorOutcome, cancelRemoveEditorOutcome, importedOutcomeRows } from '../../../../src/app/services/schemaService';
+import { readAllDecisions } from '../../../../src/features/verification/decisionRepository';
+import type { SchemaOutcome } from '../../../../src/domain/schemaOutcome';
+import type { Decision } from '../../../../src/domain/decision';
+jest.mock('../../../../src/features/verification/decisionRepository');
+import { readAllSchemaOutcomes } from '../../../../src/features/schema/schemaOutcomeRepository';
+jest.mock('../../../../src/features/schema/schemaOutcomeRepository');
 import { providerModelMismatchMessage } from '../../../../src/lib/llm/modelCatalog';
 import {
   addEditorRow,
@@ -276,6 +283,8 @@ function toastTexts(): string[] {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.mocked(readAllSchemaOutcomes).mockResolvedValue([]);
+  jest.mocked(readAllDecisions).mockReset().mockResolvedValue([]);
   document.body.innerHTML = '';
   ensureChildFolderMock.mockResolvedValue({
     id: 'folder-x',
@@ -534,6 +543,7 @@ describe('runDraftSchema', () => {
       fieldId: null,
     });
     expect(schema.editorOrigin).toBe('ai_draft');
+    expect(schema.editorOutcomes).toEqual([]);
     expect(toastTexts().some((text) => text.includes('1 項目をドラフト'))).toBe(true);
   });
 
@@ -1415,7 +1425,7 @@ describe('confirmSchema', () => {
     seedEditor(store, [makeEditorRow()]);
     const savedVersion = makeVersion(2, { parentVersion: 1, protocolVersion: 3 });
     const savedFields = [makeField({ schemaVersion: 2 })];
-    saveVersionMock.mockResolvedValue({ version: savedVersion, fields: savedFields });
+    saveVersionMock.mockResolvedValue({ version: savedVersion, fields: savedFields, outcomes: [] });
     const { deps } = makeDeps();
 
     await confirmSchema(store, deps, '  単位を修正  ');
@@ -1453,7 +1463,7 @@ describe('confirmSchema', () => {
     store.setState({
       schema: { ...store.getState().schema, editorRows: [makeEditorRow()] },
     });
-    saveVersionMock.mockResolvedValue({ version: makeVersion(1), fields: [makeField()] });
+    saveVersionMock.mockResolvedValue({ version: makeVersion(1), fields: [makeField()], outcomes: [] });
     await confirmSchema(store, makeDeps({ profile: { getProfileUserInfo: async () => ({ email: '', id: 'uid' }) } }).deps, '   ');
     expect(saveVersionMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1529,7 +1539,7 @@ describe('confirmSchema: StudyData ヘッダ同期（確定と同時に列を反
         entityLevel: 'study',
       }),
     ];
-    saveVersionMock.mockResolvedValue({ version: savedVersion, fields: savedFields });
+    saveVersionMock.mockResolvedValue({ version: savedVersion, fields: savedFields, outcomes: [] });
     const { deps } = makeDeps();
 
     await confirmSchema(store, deps, '');
@@ -1547,7 +1557,7 @@ describe('confirmSchema: StudyData ヘッダ同期（確定と同時に列を反
     seedEditor(store, [makeEditorRow()]);
     const savedVersion = makeVersion(2, { parentVersion: 1, protocolVersion: 3 });
     const savedFields = [makeField({ schemaVersion: 2 })];
-    saveVersionMock.mockResolvedValue({ version: savedVersion, fields: savedFields });
+    saveVersionMock.mockResolvedValue({ version: savedVersion, fields: savedFields, outcomes: [] });
     ensureStudyDataColumnsMock.mockRejectedValue(new Error('batchGet に失敗しました'));
     const { deps } = makeDeps();
 
@@ -1732,7 +1742,7 @@ describe('前の版の内容に戻す（issue #318）', () => {
       expect(schema.editorRows?.map((row) => row.fieldId)).toEqual(['f-gone', 'f-keep']);
 
       store.setState({ protocol: { ...store.getState().protocol, records: [makeProtocol({ version: 2 })] } });
-      saveVersionMock.mockResolvedValue({ version: makeVersion(4, { parentVersion: 1 }), fields: sourceFields });
+      saveVersionMock.mockResolvedValue({ version: makeVersion(4, { parentVersion: 1 }), fields: sourceFields, outcomes: [] });
       await confirmSchema(store, makeDeps().deps, 'v1 の内容に戻す');
       expect(saveVersionMock).toHaveBeenCalledWith(
         expect.objectContaining({ parentVersion: 1, createdByType: 'user_edit', note: 'v1 の内容に戻す' }),
@@ -1763,4 +1773,228 @@ describe('前の版の内容に戻す（issue #318）', () => {
       expect(store.getState().schema.editorParentVersion).toBeNull();
     });
   });
+});
+
+const schemaOutcome = (patch: Partial<SchemaOutcome> = {}): SchemaOutcome => ({
+  schemaVersion: 1, outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
+  description: null, typicalTimepoints: '30d', addedVia: 'migration', note: null, ...patch,
+});
+
+function seedOutcomeEditor(store: Store): void {
+  store.setState({ schema: {
+    ...store.getState().schema, versions: [makeVersion(2), makeVersion(1)], currentFields: [makeField()],
+    allOutcomes: [schemaOutcome(), schemaOutcome({ schemaVersion: 2, outcomeLabel: '最新版' }), schemaOutcome({ outcomeId: 'pain', outcomeLabel: '疼痛' })],
+    currentOutcomes: [schemaOutcome({ schemaVersion: 2, outcomeLabel: '最新版' })],
+  } });
+  startEditorFromCurrent(store);
+}
+
+const outcomeDecision = (): Decision => ({
+  studyId: 'study1', fieldId: 'f1', entityKey: 'outcome:mortality', annotator: 'a',
+  annotatorType: 'human_with_ai', schemaVersion: 1, action: 'accept', value: '1', note: null,
+  decidedAt: '2026-11-16T00:00:00Z', decidedBy: 'a',
+});
+
+test('一覧を読み込み、欠けた最新版では前版の一覧と参照元を保持する', async () => {
+  const store = makeStore();
+  listVersionsMock.mockResolvedValue([makeVersion(2), makeVersion(1)]);
+  getFieldsMock.mockResolvedValue([makeField()]);
+  jest.mocked(readAllSchemaOutcomes).mockResolvedValue([schemaOutcome()]);
+  await loadSchema(store, makeDeps().deps);
+  expect(store.getState().schema).toMatchObject({ allOutcomes: [schemaOutcome()], currentOutcomes: [schemaOutcome()], currentOutcomesSourceVersion: 1 });
+});
+
+test('新しい版は id を固定して一覧を引き継ぎ、未編集の id だけを名称から更新する', () => {
+  const store = makeStore();
+  seedOutcomeEditor(store);
+  expect(store.getState().schema.editorOutcomes[0]).toMatchObject({ outcomeLabel: '最新版', idLocked: true });
+  updateEditorOutcome(store, 0, { outcomeId: 'changed', outcomeLabel: '新名称' });
+  expect(store.getState().schema.editorOutcomes[0]).toMatchObject({ outcomeId: 'mortality', outcomeLabel: '新名称' });
+  addEditorOutcome(store);
+  updateEditorOutcome(store, 1, { outcomeLabel: 'New Pain' });
+  expect(store.getState().schema.editorOutcomes[1]?.outcomeId).toBe('new_pain');
+  updateEditorOutcome(store, 1, { outcomeId: 'custom' });
+  updateEditorOutcome(store, 1, { outcomeLabel: '別名' });
+  expect(store.getState().schema.editorOutcomes[1]?.outcomeId).toBe('custom');
+  moveEditorOutcome(store, 1, 0);
+  expect(store.getState().schema.editorOutcomes.map((row) => row.outcomeId)).toEqual(['custom', 'mortality']);
+  for (const [from, to] of [[-1, 0], [0, -1], [5, 0], [0, 5], [0, 0]]) {
+    moveEditorOutcome(store, from!, to!);
+  }
+  restoreEditorOutcome(store, 'pain');
+  restoreEditorOutcome(store, 'pain');
+  restoreEditorOutcome(store, 'missing');
+  expect(store.getState().schema.editorOutcomes).toHaveLength(3);
+  expect(store.getState().schema.editorOutcomes[2]).toMatchObject({ outcomeId: 'pain', outcomeLabel: '疼痛', idLocked: true });
+  cancelEditor(store);
+  addEditorOutcome(store);
+  updateEditorOutcome(store, 0, { outcomeLabel: '無効' });
+  moveEditorOutcome(store, 0, 1);
+  restoreEditorOutcome(store, 'pain');
+  expect(store.getState().schema).toMatchObject({ editorOutcomes: [], outcomeRemoval: null, outcomeDecisions: null });
+});
+
+test('再ドラフトは現行一覧を、復帰は戻し元の版の一覧を使う', async () => {
+  const store = makeStore();
+  seedOutcomeEditor(store);
+  cancelEditor(store);
+  const fields = store.getState().schema.currentFields!;
+  store.setState({ schema: { ...store.getState().schema, redraft: {
+    diff: buildRedraftDiff(fields, [makeEditorRow()]), selection: { added: {}, changed: {}, removed: {} },
+  } } });
+  applyRedraft(store);
+  expect(store.getState().schema.editorOutcomes[0]).toMatchObject({ outcomeLabel: '最新版', idLocked: true });
+  cancelEditor(store);
+  getFieldsMock.mockResolvedValue([makeField()]);
+  await startRevertFromVersion(store, makeDeps().deps, 1);
+  applyRedraft(store);
+  expect(store.getState().schema.editorOutcomes.map((row) => row.outcomeId)).toEqual(['mortality', 'pain']);
+  expect(store.getState().schema.editorOutcomes[0]?.outcomeLabel).toBe('全死亡');
+});
+
+test.each([false, true])('一覧モードで一覧の無い版へ戻すと現行一覧を引き継ぐ（現行一覧未読込: %s）', async (unloaded) => {
+  const store = makeStore();
+  seedOutcomeEditor(store);
+  cancelEditor(store);
+  const current = schemaOutcome({ schemaVersion: 2, outcomeLabel: '最新版' });
+  store.setState({ schema: {
+    ...store.getState().schema,
+    allOutcomes: [current],
+    currentOutcomes: unloaded ? null : [current],
+  } });
+  getFieldsMock.mockResolvedValue([makeField()]);
+  await startRevertFromVersion(store, makeDeps().deps, 1);
+  applyRedraft(store);
+  expect(store.getState().schema.editorOutcomes).toEqual(unloaded ? [] : [{
+    outcomeId: 'mortality', outcomeLabel: '最新版', description: null, typicalTimepoints: '30d',
+    addedVia: 'migration', note: null, idLocked: true, idEdited: false,
+  }]);
+});
+
+test('全版の一覧が null でも過去の版への反映は空一覧で開く', async () => {
+  const store = makeStore();
+  seedOutcomeEditor(store);
+  cancelEditor(store);
+  store.setState({ schema: { ...store.getState().schema, allOutcomes: null } });
+  getFieldsMock.mockResolvedValue([makeField()]);
+  await startRevertFromVersion(store, makeDeps().deps, 1);
+  // 版の一覧が反映の前に消えても（再読み込みの途中など）空一覧で開く
+  store.setState({ schema: { ...store.getState().schema, versions: null } });
+  applyRedraft(store);
+  expect(store.getState().schema.editorOutcomes).toEqual([]);
+  expect(store.getState().schema.editorParentVersion).toBe(1);
+});
+
+test('全版の一覧が null でも編集でき、復元候補は無い', () => {
+  const store = makeStore();
+  seedOutcomeEditor(store);
+  store.setState({ schema: { ...store.getState().schema, allOutcomes: null } });
+  addEditorOutcome(store);
+  expect(store.getState().schema.editorOutcomes).toHaveLength(2);
+  expect(store.getState().schema.editorOutcomeErrors).toHaveLength(1);
+  restoreEditorOutcome(store, 'pain');
+  expect(store.getState().schema.editorOutcomes).toHaveLength(2);
+});
+
+test('未確定の行は即時に外し、判定ゼロの確定行も確認せず外す', async () => {
+  const store = makeStore();
+  seedOutcomeEditor(store);
+  addEditorOutcome(store);
+  await requestRemoveEditorOutcome(store, makeDeps().deps, 1);
+  expect(readAllDecisions).not.toHaveBeenCalled();
+  expect(store.getState().schema.editorOutcomes).toHaveLength(1);
+  await requestRemoveEditorOutcome(store, makeDeps().deps, 0);
+  expect(store.getState().schema.editorOutcomes).toEqual([]);
+  expect(store.getState().schema.editorOutcomeErrors[0]?.message).toBe('アウトカムの一覧は 1 件以上必要です（一覧を作った後は空にできません）');
+  restoreEditorOutcome(store, 'mortality');
+  await requestRemoveEditorOutcome(store, makeDeps().deps, 0);
+  expect(readAllDecisions).toHaveBeenCalledTimes(1);
+});
+
+test('判定ありは件数を出して待ち、キャンセルしても再読込せず確認後に外す', async () => {
+  const store = makeStore();
+  seedOutcomeEditor(store);
+  jest.mocked(readAllDecisions).mockResolvedValue([outcomeDecision()]);
+  confirmRemoveEditorOutcome(store);
+  await requestRemoveEditorOutcome(store, makeDeps().deps, 0);
+  expect(store.getState().schema.outcomeRemoval).toMatchObject({ counts: { cells: 1, studies: 1 }, loading: false });
+  expect(store.getState().schema.editorOutcomes).toHaveLength(1);
+  cancelRemoveEditorOutcome(store);
+  await requestRemoveEditorOutcome(store, makeDeps().deps, 0);
+  expect(readAllDecisions).toHaveBeenCalledTimes(1);
+  confirmRemoveEditorOutcome(store);
+  expect(store.getState().schema.editorOutcomes).toEqual([]);
+});
+
+test('読み込み失敗では外さず、再試行できる', async () => {
+  const store = makeStore();
+  seedOutcomeEditor(store);
+  jest.mocked(readAllDecisions).mockRejectedValueOnce(new Error('offline'));
+  await requestRemoveEditorOutcome(store, makeDeps().deps, 0);
+  expect(store.getState().schema.editorOutcomes).toHaveLength(1);
+  expect(store.getState().schema.outcomeRemoval?.error).toBe('offline');
+  await requestRemoveEditorOutcome(store, makeDeps().deps, 0);
+  expect(store.getState().schema.editorOutcomes).toEqual([]);
+});
+
+test.each(['close', 'other', 'project', 'reject'] as const)('遅れて返る削除件数を捨てる: %s', async (kind) => {
+  const store = makeStore();
+  seedOutcomeEditor(store);
+  restoreEditorOutcome(store, 'pain');
+  let resolve!: (value: Decision[]) => void;
+  let reject!: (reason: Error) => void;
+  jest.mocked(readAllDecisions).mockReturnValueOnce(new Promise((res, rej) => { resolve = res; reject = rej; }));
+  const pending = requestRemoveEditorOutcome(store, makeDeps().deps, 0);
+  if (kind === 'close' || kind === 'reject') {
+    cancelEditor(store);
+  } else if (kind === 'other') {
+    await requestRemoveEditorOutcome(store, makeDeps().deps, 1);
+  } else {
+    store.setState({ currentProject: null });
+  }
+  if (kind === 'reject') {
+    reject(new Error('late'));
+  } else {
+    resolve([outcomeDecision()]);
+  }
+  await pending;
+  expect(store.getState().schema.outcomeDecisions).not.toEqual([outcomeDecision()]);
+});
+
+test('閉じたエディタ・無効な行・未選択プロジェクトでは削除しない', async () => {
+  const store = makeStore();
+  await requestRemoveEditorOutcome(store, makeDeps().deps, 0);
+  await requestRemoveEditorOutcome(makeStore(false), makeDeps().deps, 0);
+  seedOutcomeEditor(store);
+  updateEditorOutcome(store, 99, {});
+  await requestRemoveEditorOutcome(store, makeDeps().deps, 99);
+  expect(readAllDecisions).not.toHaveBeenCalled();
+});
+
+test('一覧の検証エラーは確定を止め、成功した一覧を全版の行に追加して編集状態を閉じる', async () => {
+  const store = makeStore();
+  seedOutcomeEditor(store);
+  updateEditorOutcome(store, 0, { outcomeLabel: '' });
+  await confirmSchema(store, makeDeps().deps, '');
+  expect(saveVersionMock).not.toHaveBeenCalled();
+  expect(store.getState().schema.editorOutcomeErrors).toHaveLength(1);
+  updateEditorOutcome(store, 0, { outcomeLabel: '新名称' });
+  store.setState({ protocol: { ...store.getState().protocol, records: [makeProtocol()] } });
+  const saved = schemaOutcome({ schemaVersion: 3, outcomeLabel: '新名称' });
+  saveVersionMock.mockResolvedValue({ version: makeVersion(3), fields: [makeField()], outcomes: [saved] });
+  await confirmSchema(store, makeDeps().deps, '');
+  expect(saveVersionMock).toHaveBeenCalledWith(expect.objectContaining({ outcomes: [expect.objectContaining({ outcomeId: 'mortality' })], listModeBefore: true }), expect.anything());
+  expect(store.getState().schema).toMatchObject({ currentOutcomes: [saved], currentOutcomesSourceVersion: 3, editorOutcomes: [], outcomeDecisions: null, outcomeRemoval: null });
+  expect(store.getState().schema.allOutcomes).toHaveLength(4);
+});
+
+test('ファイルの既存 id を固定し、一覧が無いファイルは現行一覧を引き継ぐ', () => {
+  const store = makeStore();
+  seedOutcomeEditor(store);
+  const schema = store.getState().schema;
+  expect(importedOutcomeRows(schema, null)[0]).toMatchObject({ outcomeId: 'mortality', idLocked: true });
+  expect(importedOutcomeRows(schema, schema.editorOutcomes)[0]).toMatchObject({ addedVia: 'file_import', idLocked: true });
+  const initial = createInitialState().schema;
+  expect(importedOutcomeRows(initial, null)).toEqual([]);
+  expect(importedOutcomeRows(initial, schema.editorOutcomes)[0]?.idLocked).toBe(false);
 });

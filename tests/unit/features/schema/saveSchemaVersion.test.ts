@@ -7,6 +7,7 @@ import {
   appendSchemaVersion,
   getNextSchemaVersion,
 } from '../../../../src/features/schema/schemaRepository';
+import { appendSchemaOutcomes } from '../../../../src/features/schema/schemaOutcomeRepository';
 import type { SchemaEditorRow } from '../../../../src/features/schema/types';
 
 jest.mock('../../../../src/features/schema/schemaRepository', () => ({
@@ -14,6 +15,8 @@ jest.mock('../../../../src/features/schema/schemaRepository', () => ({
   appendSchemaVersion: jest.fn(),
   getNextSchemaVersion: jest.fn(),
 }));
+
+jest.mock('../../../../src/features/schema/schemaOutcomeRepository');
 
 const appendFieldsMock = appendSchemaFields as jest.MockedFunction<typeof appendSchemaFields>;
 const appendVersionMock = appendSchemaVersion as jest.MockedFunction<typeof appendSchemaVersion>;
@@ -57,7 +60,7 @@ describe('saveSchemaVersion', () => {
     ];
     const { version, fields } = await saveSchemaVersion(
       {
-        spreadsheetId: 'sheet-1',
+        spreadsheetId: 'sheet-1', outcomes: [], listModeBefore: false,
         rows,
         parentVersion: 1,
         protocolVersion: 3,
@@ -104,7 +107,7 @@ describe('saveSchemaVersion', () => {
 
     const { fields } = await saveSchemaVersion(
       {
-        spreadsheetId: 'sheet-1',
+        spreadsheetId: 'sheet-1', outcomes: [], listModeBefore: false,
         rows: reordered,
         parentVersion: 1,
         protocolVersion: 1,
@@ -125,7 +128,7 @@ describe('saveSchemaVersion', () => {
   test('enum 以外の行の許容値は null に落とす（enum は維持）', async () => {
     const { fields } = await saveSchemaVersion(
       {
-        spreadsheetId: 'sheet-1',
+        spreadsheetId: 'sheet-1', outcomes: [], listModeBefore: false,
         rows: [
           makeRow({ dataType: 'enum', allowedValues: 'a|b' }),
           makeRow({ fieldName: 'other_field', dataType: 'text', allowedValues: '   ' }),
@@ -147,7 +150,7 @@ describe('saveSchemaVersion', () => {
     await expect(
       saveSchemaVersion(
         {
-          spreadsheetId: 'sheet-1',
+          spreadsheetId: 'sheet-1', outcomes: [], listModeBefore: false,
           rows: [],
           parentVersion: null,
           protocolVersion: 1,
@@ -164,7 +167,7 @@ describe('saveSchemaVersion', () => {
     await expect(
       saveSchemaVersion(
         {
-          spreadsheetId: 'sheet-1',
+          spreadsheetId: 'sheet-1', outcomes: [], listModeBefore: false,
           rows: [makeRow({ fieldName: 'NG name' })],
           parentVersion: null,
           protocolVersion: 1,
@@ -182,9 +185,45 @@ describe('saveSchemaVersion', () => {
 
 test('複数選択の設定を trim・重複除去して保存する', async () => {
   const { fields } = await saveSchemaVersion({
-    spreadsheetId: 's', rows: [makeRow({ dataType: 'enum', allowedValues: 'A|NA|Other', multiSelect: true,
+    spreadsheetId: 's', outcomes: [], listModeBefore: false, rows: [makeRow({ dataType: 'enum', allowedValues: 'A|NA|Other', multiSelect: true,
       exclusiveValues: ' NA |NA', freeTextValues: ' Other ' })],
     parentVersion: null, protocolVersion: 1, createdByType: 'user_edit', createdBy: 'test', note: null,
   }, { google });
   expect(fields[0]?.multiSelect).toEqual({ exclusiveValues: ['NA'], freeTextValues: ['Other'] });
+});
+
+test('アウトカムの全行を同じ版で項目の後に追記し、文字列と順序を整える', async () => {
+  const params = {
+    spreadsheetId: 's', rows: [makeRow()], listModeBefore: true,
+    parentVersion: 1, protocolVersion: 1, createdByType: 'user_edit' as const, createdBy: 'a', note: null,
+    outcomes: [
+      { outcomeId: ' mortality ', outcomeLabel: ' 全死亡 ', description: ' 定義 ', typicalTimepoints: ' 30d|90d ',
+        addedVia: 'migration' as const, note: ' 注記 ', idLocked: true, idEdited: false },
+      { outcomeId: 'pain', outcomeLabel: '疼痛', description: ' ', typicalTimepoints: null,
+        addedVia: 'schema_editor' as const, note: null, idLocked: false, idEdited: false },
+    ],
+  };
+  const result = await saveSchemaVersion(params, { google });
+  expect(result.outcomes).toEqual([
+    { schemaVersion: 2, outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡', description: '定義', typicalTimepoints: '30d|90d', addedVia: 'migration', note: '注記' },
+    { schemaVersion: 2, outcomeIndex: 2, outcomeId: 'pain', outcomeLabel: '疼痛', description: null, typicalTimepoints: null, addedVia: 'schema_editor', note: null },
+  ]);
+  expect(appendSchemaOutcomes).toHaveBeenCalledWith('s', result.outcomes, google);
+  expect(jest.mocked(appendSchemaOutcomes).mock.invocationCallOrder[0]).toBeGreaterThan(appendFieldsMock.mock.invocationCallOrder[0]!);
+  expect(appendFieldsMock.mock.invocationCallOrder[0]).toBeGreaterThan(appendVersionMock.mock.invocationCallOrder[0]!);
+  const cause = new Error('failed');
+  jest.mocked(appendSchemaOutcomes).mockRejectedValueOnce(cause);
+  const failedSave = saveSchemaVersion(params, { google });
+  await expect(failedSave).rejects.toThrow('版 2 の項目は保存しましたが');
+  await expect(failedSave).rejects.toHaveProperty('cause', cause);
+  await expect(saveSchemaVersion({ ...params, outcomes: [] }, { google })).rejects.toThrow(SchemaValidationError);
+});
+
+test('一覧が無い版では空一覧を渡し、読み書きの I/O はリポジトリへ委ねる', async () => {
+  const result = await saveSchemaVersion({
+    spreadsheetId: 's', rows: [makeRow()], outcomes: [], listModeBefore: false,
+    parentVersion: null, protocolVersion: 1, createdByType: 'user_edit', createdBy: 'a', note: null,
+  }, { google });
+  expect(result.outcomes).toEqual([]);
+  expect(appendSchemaOutcomes).toHaveBeenCalledWith('s', [], google);
 });

@@ -1,3 +1,4 @@
+import { addEditorOutcome, updateEditorOutcome, moveEditorOutcome, restoreEditorOutcome, requestRemoveEditorOutcome, confirmRemoveEditorOutcome, cancelRemoveEditorOutcome } from './services/schemaService';
 import { suggestEnum, updateEnumSuggestion, applyEnumSuggestion, cancelEnumSuggestion } from './services/schemaEnumService';
 import { initGuide } from './guide';
 import { loadCriteria, changeCriteriaDraft, saveCriteria, cancelCriteriaConfirmation, calculateCriteria } from './services/acceptanceCriteriaService';
@@ -10,7 +11,7 @@ import { updateSavingBadges } from './ui/savingBadge';
 import { createInitialState, createStore, type AppState, type Store, type VerifyTarget } from './store';
 import { studyQueryOf, fieldQueryOf, entityQueryOf, findRoute, normalizeHash, ROUTES, type RouteHash } from './router';
 import { emptyPilotMatrix, loadPilotMatrix } from './services/pilotMatrixService';
-import { focusSchemaField } from './views/schemaView';
+import { focusSchemaField, focusSchemaOutcomes } from './views/schemaView';
 import { guardRoute } from './guards';
 import { showToast } from './ui/toast';
 import { createChromeAiDataConsentGate } from './ui/aiDataConsentDialog';
@@ -710,6 +711,15 @@ export async function bootstrapApp(
       onEditRow: (index, patch) => {
         updateEditorRow(store, index, patch);
       },
+      onAddOutcome: () => addEditorOutcome(store),
+      onEditOutcome: (index, patch) => updateEditorOutcome(store, index, patch),
+      onMoveOutcome: (from, to) => moveEditorOutcome(store, from, to),
+      onRestoreOutcome: (id) => restoreEditorOutcome(store, id),
+      onRemoveOutcome: (index) => {
+        void requestRemoveEditorOutcome(store, deps, index);
+      },
+      onConfirmRemoveOutcome: () => confirmRemoveEditorOutcome(store),
+      onCancelRemoveOutcome: () => cancelRemoveEditorOutcome(store),
       onAddRow: () => {
         addEditorRow(store);
       },
@@ -1338,6 +1348,9 @@ export async function bootstrapApp(
           focusSchemaField(doc, field);
         } else {
           store.setState({ schema: { ...schema, pilotFieldId: null } });
+        }
+        if (new URLSearchParams(win.location.hash.split('?')[1]).has('outcomes')) {
+          focusSchemaOutcomes(doc);
         }
       });
       void loadDocuments(store, deps);

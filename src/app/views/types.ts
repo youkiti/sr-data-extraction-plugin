@@ -11,7 +11,7 @@ import type { MethodsLanguage, MethodsWorkflow } from '../../features/export/met
 import type { ProtocolSubmitInput } from '../../features/protocol/submitInput';
 import type { SchemaPresetKind } from '../../features/schema/presets';
 import type { PresetDialogPatch } from '../../features/schema/presets/prespecDialog';
-import type { SchemaEditorRow } from '../../features/schema/types';
+import type { SchemaEditorRow, SchemaOutcomeEditorRow } from '../../features/schema/types';
 import type { VerificationProgress } from '../../features/verification/progress';
 import type { SchemaFileFormat, SchemaImportFile } from '../services/schemaTransferService';
 import type { VerifyLayoutMode, VerifyPaneLayout } from '../../lib/storage/settingsStore';
@@ -148,6 +148,13 @@ export interface SchemaViewCallbacks {
   onUpdateEnumSuggestion(patch: { values?: string; appendInstruction?: boolean }): void;
   onApplyEnumSuggestion(): void;
   onCancelEnumSuggestion(): void;
+  onAddOutcome(): void;
+  onEditOutcome(index: number, patch: Partial<SchemaOutcomeEditorRow>): void;
+  onMoveOutcome(from: number, to: number): void;
+  onRestoreOutcome(id: string): void;
+  onRemoveOutcome(index: number): void;
+  onConfirmRemoveOutcome(): void;
+  onCancelRemoveOutcome(): void;
   onAddRow(): void;
   onRemoveRow(index: number): void;
   /** エディタ行の並び替え（上下移動）。field_index は配列位置から採番されるため、これが並び順の唯一の変更手段 */

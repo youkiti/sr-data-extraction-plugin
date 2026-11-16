@@ -5,7 +5,9 @@
 import { multiSelectConfigOf } from '../../domain/multiSelect';
 import type { EntityLevel, FieldDataType, SchemaField } from '../../domain/schemaField';
 import { t, type MessageKey } from '../../lib/i18n';
-import type { SchemaEditorRow } from './types';
+import type { SchemaOutcome } from '../../domain/schemaOutcome';
+import { validateOutcomeRows } from './schemaOutcomes';
+import type { SchemaEditorRow, SchemaOutcomeEditorRow } from './types';
 import { validateEditorRows } from './validateField';
 
 export const SCHEMA_EXPORT_FORMAT = 'sr-data-extraction-schema';
@@ -59,11 +61,13 @@ export interface SchemaExportFile {
   formatVersion: number;
   source: SchemaExportSource;
   fields: SchemaExportField[];
+  outcomes?: Pick<SchemaOutcome, 'outcomeId' | 'outcomeLabel' | 'description' | 'typicalTimepoints' | 'note'>[];
 }
 
 export interface ParsedSchemaImport {
   source: SchemaExportSource;
   rows: SchemaEditorRow[];
+  outcomes: SchemaOutcomeEditorRow[] | null;
 }
 
 /** 読み込めないファイルの理由（message は表示用に解決済み） */
@@ -78,11 +82,15 @@ const ENTITY_LEVELS: readonly EntityLevel[] = ['study', 'arm', 'outcome_result',
 const DATA_TYPES: readonly FieldDataType[] = ['text', 'integer', 'float', 'boolean', 'enum', 'date'];
 
 /** 確定済みの版の項目を、書き出し用の JSON 文字列にする（field_index の順に並べる） */
-export function serializeSchemaExport(fields: readonly SchemaField[], source: SchemaExportSource): string {
+export function serializeSchemaExport(fields: readonly SchemaField[], source: SchemaExportSource, outcomes: readonly SchemaOutcome[] = []): string {
   const file: SchemaExportFile = {
     format: SCHEMA_EXPORT_FORMAT,
     formatVersion: SCHEMA_EXPORT_FORMAT_VERSION,
     source,
+    outcomes: [...outcomes].sort((a, b) => a.outcomeIndex - b.outcomeIndex).map((row) => ({
+      outcomeId: row.outcomeId, outcomeLabel: row.outcomeLabel, description: row.description,
+      typicalTimepoints: row.typicalTimepoints, note: row.note,
+    })),
     fields: [...fields]
       .sort((a, b) => a.fieldIndex - b.fieldIndex)
       .map((field) => {
@@ -232,7 +240,28 @@ export function parseSchemaExport(text: string): ParsedSchemaImport {
       first: `${first.index + 1}: ${first.message}`,
     });
   }
-  return { source, rows };
+  let outcomes: SchemaOutcomeEditorRow[] | null = null;
+  if (data.outcomes !== undefined) {
+    if (!Array.isArray(data.outcomes)) {
+      throw new SchemaImportError('schema.outcomeImportInvalid', { reason: 'outcomes' });
+    }
+    outcomes = data.outcomes.map<SchemaOutcomeEditorRow>((raw: unknown) => {
+      if (!isRecord(raw) || typeof raw.outcomeId !== 'string' || typeof raw.outcomeLabel !== 'string' ||
+        !['description', 'typicalTimepoints', 'note'].every((key) => raw[key] === null || typeof raw[key] === 'string')) {
+        throw new SchemaImportError('schema.outcomeImportInvalid', { reason: 'outcomeId / outcomeLabel / description / typicalTimepoints / note' });
+      }
+      return {
+        outcomeId: raw.outcomeId, outcomeLabel: raw.outcomeLabel, description: raw.description as string | null,
+        typicalTimepoints: raw.typicalTimepoints as string | null, note: raw.note as string | null,
+        addedVia: 'file_import', idLocked: false, idEdited: true,
+      };
+    });
+    const outcomeErrors = validateOutcomeRows(outcomes, { listModeBefore: false });
+    if (outcomeErrors.length > 0) {
+      throw new SchemaImportError('schema.outcomeImportInvalid', { reason: outcomeErrors.map((error) => error.message).join('。') });
+    }
+  }
+  return { source, rows, outcomes };
 }
 
 /**

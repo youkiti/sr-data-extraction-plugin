@@ -44,7 +44,9 @@ import type { LoadedPdfView } from '../features/verification/pdfViewCache';
 import type { PresetDialogState } from '../features/schema/presets/prespecDialog';
 import type { RedraftDiff, RedraftSelection, RevertSource } from '../features/schema/redraftDiff';
 import type { SchemaImportSource } from '../features/schema/schemaTransfer';
-import type { SchemaEditorRow } from '../features/schema/types';
+import type { SchemaOutcome } from '../domain/schemaOutcome';
+import type { OutcomeValidationError } from '../features/schema/schemaOutcomes';
+import type { SchemaEditorRow, SchemaOutcomeEditorRow } from '../features/schema/types';
 import type { FieldValidationError } from '../features/schema/validateField';
 import type { VerificationProgress } from '../features/verification/progress';
 import type { VerificationData } from '../features/verification/types';
@@ -276,6 +278,7 @@ export interface RedraftReviewState {
   revert?: RevertSource;
   /** ファイルから読み込む差分（issue #316 / CSV は #469）のときの読み込み元。未設定 = 読み込みではない */
   imported?: SchemaImportSource;
+  importedOutcomes?: SchemaOutcomeEditorRow[] | null;
 }
 
 /** 確定済み画面の「スキーマのファイル（JSON）」カードの状態（issue #316） */
@@ -308,6 +311,13 @@ export interface EnumSuggestion {
 
 /** #/schema（S5）の画面状態 */
 export interface SchemaState {
+  allOutcomes: SchemaOutcome[] | null;
+  currentOutcomes: SchemaOutcome[] | null;
+  currentOutcomesSourceVersion: number | null;
+  editorOutcomes: SchemaOutcomeEditorRow[];
+  editorOutcomeErrors: OutcomeValidationError[];
+  outcomeRemoval: { index: number; loading: boolean; error: string | null; counts: { cells: number; studies: number } | null } | null;
+  outcomeDecisions: Decision[] | null;
   /** 自由記述から選択肢への変換案（未反映の下書き）。 */
   enumSuggestion?: EnumSuggestion | null;
   /** パイロットから移動した項目。通常の入場時は未設定。 */
@@ -939,6 +949,13 @@ export function createInitialState(): AppState {
       draftText: '',
     },
     schema: {
+      allOutcomes: null,
+      currentOutcomes: null,
+      currentOutcomesSourceVersion: null,
+      editorOutcomes: [],
+      editorOutcomeErrors: [],
+      outcomeRemoval: null,
+      outcomeDecisions: null,
       versions: null,
       currentFields: null,
       loading: false,

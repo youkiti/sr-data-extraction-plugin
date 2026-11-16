@@ -180,3 +180,27 @@ describe('schemaExportFilename / importNoteDefault', () => {
     expect(importNoteDefault({ kind: 'csv', fileName: 'gl.csv' })).toBe('CSV ファイル（gl.csv）から読み込み');
   });
 });
+
+test('JSON の一覧は版と追加経路を含まず往復し、古いファイルでは null', () => {
+  const outcomes = [
+    { schemaVersion: 3, outcomeIndex: 2, outcomeId: 'pain', outcomeLabel: '疼痛', description: null, typicalTimepoints: null, note: null, addedVia: 'migration' as const },
+    { schemaVersion: 3, outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡', description: '定義', typicalTimepoints: '30d|90d', note: '注記', addedVia: 'schema_editor' as const },
+  ];
+  const text = serializeSchemaExport([makeField()], SOURCE, outcomes);
+  const raw = JSON.parse(text);
+  expect(raw.formatVersion).toBe(1);
+  expect(raw.outcomes.map((row: { outcomeId: string }) => row.outcomeId)).toEqual(['mortality', 'pain']);
+  expect(Object.keys(raw.outcomes[0]).sort()).toEqual(['description', 'note', 'outcomeId', 'outcomeLabel', 'typicalTimepoints']);
+  expect(parseSchemaExport(text).outcomes).toEqual(raw.outcomes.map((row: object) => ({ ...row, addedVia: 'file_import', idLocked: false, idEdited: true })));
+  expect(parseSchemaExport(fileWith([VALID_RAW])).outcomes).toBeNull();
+  expect(parseSchemaExport(fileWith([VALID_RAW], { outcomes: [] })).outcomes).toEqual([]);
+});
+
+test.each([
+  null, {}, [null], [{ outcomeId: 'x', outcomeLabel: 'X' }],
+  [{ outcomeId: 'bad id', outcomeLabel: 'X', description: null, typicalTimepoints: null, note: null }],
+  [{ outcomeId: 'x', outcomeLabel: ' ', description: null, typicalTimepoints: null, note: null }],
+  [1],
+].map((outcomes) => ({ outcomes })))('一覧の構造や値が不正ならファイル全体を拒否する: %j', ({ outcomes }) => {
+  expect(() => parseSchemaExport(fileWith([VALID_RAW], { outcomes }))).toThrow(SchemaImportError);
+});
