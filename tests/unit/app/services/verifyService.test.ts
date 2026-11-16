@@ -397,7 +397,7 @@ beforeEach(() => {
 });
 
 test.each(['owner', 'reviewer_independent'] as const)('現行一覧を対象読込時に解決し、study 切替では再取得しない: %s', async (role) => {
-  jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ schemaVersion: 2, outcomeId: 'pain' } as SchemaOutcome]);
+  jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ aliases: [] as string[], schemaVersion: 2, outcomeId: 'pain' } as SchemaOutcome]);
   listSchemaVersionsMock.mockResolvedValue([2, 1].map((schemaVersion) => ({ schemaVersion } as SchemaVersion)));
   getSchemaFieldsMock.mockResolvedValue([makeField({ entityLevel: 'outcome_result' })]);
   const store = makeStore({ documents: [makeDocument()], role });

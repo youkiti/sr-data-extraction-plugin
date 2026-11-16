@@ -1,6 +1,7 @@
 // 担当セットのロード・owner の割り当て操作・進捗素材の読み込み。
 // 非 owner はロード失敗時に処理を止め、担当外の研究を表示・許可しない。
 import { readCurrentOutcomeList } from './outcomeListService';
+import { applyOutcomeAliases } from '../../features/schema/applyOutcomeAliases';
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { Evidence } from '../../domain/evidence';
 import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
@@ -187,7 +188,8 @@ export async function readReviewSetProgressMaterials(
           versions[0].schemaVersion,
           deps.google,
         );
-  const decisions = await readAllDecisions(project.spreadsheetId, deps.google);
+  const outcomeList = await readCurrentOutcomeList(project.spreadsheetId, deps.google);
+  const { decisions } = applyOutcomeAliases({ decisions: await readAllDecisions(project.spreadsheetId, deps.google) }, outcomeList);
   const armRows = await readAllArmStructures(project.spreadsheetId, deps.google);
   const aiEvidenceByStudy: ReadonlyMap<string, readonly Evidence[]> =
     store.getState().role.role === 'reviewer_independent'
@@ -196,7 +198,7 @@ export async function readReviewSetProgressMaterials(
           [...composeEvidenceByStudy(
             await readEvidenceRows(project.spreadsheetId, deps.google),
             await readCompletedRunMetas(project.spreadsheetId, deps.google),
-          )].map(([studyId, entry]) => [studyId, entry.evidence]),
+          )].map(([studyId, entry]) => [studyId, applyOutcomeAliases({ evidence: entry.evidence }, outcomeList).evidence]),
         );
   const armStructures = new Map<string, ReadonlyMap<string, ConfirmedArmStructure>>();
   for (const studyId of new Set(armRows.map((row) => row.studyId))) {
@@ -216,7 +218,7 @@ export async function readReviewSetProgressMaterials(
     // セット利用の判定だけは除外前の研究集合を使う。
     activeStudies: resolveActiveStudies(studies, documents),
     fields, decisions, armStructures, aiEvidenceByStudy,
-    outcomeList: await readCurrentOutcomeList(project.spreadsheetId, deps.google),
+    outcomeList,
   };
 }
 

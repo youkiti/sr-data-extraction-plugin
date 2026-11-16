@@ -11,8 +11,8 @@ import { makeArmStructureRow, makeDecision, makeEvidence, makeField, makeResults
 const outcomeList: OutcomeListContext = {
   schemaVersion: 3,
   currentIds: new Set(['mortality', 'pain']),
-  everIds: new Set(['mortality', 'pain', 'removed']),
-  outcomes: ['mortality', 'pain'].map((outcomeId, index) => ({ schemaVersion: 3, outcomeIndex: index + 1,
+  aliasToId: new Map(), everIds: new Set(['mortality', 'pain', 'removed']),
+  outcomes: ['mortality', 'pain'].map((outcomeId, index) => ({ schemaVersion: 3, aliases: [], outcomeIndex: index + 1,
     outcomeId, outcomeLabel: `共通の${outcomeId}`, description: null, typicalTimepoints: null,
     addedVia: 'schema_editor', note: null })),
 };
@@ -25,6 +25,25 @@ const materials = { studies: [makeStudy()], studyRows: [makeStudyDataRow()], res
   fields, armStructureRows: [makeArmStructureRow()], documents: [], quoteSetRows: [], runs: [],
   bundlesByStudy: new Map([['study-1', bundleEvidence(evidences)]]), documentStudyIds: [], outcomeList };
 const meta = { exportedAt: '2026-11-16T00:00:00Z', appVersion: 'test', reviewMode: 'single_with_ai' };
+
+test('別名を一覧のキーへ合流させ、通常の出力では勝ったセルだけ、監査では両側を残す', () => {
+  const canonical = 'outcome:mortality|arm:1';
+  const alias = 'outcome:old|arm:1';
+  const evidence = [makeEvidence({ entityKey: canonical, value: 'AI の元の値' }), makeEvidence({ entityKey: alias, value: 'AI の別名の値' })];
+  const mapped = { ...materials, outcomeList: { ...outcomeList, aliasToId: new Map([['old', 'mortality']]), currentIds: new Set(['mortality', 'pain', 'old']) },
+    resultsRows: [makeResultsDataRow({ entityKey: canonical, value: null }), makeResultsDataRow({ entityKey: alias, value: '別名の判定値' })],
+    decisions: [makeDecision({ entityKey: canonical, action: 'undo' }), makeDecision({ entityKey: alias, action: 'edit', value: '別名の判定値' })],
+    evidences: evidence, bundlesByStudy: new Map([['study-1', bundleEvidence(evidence)]]) };
+  const classic = buildAllExports(mapped);
+  expect(classic.results_long.csv).toContain('別名の判定値');
+  expect(classic.results_long.csv).not.toContain('outcome:old');
+  expect(classic.evidence_quotes.csv).not.toContain('outcome:old');
+  expect(classic.audit.csv).toContain('outcome:old');
+  expect(classic.audit.csv).toContain(canonical);
+  const ma = buildRSet(mapped, meta).files.find((file) => file.name === 'ma.csv')!;
+  expect(ma.content).toContain('別名の判定値');
+  expect(ma.content).not.toContain('outcome:old');
+});
 
 test('一覧外のキーを除き、共通表示名と時点と追加した空セルを出す', () => {
   const built = buildRSet(materials, meta);

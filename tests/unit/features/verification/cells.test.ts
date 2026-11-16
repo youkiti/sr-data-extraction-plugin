@@ -18,7 +18,7 @@ test('一覧のキーだけを群へ展開し、未抽出アウトカムの空�
     schemaVersion: 2,
     outcomes: ['pain', 'mortality'].map((outcomeId) => ({ outcomeId } as SchemaOutcome)),
     currentIds: new Set(['pain', 'mortality']),
-    everIds: new Set(['pain', 'mortality', 'removed']),
+    aliasToId: new Map(), everIds: new Set(['pain', 'mortality', 'removed']),
   };
   const armStructure = { version: 1, arms: [{ armKey: 'arm:1', armName: 'A' }, { armKey: 'arm:2', armName: 'B' }, { armKey: 'invalid', armName: '?' }] };
   const evidence = ['outcome:pain|arm:1|time:30d', 'outcome:pain|arm:1|time:90d', 'outcome:removed|arm:1', 'outcome:new_id|arm:1', 'rob:d', 'rob:d|outcome:removed', 'rob:d|outcome:pain'].map((entityKey) => makeEvidence({ entityKey }));

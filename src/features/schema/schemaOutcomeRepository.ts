@@ -12,7 +12,8 @@ async function validateHeader(spreadsheetId: string, deps: GoogleApiDeps): Promi
   if (!values[0]?.some((cell) => cell.trim() !== '')) {
     return [];
   }
-  if (SHEET_HEADERS.SchemaOutcomes.some((name, index) => values[0]?.[index] !== name)) {
+  if (SHEET_HEADERS.SchemaOutcomes.slice(0, 8).some((name, index) => values[0]?.[index] !== name)
+    || (values[0]!.length > 8 && values[0]![8] !== 'aliases')) {
     throw new Error('SchemaOutcomes: ヘッダーが一致しません');
   }
   return values;
@@ -35,6 +36,7 @@ export async function readAllSchemaOutcomes(spreadsheetId: string, deps: GoogleA
       schemaVersion,
       outcomeIndex: Number(row[1]),
       outcomeId,
+      aliases: values[0]![8] === 'aliases' ? (row[8] ?? '').split('|').map((id) => id.trim()).filter(Boolean) : [],
       outcomeLabel: row[3] ?? '',
       description: row[4] || null,
       typicalTimepoints: row[5] || null,
@@ -55,12 +57,13 @@ export async function appendSchemaOutcomes(spreadsheetId: string, outcomes: read
     await writeHeaderRow(spreadsheetId, TAB, SHEET_HEADERS.SchemaOutcomes, deps);
   } else {
     const values = await validateHeader(spreadsheetId, deps);
-    if (values.length === 0) {
+    if (values.length === 0 || (values[0]!.length < 9 && outcomes.some((row) => row.aliases.length > 0))) {
       await writeHeaderRow(spreadsheetId, TAB, SHEET_HEADERS.SchemaOutcomes, deps);
     }
   }
   await appendRows(spreadsheetId, TAB, outcomes.map((row) => [
     row.schemaVersion, row.outcomeIndex, row.outcomeId, row.outcomeLabel,
     row.description ?? '', row.typicalTimepoints ?? '', row.addedVia, row.note ?? '',
+    ...(row.aliases.length > 0 ? [row.aliases.join('|')] : []),
   ]), deps);
 }

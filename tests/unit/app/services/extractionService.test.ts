@@ -158,7 +158,7 @@ beforeEach(() => {
 describe('アウトカムの一覧の抽出への受け渡し', () => {
   test.each([1, 2])('実行版以前の一覧（保存版 %i）を渡し、一覧外の応答も Evidence と ai 行に保存する', async (schemaVersion) => {
     const row = (version: number, outcomeId: string): SchemaOutcome => ({
-      schemaVersion: version, outcomeIndex: 1, outcomeId, outcomeLabel: '全死亡',
+      schemaVersion: version, aliases: [], outcomeIndex: 1, outcomeId, outcomeLabel: '全死亡',
       description: '死亡の所見', typicalTimepoints: '30d', addedVia: 'schema_editor', note: null,
     });
     jest.mocked(readAllSchemaOutcomes).mockResolvedValue([row(3, 'future'), row(schemaVersion, 'mortality')]);

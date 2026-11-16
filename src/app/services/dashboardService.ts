@@ -20,6 +20,7 @@ import { CALIBRATION_SET_ID } from '../../domain/reviewSet';
 import { readReviewSetProgressMaterials, requireReviewSets } from './reviewSetService';
 import { buildComparisonCells, buildComparisonCellsCsv, buildComparisonSummaryCsv } from '../../features/verification/aiHumanComparison';
 import { readAllSchemaOutcomes } from '../../features/schema/schemaOutcomeRepository';
+import { readAllDecisions } from '../../features/verification/decisionRepository';
 import { buildOutcomeListContext } from '../../features/schema/outcomeListContext';
 import { readStudies, resolveActiveStudies } from '../../features/documents/studyRepository';
 import { readDocuments } from '../../features/documents/documentRepository';
@@ -82,9 +83,11 @@ export async function loadAiHumanComparison(store: Store, deps: VerificationDeps
     const latest = versions[0];
     const fields = latest === undefined ? [] : await getSchemaFieldsByVersion(id, latest.schemaVersion, deps.google);
     const activeStudies = resolveActiveStudies(studies, documents);
+    const outcomeList = buildOutcomeListContext(outcomes, versions, latest?.schemaVersion ?? 0);
     const data = buildComparisonCells({ studies: activeStudies, fields,
+      decisions: outcomeList !== null && outcomeList.aliasToId.size > 0 ? await readAllDecisions(id, deps.google) : undefined,
       studyRows: studySheet.rows, resultRows, evidence, runs,
-      outcomeList: buildOutcomeListContext(outcomes, versions, latest?.schemaVersion ?? 0) });
+      outcomeList });
     if (store.getState().currentProject?.spreadsheetId === id) {
       patchDashboard(store, { comparison: { loading: false, error: null, data } });
     }

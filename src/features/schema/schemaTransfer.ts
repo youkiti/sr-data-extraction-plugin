@@ -61,7 +61,7 @@ export interface SchemaExportFile {
   formatVersion: number;
   source: SchemaExportSource;
   fields: SchemaExportField[];
-  outcomes?: Pick<SchemaOutcome, 'outcomeId' | 'outcomeLabel' | 'description' | 'typicalTimepoints' | 'note'>[];
+  outcomes?: Pick<SchemaOutcome, 'outcomeId' | 'aliases' | 'outcomeLabel' | 'description' | 'typicalTimepoints' | 'note'>[];
 }
 
 export interface ParsedSchemaImport {
@@ -90,6 +90,7 @@ export function serializeSchemaExport(fields: readonly SchemaField[], source: Sc
     outcomes: [...outcomes].sort((a, b) => a.outcomeIndex - b.outcomeIndex).map((row) => ({
       outcomeId: row.outcomeId, outcomeLabel: row.outcomeLabel, description: row.description,
       typicalTimepoints: row.typicalTimepoints, note: row.note,
+      aliases: row.aliases,
     })),
     fields: [...fields]
       .sort((a, b) => a.fieldIndex - b.fieldIndex)
@@ -247,6 +248,7 @@ export function parseSchemaExport(text: string): ParsedSchemaImport {
     }
     outcomes = data.outcomes.map<SchemaOutcomeEditorRow>((raw: unknown) => {
       if (!isRecord(raw) || typeof raw.outcomeId !== 'string' || typeof raw.outcomeLabel !== 'string' ||
+        (raw.aliases !== undefined && (!Array.isArray(raw.aliases) || !raw.aliases.every((alias: unknown) => typeof alias === 'string'))) ||
         !['description', 'typicalTimepoints', 'note'].every((key) => raw[key] === null || typeof raw[key] === 'string')) {
         throw new SchemaImportError('schema.outcomeImportInvalid', { reason: 'outcomeId / outcomeLabel / description / typicalTimepoints / note' });
       }
@@ -254,6 +256,7 @@ export function parseSchemaExport(text: string): ParsedSchemaImport {
         outcomeId: raw.outcomeId, outcomeLabel: raw.outcomeLabel, description: raw.description as string | null,
         typicalTimepoints: raw.typicalTimepoints as string | null, note: raw.note as string | null,
         addedVia: 'file_import', idLocked: false, idEdited: true,
+        aliases: (raw.aliases as string[] | undefined) ?? [],
       };
     });
     const outcomeErrors = validateOutcomeRows(outcomes, { listModeBefore: false });

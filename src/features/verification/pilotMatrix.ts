@@ -5,6 +5,7 @@ import type { ExtractionRun } from '../../domain/extractionRun';
 import { deriveCellStates } from './cellState';
 import { bundleEvidence } from './evidenceBundles';
 import { isEntityKeyInOutcomeList, type OutcomeListContext } from '../schema/outcomeListContext';
+import { applyOutcomeAliases } from '../schema/applyOutcomeAliases';
 
 export type PilotCellStatus = 'accept' | 'edit' | 'reject' | 'nrAccepted' | 'nrMiss' | 'nr' | 'failed' | 'unverified' | 'empty';
 export const PILOT_SYMBOLS: Record<PilotCellStatus, string> = {
@@ -50,6 +51,7 @@ export function buildPilotMatrix(
   evidence: readonly Evidence[], decisions: readonly Decision[],
   outcomeList: OutcomeListContext | null = null,
 ): PilotMatrixRow[] {
+  ({ evidence, decisions } = applyOutcomeAliases({ evidence, decisions }, outcomeList));
   const byStudy = new Map(studyIds.map((studyId) => {
     const states = deriveCellStates(decisions.filter((item) => item.studyId === studyId));
     const entities = [...bundleEvidence(evidence.filter((item) => item.studyId === studyId && isEntityKeyInOutcomeList(item.entityKey, outcomeList)))]

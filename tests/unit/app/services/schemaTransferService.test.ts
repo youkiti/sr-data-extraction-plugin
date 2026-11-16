@@ -342,7 +342,7 @@ describe('importSchemaFile（CSV。issue #469）', () => {
 });
 
 const transferOutcome = {
-  schemaVersion: 1, outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
+  schemaVersion: 1, aliases: [], outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
   description: null, typicalTimepoints: '30d', addedVia: 'migration' as const, note: null,
 };
 
@@ -356,8 +356,23 @@ test('書き出す版で欠けた一覧は前版を使い JSON に含める', as
   const { deps, download } = makeDeps();
   await exportSchemaFile(store, deps, 2);
   expect(JSON.parse(download.mock.calls[0]![1]).outcomes).toEqual([
-    { outcomeId: 'mortality', outcomeLabel: '全死亡', description: null, typicalTimepoints: '30d', note: null },
+    { aliases: [], outcomeId: 'mortality', outcomeLabel: '全死亡', description: null, typicalTimepoints: '30d', note: null },
   ]);
+});
+
+test('既存のキーがある論文単位モードではファイルの項目だけを読み込む', async () => {
+  const store = storeOf();
+  store.setState({ schema: { ...store.getState().schema, outcomeMigration: { rows: [], evidence: [], decisions: [], confirmingExclusions: false } } });
+  await importSchemaFile(store, fileOf(serializeSchemaExport([makeField()], OTHER_SOURCE, [transferOutcome])));
+  expect(store.getState().schema.redraft?.importedOutcomes).toBeNull();
+  applyRedraft(store);
+  expect(store.getState().schema.editorOutcomes).toEqual([]);
+  const other = storeOf();
+  other.setState({ schema: { ...other.getState().schema, outcomeMigration: { rows: [], evidence: [], decisions: [], confirmingExclusions: false } } });
+  const legacy = JSON.parse(serializeSchemaExport([makeField()], OTHER_SOURCE));
+  delete legacy.outcomes;
+  await importSchemaFile(other, fileOf(JSON.stringify(legacy)));
+  expect(other.getState().schema.redraft?.importedOutcomes).toBeNull();
 });
 
 test.each([false, true])('JSON の一覧を読み込み、差分反映でも保持する（既存版あり=%s）', async (hasVersion) => {
@@ -368,7 +383,7 @@ test.each([false, true])('JSON の一覧を読み込み、差分反映でも保�
     applyRedraft(store);
   }
   expect(store.getState().schema.editorOutcomes).toEqual([
-    { outcomeId: 'mortality', outcomeLabel: '全死亡', description: null, typicalTimepoints: '30d', note: null, addedVia: 'file_import', idLocked: true, idEdited: true },
+    { aliases: [], outcomeId: 'mortality', outcomeLabel: '全死亡', description: null, typicalTimepoints: '30d', note: null, addedVia: 'file_import', idLocked: true, idEdited: true },
   ]);
 });
 

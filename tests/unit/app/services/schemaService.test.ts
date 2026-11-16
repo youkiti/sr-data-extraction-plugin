@@ -1,7 +1,13 @@
+import { emptyPilotMatrix } from '../../../../src/app/services/pilotMatrixService';
 import { importSchemaFile } from '../../../../src/app/services/schemaTransferService';
 import { serializeSchemaExport } from '../../../../src/features/schema/schemaTransfer';
 import { addEditorOutcome, updateEditorOutcome, moveEditorOutcome, restoreEditorOutcome, requestRemoveEditorOutcome, confirmRemoveEditorOutcome, cancelRemoveEditorOutcome, importedOutcomeRows } from '../../../../src/app/services/schemaService';
 import { readAllDecisions } from '../../../../src/features/verification/decisionRepository';
+import { readEvidenceRows } from '../../../../src/features/extraction/evidenceRepository';
+import { buildOutcomeMigrationRows } from '../../../../src/features/schema/outcomeMigration';
+import { confirmOutcomeMigration, updateOutcomeMigration } from '../../../../src/app/services/schemaService';
+import { makeEvidence as migrationEvidence } from '../../features/export/rset/testHelpers';
+jest.mock('../../../../src/features/extraction/evidenceRepository');
 import type { SchemaOutcome } from '../../../../src/domain/schemaOutcome';
 import type { Decision } from '../../../../src/domain/decision';
 jest.mock('../../../../src/features/verification/decisionRepository');
@@ -285,6 +291,7 @@ function toastTexts(): string[] {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.mocked(readEvidenceRows).mockReset().mockResolvedValue([]);
   jest.mocked(readAllSchemaOutcomes).mockResolvedValue([]);
   jest.mocked(readAllDecisions).mockReset().mockResolvedValue([]);
   document.body.innerHTML = '';
@@ -432,12 +439,12 @@ describe('runDraftSchema', () => {
     });
     await runDraftSchema(store, deps);
     expect(store.getState().schema.editorOutcomes).toEqual([
-      { outcomeId: 'mortality', outcomeLabel: '全死亡', description: null, typicalTimepoints: '30d|90d',
+      { aliases: [], outcomeId: 'mortality', outcomeLabel: '全死亡', description: null, typicalTimepoints: '30d|90d',
         addedVia: 'ai_draft', idLocked: false, idEdited: false, note: null },
     ]);
     updateEditorOutcome(store, 0, { outcomeLabel: '死亡' });
     expect(store.getState().schema.editorOutcomes[0]?.addedVia).toBe('ai_draft');
-    const saved = { schemaVersion: 1, outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '死亡',
+    const saved = { schemaVersion: 1, aliases: [], outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '死亡',
       description: null, typicalTimepoints: '30d|90d', addedVia: 'ai_draft' as const, note: null };
     saveVersionMock.mockResolvedValue({ version: makeVersion(1), fields: [makeField()], outcomes: [saved] });
     await confirmSchema(store, deps, '');
@@ -468,7 +475,7 @@ describe('runDraftSchema', () => {
     expect(chatMock.mock.calls[0]?.[0][0]?.content).toContain('This is a redraft of an existing schema');
     applyRedraft(store);
     expect(store.getState().schema.editorOutcomes).toEqual([
-      { outcomeId: current.outcomeId, outcomeLabel: current.outcomeLabel, description: current.description,
+      { aliases: [], outcomeId: current.outcomeId, outcomeLabel: current.outcomeLabel, description: current.description,
         typicalTimepoints: current.typicalTimepoints, addedVia: current.addedVia, note: current.note,
         idLocked: true, idEdited: false },
     ]);
@@ -1485,7 +1492,7 @@ describe('confirmSchema', () => {
     saveVersionMock.mockResolvedValue({ version: savedVersion, fields: savedFields, outcomes: [] });
     const { deps } = makeDeps();
 
-    const outcomeList = { schemaVersion: 1, outcomes: [], currentIds: new Set<string>(), everIds: new Set<string>() };
+    const outcomeList = { schemaVersion: 1, outcomes: [], currentIds: new Set<string>(), aliasToId: new Map(), everIds: new Set<string>() };
     store.setState({
       pilot: { ...store.getState().pilot, outcomeList, verifyStudyId: 'study-1' },
       adjudicate: { ...store.getState().adjudicate, outcomeList },
@@ -1841,7 +1848,7 @@ describe('前の版の内容に戻す（issue #318）', () => {
 });
 
 const schemaOutcome = (patch: Partial<SchemaOutcome> = {}): SchemaOutcome => ({
-  schemaVersion: 1, outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
+  schemaVersion: 1, aliases: [], outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
   description: null, typicalTimepoints: '30d', addedVia: 'migration', note: null, ...patch,
 });
 
@@ -1858,6 +1865,87 @@ const outcomeDecision = (): Decision => ({
   studyId: 'study1', fieldId: 'f1', entityKey: 'outcome:mortality', annotator: 'a',
   annotatorType: 'human_with_ai', schemaVersion: 1, action: 'accept', value: '1', note: null,
   decidedAt: '2026-11-16T00:00:00Z', decidedBy: 'a',
+});
+
+function seedMigration(store: Store): void {
+  const evidence = [migrationEvidence({ entityKey: 'outcome:pain' }), migrationEvidence({ entityKey: 'outcome:old' })];
+  const decisions = [{ ...outcomeDecision(), entityKey: 'outcome:old' }];
+  store.setState({ schema: { ...store.getState().schema, versions: [makeVersion(1)], currentFields: [makeField()], allOutcomes: [],
+    outcomeMigration: { rows: buildOutcomeMigrationRows(evidence, decisions, []), evidence, decisions, confirmingExclusions: false } },
+  verify: { ...store.getState().verify, targets: [] },
+  protocol: { ...store.getState().protocol, records: [makeProtocol()] } });
+}
+
+test('移行候補の連鎖・自分への統合・未選択のまとめ先を防ぎ、選択解除で別名をほどく', () => {
+  const store = makeStore();
+  updateOutcomeMigration(store, 'none', {});
+  seedMigration(store);
+  addEditorOutcome(store);
+  expect(store.getState().schema.editorOutcomes).toEqual([]);
+  updateOutcomeMigration(store, 'old', { target: 'old' });
+  updateOutcomeMigration(store, 'old', { target: 'missing' });
+  updateOutcomeMigration(store, 'old', { target: 'pain' });
+  updateOutcomeMigration(store, 'pain', { target: 'old' });
+  expect(store.getState().schema.outcomeMigration!.rows.map((row) => row.target)).toEqual([null, 'pain']);
+  updateOutcomeMigration(store, 'pain', { selected: false });
+  expect(store.getState().schema.outcomeMigration!.rows[1]!.target).toBeNull();
+  updateOutcomeMigration(store, 'old', { target: 'pain' });
+  expect(store.getState().schema.outcomeMigration!.rows[1]!.target).toBeNull();
+  store.setState({ schema: { ...store.getState().schema, confirming: true } });
+  updateOutcomeMigration(store, 'old', { label: '変更しない' });
+  expect(store.getState().schema.outcomeMigration!.rows[1]!.label).toBe('old');
+});
+
+test('移行は項目を保持し、除外の確認または別名の統合を経て最初の一覧を確定する', async () => {
+  const store = makeStore();
+  const { deps } = makeDeps();
+  await confirmOutcomeMigration(store, deps);
+  seedMigration(store);
+  updateOutcomeMigration(store, 'pain', { selected: false });
+  updateOutcomeMigration(store, 'old', { selected: false });
+  await confirmOutcomeMigration(store, deps);
+  expect(store.getState().schema.editorOutcomeErrors.length).toBeGreaterThan(0);
+  updateOutcomeMigration(store, 'pain', { selected: true });
+  await confirmOutcomeMigration(store, deps);
+  expect(store.getState().schema.outcomeMigration!.confirmingExclusions).toBe(true);
+  saveVersionMock.mockResolvedValue({ version: makeVersion(2), fields: [makeField()], outcomes: [schemaOutcome({ outcomeId: 'pain' })] });
+  await confirmOutcomeMigration(store, deps, true);
+  expect(saveVersionMock).toHaveBeenCalledWith(expect.objectContaining({ note: 'アウトカムの一覧を作成（移行）', createdByType: 'user_edit',
+    outcomes: [expect.objectContaining({ outcomeId: 'pain', addedVia: 'migration', aliases: [] })] }), expect.anything());
+  expect(store.getState().schema.outcomeMigration).toBeNull();
+  expect(store.getState().verify.targets).toBeNull();
+  expect(store.getState().export.built).toBeNull();
+  seedMigration(store);
+  updateOutcomeMigration(store, 'old', { target: 'pain' });
+  store.setState({ schema: { ...store.getState().schema, allOutcomes: null, versions: null } });
+  await confirmOutcomeMigration(store, deps);
+  expect(saveVersionMock).toHaveBeenLastCalledWith(expect.objectContaining({ outcomes: [expect.objectContaining({ outcomeId: 'pain', aliases: ['old'] })] }), expect.anything());
+  seedMigration(store);
+  saveVersionMock.mockRejectedValueOnce(new Error('保存失敗'));
+  await confirmOutcomeMigration(store, deps);
+  expect(store.getState().schema.outcomeMigration).not.toBeNull();
+  expect(store.getState().verify.targets).toEqual([]);
+});
+
+test('移行の確定は項目なし・確定中・一覧作成済みでは何もしない', async () => {
+  const store = makeStore();
+  const { deps } = makeDeps();
+  seedMigration(store);
+  const schema = store.getState().schema;
+  for (const patch of [{ currentFields: null }, { confirming: true }, { allOutcomes: [schemaOutcome()] }]) {
+    store.setState({ schema: { ...schema, ...patch } });
+    await confirmOutcomeMigration(store, deps);
+  }
+  expect(saveVersionMock).not.toHaveBeenCalled();
+});
+
+test('論文単位モードの既存キーから移行候補を読み込む', async () => {
+  listVersionsMock.mockResolvedValue([makeVersion(1)]);
+  getFieldsMock.mockResolvedValue([makeField({ fieldName: 'outcome_name' })]);
+  jest.mocked(readEvidenceRows).mockResolvedValue([migrationEvidence({ entityKey: 'outcome:pain', value: '痛み' })]);
+  const store = makeStore();
+  await loadSchema(store, makeDeps().deps);
+  expect(store.getState().schema.outcomeMigration?.rows[0]).toMatchObject({ id: 'pain', label: '痛み' });
 });
 
 test('一覧を読み込み、欠けた最新版では前版の一覧と参照元を保持する', async () => {
@@ -1931,7 +2019,7 @@ test.each([false, true])('一覧モードで一覧の無い版へ戻すと現行
   await startRevertFromVersion(store, makeDeps().deps, 1);
   applyRedraft(store);
   expect(store.getState().schema.editorOutcomes).toEqual(unloaded ? [] : [{
-    outcomeId: 'mortality', outcomeLabel: '最新版', description: null, typicalTimepoints: '30d',
+    aliases: [], outcomeId: 'mortality', outcomeLabel: '最新版', description: null, typicalTimepoints: '30d',
     addedVia: 'migration', note: null, idLocked: true, idEdited: false,
   }]);
 });
@@ -2254,4 +2342,33 @@ test('二重の確定操作は保存を一度だけ実行する', async () => {
   const { deps } = makeDeps();
   await Promise.all([confirmSchema(store, deps, ''), confirmSchema(store, deps, '')]);
   expect(saveVersionMock).toHaveBeenCalledTimes(1);
+});
+
+
+test('移行成功時だけパイロットの検証・一覧・マトリクスを破棄する', async () => {
+  const store = makeStore();
+  seedMigration(store);
+  const disposePdf = jest.fn();
+  const verification = { disposePdf } as unknown as NonNullable<ReturnType<typeof store.getState>['pilot']['verification']>;
+  const matrix = { ...emptyPilotMatrix(), runId: 'cached' };
+  store.setState({ pilot: { ...store.getState().pilot, verification, verifyStudyId: 'study-1',
+    outcomeList: null, matrix, historyInitialized: true,
+    run: { runId: 'cached' } as NonNullable<ReturnType<typeof store.getState>['pilot']['run']>,
+    runFields: [makeField()], evidence: [] } });
+  saveVersionMock.mockRejectedValueOnce(new Error('保存失敗'));
+  await confirmOutcomeMigration(store, makeDeps().deps);
+  expect(store.getState().pilot.verification).toBe(verification);
+  expect(store.getState().pilot.matrix).toBe(matrix);
+  expect(disposePdf).not.toHaveBeenCalled();
+  saveVersionMock.mockResolvedValue({ version: makeVersion(2), fields: [makeField()], outcomes: [schemaOutcome()] });
+  await confirmOutcomeMigration(store, makeDeps().deps);
+  expect(store.getState().pilot.verification).toBeNull();
+  expect(store.getState().pilot.verifyStudyId).toBeNull();
+  expect(store.getState().pilot.outcomeList).toBeUndefined();
+  expect(store.getState().pilot.matrix).toBeUndefined();
+  expect(store.getState().pilot.run).toBeNull();
+  expect(store.getState().pilot.runFields).toBeNull();
+  expect(store.getState().pilot.evidence).toBeNull();
+  expect(store.getState().pilot.historyInitialized).toBe(false);
+  expect(disposePdf).toHaveBeenCalledTimes(1);
 });

@@ -193,7 +193,7 @@ test('現行の一覧で Home と担当セットの未入力セルを数える',
   const outcomeList = {
     schemaVersion: 2,
     outcomes: [{ outcomeId: 'pain', outcomeLabel: '痛み' } as SchemaOutcome],
-    currentIds: new Set(['pain']), everIds: new Set(['pain', 'removed']),
+    currentIds: new Set(['pain']), aliasToId: new Map(), everIds: new Set(['pain', 'removed']),
   };
   jest.mocked(readCurrentOutcomeList).mockResolvedValue(outcomeList);
   jest.mocked(listSchemaVersions).mockResolvedValue([{ schemaVersion: 2 } as NonNullable<Awaited<ReturnType<typeof listSchemaVersions>>[number]>]);

@@ -2,6 +2,7 @@
 // render は純粋関数のため、状態を組み立てて DOM を検証する
 import { captureFocusState, restoreFocusState } from '../../../../src/app/ui/preserveFocus';
 import { focusSchemaField, focusSchemaOutcomes, renderSchemaView } from '../../../../src/app/views/schemaView';
+import type { Decision } from '../../../../src/domain/decision';
 import { DTA_ARM_FIELD_REPLACEMENTS } from '../../../../src/features/schema/dtaArmFieldCheck';
 import { updateEditorRow } from '../../../../src/app/services/schemaService';
 import { createStore } from '../../../../src/app/store';
@@ -160,6 +161,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
     onApplyEnumSuggestion: jest.fn(),
     onCancelEnumSuggestion: jest.fn(),
     onAddOutcome: jest.fn(),
+    onEditOutcomeMigration: jest.fn(),
+    onConfirmOutcomeMigration: jest.fn(),
     onEditOutcome: jest.fn(),
     onMoveOutcome: jest.fn(),
     onRestoreOutcome: jest.fn(),
@@ -2244,13 +2247,56 @@ test.each(['ja', 'en'] as const)('必須と削除の説明を %s で表示する
 });
 
 const viewOutcome = {
-  schemaVersion: 1, outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
+  schemaVersion: 1, aliases: [], outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
   description: '定義', typicalTimepoints: '30d|90d', addedVia: 'schema_editor' as const, note: null,
 };
 const viewOutcomeRow = {
-  outcomeId: 'mortality', outcomeLabel: '全死亡', description: null, typicalTimepoints: null,
+  aliases: [], outcomeId: 'mortality', outcomeLabel: '全死亡', description: null, typicalTimepoints: null,
   addedVia: 'schema_editor' as const, note: null, idLocked: true, idEdited: false,
 };
+
+test('移行カードは選択・名称・まとめ先と衝突を表示し、除外の確認を経て確定する', () => {
+  const { ctx, callbacks } = makeCtx();
+  const migration: NonNullable<AppState['schema']['outcomeMigration']> = {
+    rows: [
+      { id: 'pain', label: '痛み', selected: true, target: null, studies: 1, judgedCells: 1 },
+      { id: 'old', label: '旧名', selected: true, target: 'pain', studies: 1, judgedCells: 1 },
+      { id: 'excluded', label: '除外', selected: false, target: null, studies: 1, judgedCells: 1 },
+    ],
+    evidence: [], decisions: [{ studyId: 's', annotator: 'a', fieldId: 'f', entityKey: 'outcome:excluded', action: 'edit', value: '1', decidedAt: 't' } as Decision],
+    confirmingExclusions: true,
+  };
+  const state = makeState({ versions: [makeVersion(1)], currentFields: [makeField({ entityLevel: 'outcome_result' })],
+    outcomeMigration: migration, editorOutcomeErrors: [{ index: -1, message: '入力を確認' }] });
+  const root = renderSchemaView(state, ctx);
+  document.body.append(root);
+  const card = root.querySelector<HTMLElement>('#schema-outcome-migration')!;
+  card.scrollIntoView = jest.fn();
+  focusSchemaOutcomes(document);
+  expect(card.scrollIntoView).toHaveBeenCalled();
+  root.querySelector<HTMLAnchorElement>('#schema-outcomes-summary a[href="#/schema?outcomes"]')!.click();
+  const selected = card.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  selected.checked = false;
+  selected.dispatchEvent(new Event('change'));
+  const name = card.querySelector<HTMLInputElement>('input[type="text"]')!;
+  name.value = '疼痛';
+  name.dispatchEvent(new Event('change'));
+  const target = card.querySelectorAll<HTMLSelectElement>('select')[1]!;
+  target.value = '';
+  target.dispatchEvent(new Event('change'));
+  target.value = 'pain';
+  target.dispatchEvent(new Event('change'));
+  expect(callbacks.onEditOutcomeMigration).toHaveBeenCalledWith('old', { target: 'pain' });
+  expect(card.textContent).toContain('判定済みのセルが 1 個（1 本の論文）');
+  expect(card.textContent).toContain('入力を確認');
+  card.querySelector<HTMLButtonElement>('button:not(.help-button)')?.click();
+  Array.from(card.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.textContent === 'この内容で一覧を作る')!.click();
+  expect(callbacks.onConfirmOutcomeMigration).toHaveBeenCalledWith(true);
+  const editor = renderSchemaView({ ...state, schema: { ...state.schema, editorRows: [makeEditorRow({ entityLevel: 'outcome_result' })] } }, ctx);
+  expect(editor.querySelector('#schema-outcome-add')).toBeNull();
+  expect(editor.querySelector('#schema-outcomes a')).not.toBeNull();
+  expect(renderSchemaView({ ...state, schema: { ...state.schema, outcomeMigration: { ...migration, confirmingExclusions: false } } }, ctx).querySelector('#schema-outcome-migration')).not.toBeNull();
+});
 
 test('アウトカムの編集欄は対象項目か一覧があるときだけ出し、各操作を配線する', () => {
   const { ctx, callbacks } = makeCtx();

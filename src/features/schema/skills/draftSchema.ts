@@ -298,6 +298,7 @@ export function parseDraftSchemaResponse(text: string): { rows: SchemaEditorRow[
         outcomeLabel: item.outcome_label,
         description: item.description,
         typicalTimepoints: item.typical_timepoints,
+        aliases: [],
         addedVia: 'ai_draft',
         idLocked: false,
         idEdited: false,

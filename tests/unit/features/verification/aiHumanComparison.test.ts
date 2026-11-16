@@ -53,7 +53,7 @@ describe('比較セルと対象者', () => {
     const report = buildComparisonCells(input({ fields: [outcome],
       resultRows: keys.map((entityKey) => resultRow({ entityKey })),
       evidence: keys.map((entityKey) => makeEvidence({ fieldId: 'f-arm', entityKey })),
-      outcomeList: { schemaVersion: 2, outcomes: [], currentIds: new Set(['current']), everIds: new Set(['current', 'removed']) } }));
+      outcomeList: { schemaVersion: 2, outcomes: [], currentIds: new Set(['current']), aliasToId: new Map(), everIds: new Set(['current', 'removed']) } }));
     expect(report.cells.map((cell) => cell.entityKey)).toEqual(['outcome:current|arm:1', 'outcome:current|arm:1']);
   });
   test('独立の人と最終値を分け、Evidence なしの対象研究を含める', () => {

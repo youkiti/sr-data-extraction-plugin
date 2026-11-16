@@ -11,6 +11,8 @@ export interface OutcomeListContext {
   outcomes: readonly SchemaOutcome[];
   currentIds: ReadonlySet<string>;
   everIds: ReadonlySet<string>;
+  /** 現行版の別名から一覧の id への対応。 */
+  aliasToId: ReadonlyMap<string, string>;
 }
 
 /** 指定版の一覧と全版の id を解決し、その版以前に一覧が無ければ null を返す。 */
@@ -25,9 +27,20 @@ export function buildOutcomeListContext(all: readonly SchemaOutcome[], versionsD
   return {
     schemaVersion: resolved.sourceVersion,
     outcomes: resolved.outcomes,
-    currentIds: new Set(resolved.outcomes.map((row) => row.outcomeId)),
-    everIds: new Set(all.map((row) => row.outcomeId)),
+    currentIds: new Set(resolved.outcomes.flatMap((row) => [row.outcomeId, ...row.aliases])),
+    everIds: new Set(all.flatMap((row) => [row.outcomeId, ...row.aliases])),
+    aliasToId: new Map(resolved.outcomes.flatMap((row) => row.aliases.map((alias) => [alias, row.outcomeId] as const))),
   };
+}
+
+/** アウトカムと estimate 別 RoB の参照先を一覧の id に読み替える。 */
+export function canonicalOutcomeEntityKey(entityKey: string, context: OutcomeListContext | null): string {
+  const id = outcomeIdOfEntityKey(entityKey);
+  const canonical = id === null ? undefined : context?.aliasToId.get(id);
+  if (canonical === undefined) {
+    return entityKey;
+  }
+  return entityKey.split('|').map((segment) => segment === `outcome:${id}` ? `outcome:${canonical}` : segment).join('|');
 }
 
 /** アウトカムのキー、または estimate 別の RoB キーから参照先の id を返す。 */

@@ -27,6 +27,24 @@ import * as highlightsModule from '../../../../src/features/verification/highlig
 import { quoteKeyOf } from '../../../../src/features/verification/evidenceBundles';
 import type { SchemaOutcome } from '../../../../src/domain/schemaOutcome';
 
+test('別名の根拠から検証した判定も一覧の entity_key で書く', async () => {
+  const { panel, onDecision } = await createPanel({
+    fields: [makeField({ entityLevel: 'outcome_result' })],
+    outcomeList: { schemaVersion: 1, outcomes: [], currentIds: new Set(['pain', 'old']), everIds: new Set(['pain', 'old']), aliasToId: new Map([['old', 'pain']]) },
+    evidence: [makeEvidence({ entityKey: 'outcome:old|arm:1' })],
+  });
+  panel.root.querySelector<HTMLButtonElement>('.verify__action--accept')!.click();
+  expect(onDecision).toHaveBeenCalledWith(expect.objectContaining({ entityKey: 'outcome:pain|arm:1' }));
+  panel.dispose();
+});
+
+test('論文単位のパイロットに既存のキーがあれば宣言フォームを移行への導線に替える', async () => {
+  const { panel } = await createPanel({ fields: [makeField({ entityLevel: 'outcome_result' })], evidence: [makeEvidence({ entityKey: 'outcome:old|arm:1' })] }, { pilot: true });
+  expect(panel.root.querySelector('#verify-outcome-add')).toBeNull();
+  expect(panel.root.querySelector('a[href="#/schema?outcomes"]')).not.toBeNull();
+  panel.dispose();
+});
+
 test.each(['human_with_ai', 'human_independent'] as const)('一覧外キーを表示と進捗から除き、一覧の空セルを数える: %s', async (annotatorType) => {
   const progress = jest.fn();
   const { panel } = await createPanel({
@@ -37,7 +55,7 @@ test.each(['human_with_ai', 'human_independent'] as const)('一覧外キーを�
       schemaVersion: 2,
       outcomes: [{ outcomeId: 'pain', outcomeLabel: '痛み' } as SchemaOutcome],
       currentIds: new Set(['pain']),
-      everIds: new Set(['pain', 'removed']),
+      aliasToId: new Map(), everIds: new Set(['pain', 'removed']),
     },
     evidence: [makeEvidence({ entityKey: 'outcome:removed|arm:1' }), makeEvidence({ entityKey: 'outcome:new_id|arm:1', value: '候補名' })],
     decisions: [makeDecision({ entityKey: 'outcome:removed|arm:1' })],
@@ -56,7 +74,7 @@ test.each(['human_with_ai', 'human_independent'] as const)('一覧外キーを�
 test.each([true, false])('一覧モードは追加の権限が無ければフォームを隠し、本番の共同研究者には相談を案内する: pilot=%s', async (pilot) => {
   const { panel } = await createPanel({
     fields: [makeField({ entityLevel: 'outcome_result' })],
-    outcomeList: { schemaVersion: 2, outcomes: [{ outcomeId: 'pain', outcomeLabel: '痛み' } as SchemaOutcome], currentIds: new Set(['pain']), everIds: new Set(['pain']) },
+    outcomeList: { schemaVersion: 2, outcomes: [{ outcomeId: 'pain', outcomeLabel: '痛み' } as SchemaOutcome], currentIds: new Set(['pain']), aliasToId: new Map(), everIds: new Set(['pain']) },
     evidence: [],
   }, { pilot });
   expect(panel.root.querySelector('#verify-outcome-add')).toBeNull();
@@ -70,7 +88,7 @@ test.each([true, false])('一覧外の候補の引用から PDF のハイライ�
   const { panel } = await createPanel({
     canEditSchema: true,
     fields: [makeField({ entityLevel: 'outcome_result' })],
-    outcomeList: { schemaVersion: 1, outcomes: [{ outcomeId: 'pain', outcomeLabel: '痛み' } as SchemaOutcome], currentIds: new Set(['pain']), everIds: new Set(['pain']) },
+    outcomeList: { schemaVersion: 1, outcomes: [{ outcomeId: 'pain', outcomeLabel: '痛み' } as SchemaOutcome], currentIds: new Set(['pain']), aliasToId: new Map(), everIds: new Set(['pain']) },
     evidence: [candidate],
   }, { pilot });
   panel.root.querySelector<HTMLButtonElement>('#verify-outcome-candidates button')!.click();
@@ -85,7 +103,7 @@ test.each([true, false])('パイロットの一覧は追加フォームと候補
   const { panel } = await createPanel({
     canEditSchema: true,
     fields: [makeField({ entityLevel: 'outcome_result', fieldName: named ? 'outcome_name' : 'value' })],
-    outcomeList: { schemaVersion: 1, outcomes: [{ outcomeId: 'pain', outcomeLabel: '痛み' } as SchemaOutcome], currentIds: new Set(['pain']), everIds: new Set(['pain']) },
+    outcomeList: { schemaVersion: 1, outcomes: [{ outcomeId: 'pain', outcomeLabel: '痛み' } as SchemaOutcome], currentIds: new Set(['pain']), aliasToId: new Map(), everIds: new Set(['pain']) },
     evidence: [makeEvidence({ entityKey: 'outcome:candidate|arm:1', value: '候補名' })],
   }, { pilot: true, onOutcomeAdd });
   expect(panel.root.querySelector('#verify-outcome-add')).not.toBeNull();
