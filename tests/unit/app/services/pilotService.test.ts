@@ -1226,6 +1226,26 @@ describe('loadPilotVerification', () => {
     expect(listSchemaVersions).toHaveBeenCalledTimes(1);
   });
 
+  test('一覧キャッシュを無効化した後は検証中の同じ論文でも現行一覧を読み直す', async () => {
+    jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ schemaVersion: 2, outcomeId: 'pain' } as SchemaOutcome]);
+    jest.mocked(listSchemaVersions).mockResolvedValue([{ schemaVersion: 2 } as SchemaVersion]);
+    const store = makeRanStore();
+    const deps = makeDeps();
+    await loadPilotVerification(store, deps, 'study-doc-1');
+    expect(store.getState().pilot.verifyStudyId).toBe('study-doc-1');
+    expect(store.getState().pilot.verification?.outcomeList?.currentIds).toEqual(new Set(['pain']));
+
+    store.setState({ pilot: { ...store.getState().pilot, outcomeList: undefined } });
+    jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ schemaVersion: 3, outcomeId: 'sleep' } as SchemaOutcome]);
+    jest.mocked(listSchemaVersions).mockResolvedValue([{ schemaVersion: 3 } as SchemaVersion]);
+    await loadPilotVerification(store, deps, 'study-doc-1');
+
+    expect(store.getState().pilot.verification?.outcomeList?.currentIds).toEqual(new Set(['sleep']));
+    expect(store.getState().pilot.outcomeList?.schemaVersion).toBe(3);
+    expect(readAllSchemaOutcomes).toHaveBeenCalledTimes(2);
+    expect(listSchemaVersions).toHaveBeenCalledTimes(2);
+  });
+
   test('run 未実行・プロジェクト未選択のときは何もしない', async () => {
     await loadPilotVerification(makeStore({ withProject: false }), makeDeps(), 'study-doc-1');
     await loadPilotVerification(makeStore({}), makeDeps(), 'study-doc-1');

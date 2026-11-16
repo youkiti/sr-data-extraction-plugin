@@ -23,7 +23,7 @@ import { isEntityKeyInOutcomeList, outcomeIdOfEntityKey, type OutcomeListContext
 import type { StudyDataRow } from '../../../domain/annotation';
 import { distinctAnnotators } from './annotatorPool';
 import { buildCsv } from '../csvEncode';
-import { selectFinalAnnotator } from '../finalAnnotator';
+import { selectFinalAnnotator, type AnnotatorTagged } from '../finalAnnotator';
 import type { RSetIssue } from './issues';
 import { applyNotApplicable } from './presetFields';
 import { activeRobToolFieldSets } from './robFields';
@@ -151,8 +151,12 @@ export function buildMaCsv(
     if (studyResultsRows.length === 0 && outcomeList === null) {
       continue; // ma 行がない study は正常（results_long と同じ扱い）
     }
-    const final = selectFinalAnnotator(distinctAnnotators(outcomeList === null ? studyResultsRows
-      : [...studyResultsRows, ...studyDataRows.filter((row) => row.studyId === study.studyId)]));
+    // 確定者は ResultsData の人の行から選ぶ。一覧モードで人の ResultsData がまだ無い study
+    // （一覧の空のインスタンスと AI の行だけの study）に限り、StudyData の行から選ぶ
+    const hasHumanResults = studyResultsRows.some((row) => row.annotatorType !== 'ai');
+    const final = selectFinalAnnotator(distinctAnnotators<AnnotatorTagged>(outcomeList !== null && !hasHumanResults
+      ? studyDataRows.filter((row) => row.studyId === study.studyId)
+      : studyResultsRows));
     if (final === null) {
       issues.push({
         issueType: 'skipped_study_no_final_annotator',
