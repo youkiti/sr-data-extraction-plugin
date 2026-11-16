@@ -10,6 +10,7 @@
 //   2 コンテキスト（別タブ・別端末）から書くと後勝ち上書きが起きうるため、行の updated_at を
 //   バージョントークンとして期待値検証する。競合検出時はキュー退避せず conflict を返す
 //   （キューは「オフライン」を扱うためのものであり、競合をキューに入れても解決しない）
+import type { OutcomeListContext } from '../../features/schema/outcomeListContext';
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import { isConsultAction, type Decision } from '../../domain/decision';
@@ -197,6 +198,8 @@ export interface VerificationBundleInput {
   documents: readonly DocumentRecord[];
   /** 表示する run のスキーマ項目（呼び出し側が版を解決して渡す） */
   fields: readonly SchemaField[];
+  /** 現行のアウトカムの一覧。論文単位モードは null。 */
+  outcomeList?: OutcomeListContext | null;
   /** study の全文書ぶんの AI 根拠（表示する run のもの。各行は document_id で出所を持つ） */
   evidence: readonly Evidence[];
   quoteEvidence: readonly Evidence[];
@@ -350,6 +353,7 @@ export async function loadVerificationBundle(
     study,
     documents,
     fields: input.fields,
+    outcomeList: input.outcomeList,
     evidence: input.evidence,
     decisions,
     annotator,

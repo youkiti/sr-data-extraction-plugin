@@ -104,6 +104,7 @@ export async function loadAssignedProgress(
           material.decisions.filter((decision) => decision.studyId === study.studyId),
           material.armStructures.get(study.studyId)?.get(email) ?? null,
           material.aiEvidenceByStudy.get(study.studyId) ?? [],
+          material.outcomeList,
         ).complete,
     ).length;
     patchHome(store, {

@@ -15,6 +15,7 @@ import { buildExportManifest, manifestToJson, type RSetManifest } from './buildE
 import { buildMaCsv } from './buildMaCsv';
 import { buildRobCsv } from './buildRobCsv';
 import { buildTab1Csv } from './buildTab1Csv';
+import { isEntityKeyInOutcomeList, type OutcomeListContext } from '../../schema/outcomeListContext';
 import {
   collectResultsDataDroppedFieldIssues,
   collectResultsDataDuplicateKeyIssues,
@@ -39,6 +40,8 @@ export interface RSetMaterials {
   documentStudyIds: readonly string[];
   /** 最新確定版の全項目 */
   fields: readonly SchemaField[];
+  /** 出力対象と空インスタンスの生成に使うアウトカム一覧 */
+  outcomeList?: OutcomeListContext | null;
 }
 
 /** manifest に注入するメタデータ（純関数のため呼び出し側が解決してから渡す） */
@@ -66,11 +69,16 @@ function resolveSchemaVersion(fields: readonly SchemaField[]): number {
 }
 
 export function buildRSet(materials: RSetMaterials, meta: RSetManifestMeta): BuiltRSet {
-  const { studies, studyRows, resultsRows, decisions, evidences, armStructureRows, documentStudyIds, fields } =
+  const { studies, studyRows, armStructureRows, documentStudyIds, fields } =
     materials;
+  const outcomeList = materials.outcomeList ?? null;
+  const included = (row: { entityKey: string }): boolean => isEntityKeyInOutcomeList(row.entityKey, outcomeList);
+  const resultsRows = materials.resultsRows.filter(included);
+  const decisions = materials.decisions.filter(included);
+  const evidences = materials.evidences.filter(included);
 
   const tab1 = buildTab1Csv(studies, studyRows, evidences, documentStudyIds, fields);
-  const ma = buildMaCsv(studies, resultsRows, decisions, evidences, armStructureRows, fields);
+  const ma = buildMaCsv(studies, resultsRows, decisions, evidences, armStructureRows, fields, outcomeList, studyRows);
   const rob = buildRobCsv(studies, resultsRows, decisions, evidences, fields);
   const dictionary = buildDataDictionaryCsv(fields);
 
@@ -89,7 +97,7 @@ export function buildRSet(materials: RSetMaterials, meta: RSetManifestMeta): Bui
   const files: RSetFile[] = [
     { name: 'acceptance_criteria.csv', rowCount: materials.acceptanceCriteria?.length ?? 0,
       content: buildAcceptanceCriteriaCsv(materials.acceptanceCriteria ?? [], buildComparisonCells({ studies, fields, studyRows,
-        resultRows: resultsRows, evidence: evidences, runs: materials.comparisonRuns ?? [] }).cells,
+        resultRows: resultsRows, evidence: evidences, runs: materials.comparisonRuns ?? [], outcomeList }).cells,
       materials.pilotRuns ?? [], new Set(studies.map((study) => study.studyId))) },
     { name: 'tab1.csv', content: tab1.csv, rowCount: tab1.rowCount },
     { name: 'tab1_status.csv', content: tab1.statusCsv, rowCount: tab1.rowCount },
@@ -101,6 +109,7 @@ export function buildRSet(materials: RSetMaterials, meta: RSetManifestMeta): Bui
   ];
 
   const manifest = buildExportManifest({
+    ...(outcomeList === null ? {} : { outcomeListSchemaVersion: outcomeList.schemaVersion }),
     schemaVersion: resolveSchemaVersion(fields),
     exportedAt: meta.exportedAt,
     appVersion: meta.appVersion,

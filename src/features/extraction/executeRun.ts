@@ -41,6 +41,7 @@ import {
   parseExtractDataResponse,
   type ExtractDataDocument,
   type ExtractDataImagePage,
+  type ExtractDataOutcomeListEntry,
   type ExtractDataPage,
 } from './skills/extractData';
 import type {
@@ -162,6 +163,8 @@ export const DEFAULT_FLUSH_EVERY_N_STUDIES = 5;
 export const DEFAULT_MAX_ROWS_PER_FLUSH = 500;
 
 export interface ExecuteRunInput {
+  /** 当該スキーマ版のアウトカムの一覧。論文単位モードでは省略する。 */
+  outcomeList?: readonly ExtractDataOutcomeListEntry[];
   /** 呼び出し側が発番した ExtractionRuns.run_id */
   runId: string;
   plan: RunPlan;
@@ -728,6 +731,7 @@ export async function executeRun(
           fields: batchFields,
           documents: promptDocuments,
           protocolContext: input.protocolContext,
+          outcomeList: input.outcomeList,
           requestBox,
           knownOutcomeEntityKeys: outcomeFieldIds.size > 0 ? [...knownOutcomeEntityKeys] : undefined,
         }),

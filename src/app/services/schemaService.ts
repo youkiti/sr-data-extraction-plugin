@@ -968,6 +968,8 @@ export async function confirmSchema(
         presetDialog: null,
       },
       counts: { ...after.counts, schemaVersions: versions.length },
+      pilot: { ...after.pilot, outcomeList: undefined },
+      adjudicate: { ...after.adjudicate, outcomeList: undefined },
     });
     showToast(t('schema.toastConfirmed', { version: version.schemaVersion, n: fields.length }));
   } catch (err) {

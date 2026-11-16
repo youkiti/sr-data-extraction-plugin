@@ -19,6 +19,8 @@ import {
 import { CALIBRATION_SET_ID } from '../../domain/reviewSet';
 import { readReviewSetProgressMaterials, requireReviewSets } from './reviewSetService';
 import { buildComparisonCells, buildComparisonCellsCsv, buildComparisonSummaryCsv } from '../../features/verification/aiHumanComparison';
+import { readAllSchemaOutcomes } from '../../features/schema/schemaOutcomeRepository';
+import { buildOutcomeListContext } from '../../features/schema/outcomeListContext';
 import { readStudies, resolveActiveStudies } from '../../features/documents/studyRepository';
 import { readDocuments } from '../../features/documents/documentRepository';
 import { readStudyDataSheet, readResultsDataRows } from '../../features/extraction/annotationRepository';
@@ -71,16 +73,18 @@ export async function loadAiHumanComparison(store: Store, deps: VerificationDeps
   patchDashboard(store, { comparison: { loading: true, error: null, data: null } });
   try {
     const id = project.spreadsheetId;
-    const [studies, studySheet, resultRows, evidence, runs, versions, documents] = await Promise.all([
+    const [studies, studySheet, resultRows, evidence, runs, versions, documents, outcomes] = await Promise.all([
       readStudies(id, deps.google), readStudyDataSheet(id, deps.google), readResultsDataRows(id, deps.google),
       readEvidenceRows(id, deps.google), readCompletedRunMetas(id, deps.google), listSchemaVersions(id, deps.google),
       readDocuments(id, deps.google),
+      readAllSchemaOutcomes(id, deps.google),
     ]);
     const latest = versions[0];
     const fields = latest === undefined ? [] : await getSchemaFieldsByVersion(id, latest.schemaVersion, deps.google);
     const activeStudies = resolveActiveStudies(studies, documents);
     const data = buildComparisonCells({ studies: activeStudies, fields,
-      studyRows: studySheet.rows, resultRows, evidence, runs });
+      studyRows: studySheet.rows, resultRows, evidence, runs,
+      outcomeList: buildOutcomeListContext(outcomes, versions, latest?.schemaVersion ?? 0) });
     if (store.getState().currentProject?.spreadsheetId === id) {
       patchDashboard(store, { comparison: { loading: false, error: null, data } });
     }
@@ -148,6 +152,7 @@ export async function loadDashboard(
         evidence: material.target.evidence,
         ownDecisions: material.ownDecisions,
         armStructure: material.armStructure,
+        outcomeList: material.target.outcomeList,
         ...(seesAllConsults && material.studyDecisions !== undefined
           ? { reviewerDecisions: material.studyDecisions, self: annotator ?? '' }
           : {}),

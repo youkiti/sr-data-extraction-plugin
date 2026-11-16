@@ -97,7 +97,7 @@ resolveRSetValue(rawValue, status):
 
 #### 4.2.1 `outcome_label` の解決規約（v1 で新設）
 
-outcome の slug（例 `mortality`）自体は人間可読な短い識別子である前提だが、より読みやすいラベルを別途持たせたい場合のために、**`outcome_name`（`field_name` 予約名。entity_level = `outcome_result`）という項目名の慣習を新設**する。スキーマにこの `field_name` の項目があれば、その verified 値を `outcome_label` へ複製する。無ければ空文字（`outcome_id` の slug で代用可能）。**アウトカムの一覧（issue #539・requirements.md §3.2 `SchemaOutcomes`）があるプロジェクトでは**、`outcome_name` の値が無い行の `outcome_label` を一覧の表示名で埋める（`outcome_name` の値があればそれを優先する）。一覧に無い outcome_id の行は ma.csv に出さない。RoB テンプレートの `rob2_judgement` / `rob2_support` と同じ「予約 field_name による規約」方式であり、`draft-schema` / `extract-data` skill のプロンプト本文は変更しない。
+outcome の slug（例 `mortality`）自体は人間可読な短い識別子である前提だが、より読みやすいラベルを別途持たせたい場合のために、**`outcome_name`（`field_name` 予約名。entity_level = `outcome_result`）という項目名の慣習を新設**する。スキーマにこの `field_name` の項目があれば、その verified 値を `outcome_label` へ複製する。無ければ空文字（`outcome_id` の slug で代用可能）。**アウトカムの一覧（issue #539・requirements.md §3.2 `SchemaOutcomes`）があるプロジェクトでは**、`outcome_label` は一覧の表示名でそろえ、論文ごとの表記は `outcome_name` 列にだけ残す（オーナー決定 2026-11-16）。一覧に無い outcome_id の行は ma.csv に出さない。RoB テンプレートの `rob2_judgement` / `rob2_support` と同じ「予約 field_name による規約」方式であり、`draft-schema` / `extract-data` skill のプロンプト本文は変更しない。
 
 #### 4.2.2 `rob_tool` / `rob_overall_judgement` の複製列
 

@@ -1430,8 +1430,16 @@ describe('confirmSchema', () => {
     saveVersionMock.mockResolvedValue({ version: savedVersion, fields: savedFields, outcomes: [] });
     const { deps } = makeDeps();
 
+    const outcomeList = { schemaVersion: 1, outcomes: [], currentIds: new Set<string>(), everIds: new Set<string>() };
+    store.setState({
+      pilot: { ...store.getState().pilot, outcomeList, verifyStudyId: 'study-1' },
+      adjudicate: { ...store.getState().adjudicate, outcomeList },
+    });
     await confirmSchema(store, deps, '  単位を修正  ');
 
+    expect(store.getState().pilot.outcomeList).toBeUndefined();
+    expect(store.getState().adjudicate.outcomeList).toBeUndefined();
+    expect(store.getState().pilot.verifyStudyId).toBe('study-1');
     expect(saveVersionMock).toHaveBeenCalledWith(
       expect.objectContaining({
         spreadsheetId: 'sheet-1',

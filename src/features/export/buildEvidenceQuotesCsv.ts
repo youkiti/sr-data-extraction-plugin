@@ -10,6 +10,7 @@ import { aiCellQuotes, foldQuoteSets, quoteSetKeyOf, resolveCellQuotes } from '.
 import type { EvidenceBundle } from '../verification/evidenceBundles';
 import { buildCsv, CSV_BOM } from './csvEncode';
 import { selectFinalAnnotator } from './finalAnnotator';
+import { isEntityKeyInOutcomeList, type OutcomeListContext } from '../schema/outcomeListContext';
 
 export const EVIDENCE_QUOTES_HEADER = [
   'study_label', 'study_id', 'field_name', 'field_id', 'entity_key', 'annotator',
@@ -21,6 +22,8 @@ export const EVIDENCE_QUOTES_HEADER = [
 export function buildEvidenceQuotesCsv(params: {
   studies: readonly StudyRecord[];
   fields: readonly SchemaField[];
+  /** 引用の出力対象を絞るアウトカム一覧 */
+  outcomeList?: OutcomeListContext | null;
   bundlesByStudy: ReadonlyMap<string, ReadonlyMap<string, EvidenceBundle>>;
   quoteSetRows: readonly QuoteSetRow[];
   evidences: readonly Evidence[];
@@ -45,6 +48,9 @@ export function buildEvidenceQuotesCsv(params: {
     const items: { quote: CellQuote; annotator: string; annotatorType: AnnotatorType; field: SchemaField }[] = [];
     const add = (quotes: CellQuote[], annotator: string, annotatorType: AnnotatorType): void => {
       for (const quote of quotes) {
+        if (!isEntityKeyInOutcomeList(quote.entityKey, params.outcomeList ?? null)) {
+          continue;
+        }
         const field = fieldById.get(quote.fieldId);
         if (field !== undefined) items.push({ quote, annotator, annotatorType, field });
       }

@@ -1,4 +1,5 @@
 // 担当セットの分割・表示対象・継承・進捗集計。I/O を持たない純粋関数。
+import type { OutcomeListContext } from '../schema/outcomeListContext';
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { Decision } from '../../domain/decision';
 import type { Evidence } from '../../domain/evidence';
@@ -150,6 +151,8 @@ export interface ReviewerSetProgressInput {
   sets: readonly ReviewSetRow[];
   fields: readonly SchemaField[];
   decisions: readonly Decision[];
+  /** 現行のアウトカムの一覧。論文単位モードは null。 */
+  outcomeList?: OutcomeListContext | null;
   aiEvidenceByStudy: ReadonlyMap<string, readonly Evidence[]>;
   armStructures: ReadonlyMap<string, ReadonlyMap<string, ConfirmedArmStructure>>;
 }
@@ -179,6 +182,7 @@ export function reviewerSetProgress(input: ReviewerSetProgressInput): ReviewerSe
             input.decisions.filter((decision) => decision.studyId === study.studyId),
             input.armStructures.get(study.studyId)?.get(email) ?? null,
             input.aiEvidenceByStudy.get(study.studyId) ?? [],
+            input.outcomeList,
           ).complete,
       ).length;
       progress.push({ email, setId: set.setId, done, total: studies.length });

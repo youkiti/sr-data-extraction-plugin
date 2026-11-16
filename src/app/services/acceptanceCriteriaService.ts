@@ -10,6 +10,8 @@ import { readStudyDataSheet, readResultsDataRows } from '../../features/extracti
 import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
 import { countPilotRuns, readCompletedRunMetas, readPilotRuns } from '../../features/extraction/runRepository';
 import { listSchemaVersions, getSchemaFieldsByVersion } from '../../features/schema/schemaRepository';
+import { readAllSchemaOutcomes } from '../../features/schema/schemaOutcomeRepository';
+import { buildOutcomeListContext } from '../../features/schema/outcomeListContext';
 import { getCurrentUserEmail } from '../../lib/google/identity';
 import { nowIso8601 } from '../../utils/iso8601';
 import { t, type MessageKey } from '../../lib/i18n';
@@ -157,15 +159,17 @@ export async function calculateCriteria(store: Store, deps: VerificationDeps): P
   const initialVersion = currentCriteria(criteriaState(store).versions ?? [])?.version;
   patch(store, { calculating: true, error: null, evaluation: null });
   try {
-    const [criteria, studies, documents, studySheet, resultRows, evidence, runs, pilots, versions, pilotCount] = await Promise.all([
+    const [criteria, studies, documents, studySheet, resultRows, evidence, runs, pilots, versions, pilotCount, outcomes] = await Promise.all([
       readAcceptanceCriteria(id, deps.google), readStudies(id, deps.google), readDocuments(id, deps.google),
       readStudyDataSheet(id, deps.google), readResultsDataRows(id, deps.google), readEvidenceRows(id, deps.google),
       readCompletedRunMetas(id, deps.google), readPilotRuns(id, deps.google), listSchemaVersions(id, deps.google), countPilotRuns(id, deps.google),
+      readAllSchemaOutcomes(id, deps.google),
     ]);
     const latest = versions[0];
     const fields = latest === undefined ? [] : await getSchemaFieldsByVersion(id, latest.schemaVersion, deps.google);
     const active = resolveActiveStudies(studies, documents);
-    const cells = buildComparisonCells({ studies: active, fields, studyRows: studySheet.rows, resultRows, evidence, runs }).cells;
+    const cells = buildComparisonCells({ studies: active, fields, studyRows: studySheet.rows, resultRows, evidence, runs,
+      outcomeList: buildOutcomeListContext(outcomes, versions, latest?.schemaVersion ?? 0) }).cells;
     const current = currentCriteria(criteria.versions);
     const evaluation = current === null ? null : evaluateCriteria(current, cells, pilots, new Set(active.map((study) => study.studyId)));
     if (store.getState().currentProject?.spreadsheetId === id) {

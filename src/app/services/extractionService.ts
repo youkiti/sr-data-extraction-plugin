@@ -46,6 +46,10 @@ import {
   ensureRunOptionalColumns,
 } from '../../features/extraction/runRepository';
 import { readAllArmStructures } from '../../features/verification/armStructureRepository';
+import { readAllSchemaOutcomes } from '../../features/schema/schemaOutcomeRepository';
+import { listSchemaVersions } from '../../features/schema/schemaRepository';
+import { buildOutcomeListContext } from '../../features/schema/outcomeListContext';
+import { isOutcomeListMode } from '../../features/schema/schemaOutcomes';
 import {
   EXTRACT_DATA_PROMPT_VERSION,
   type ExtractDataImagePage,
@@ -208,6 +212,10 @@ export async function runExtraction(
   });
 
   plan.warnings.push(...(params.previewWarnings ?? []).map((warning) => warning.message));
+  const allOutcomes = await readAllSchemaOutcomes(params.spreadsheetId, deps.google);
+  const outcomeContext = isOutcomeListMode(allOutcomes)
+    ? buildOutcomeListContext(allOutcomes, await listSchemaVersions(params.spreadsheetId, deps.google), plan.schemaVersion)
+    : null;
   const baseProvider = (deps.buildProvider ?? createProvider)({
     apiKey: deps.apiKey,
     model: params.model,
@@ -324,6 +332,7 @@ export async function runExtraction(
       documents: params.documents,
       protocolContext: params.protocolContext,
       confirmedArmKeysByStudy: confirmedArmKeys,
+      outcomeList: outcomeContext?.outcomes,
     },
     {
       provider,

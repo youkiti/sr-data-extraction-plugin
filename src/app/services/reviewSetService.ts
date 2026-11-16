@@ -1,5 +1,6 @@
 // 担当セットのロード・owner の割り当て操作・進捗素材の読み込み。
 // 非 owner はロード失敗時に処理を止め、担当外の研究を表示・許可しない。
+import { readCurrentOutcomeList } from './outcomeListService';
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { Evidence } from '../../domain/evidence';
 import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
@@ -215,6 +216,7 @@ export async function readReviewSetProgressMaterials(
     // セット利用の判定だけは除外前の研究集合を使う。
     activeStudies: resolveActiveStudies(studies, documents),
     fields, decisions, armStructures, aiEvidenceByStudy,
+    outcomeList: await readCurrentOutcomeList(project.spreadsheetId, deps.google),
   };
 }
 

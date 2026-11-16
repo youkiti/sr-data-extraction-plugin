@@ -25,6 +25,75 @@ import type { VerificationCell } from '../../../../src/features/verification/cel
 import type { FocusUnit } from '../../../../src/features/verification/focusUnits';
 import * as highlightsModule from '../../../../src/features/verification/highlights';
 import { quoteKeyOf } from '../../../../src/features/verification/evidenceBundles';
+import type { SchemaOutcome } from '../../../../src/domain/schemaOutcome';
+
+test.each(['human_with_ai', 'human_independent'] as const)('一覧外キーを表示と進捗から除き、一覧の空セルを数える: %s', async (annotatorType) => {
+  const progress = jest.fn();
+  const { panel } = await createPanel({
+    annotatorType,
+    canEditSchema: true,
+    fields: [makeField({ entityLevel: 'outcome_result', fieldName: 'outcome_name' })],
+    outcomeList: {
+      schemaVersion: 2,
+      outcomes: [{ outcomeId: 'pain', outcomeLabel: '痛み' } as SchemaOutcome],
+      currentIds: new Set(['pain']),
+      everIds: new Set(['pain', 'removed']),
+    },
+    evidence: [makeEvidence({ entityKey: 'outcome:removed|arm:1' }), makeEvidence({ entityKey: 'outcome:new_id|arm:1', value: '候補名' })],
+    decisions: [makeDecision({ entityKey: 'outcome:removed|arm:1' })],
+  }, { onProgressChange: progress });
+  expect(panel.root.querySelector('#verify-outcome-add')).toBeNull();
+  expect(panel.root.querySelector('#verify-outcome-schema-link')?.getAttribute('href')).toBe('#/schema?outcomes');
+  expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ total: 1, decided: 0 }));
+  const cells = panel.root.querySelectorAll('[data-cell-key]');
+  expect([...cells].some((cell) => cell.getAttribute('data-cell-key')?.includes('removed'))).toBe(false);
+  expect(panel.root.querySelector('#verify-outcome-candidates') !== null).toBe(annotatorType !== 'human_independent');
+  panel.root.querySelector<HTMLButtonElement>('#verify-outcome-candidates button')?.click();
+  await flush();
+  panel.dispose();
+});
+
+test.each([true, false])('一覧モードは追加の権限が無ければフォームを隠し、本番の共同研究者には相談を案内する: pilot=%s', async (pilot) => {
+  const { panel } = await createPanel({
+    fields: [makeField({ entityLevel: 'outcome_result' })],
+    outcomeList: { schemaVersion: 2, outcomes: [{ outcomeId: 'pain', outcomeLabel: '痛み' } as SchemaOutcome], currentIds: new Set(['pain']), everIds: new Set(['pain']) },
+    evidence: [],
+  }, { pilot });
+  expect(panel.root.querySelector('#verify-outcome-add')).toBeNull();
+  expect(panel.root.querySelector('#verify-outcome-candidates')).toBeNull();
+  expect(panel.root.querySelector('#verify-outcome-schema-hint') !== null).toBe(!pilot);
+  panel.dispose();
+});
+
+test.each([true, false])('一覧外の候補の引用から PDF のハイライトへ移動する: pilot=%s', async (pilot) => {
+  const candidate = makeEvidence({ entityKey: 'outcome:candidate|arm:1' });
+  const { panel } = await createPanel({
+    canEditSchema: true,
+    fields: [makeField({ entityLevel: 'outcome_result' })],
+    outcomeList: { schemaVersion: 1, outcomes: [{ outcomeId: 'pain', outcomeLabel: '痛み' } as SchemaOutcome], currentIds: new Set(['pain']), everIds: new Set(['pain']) },
+    evidence: [candidate],
+  }, { pilot });
+  panel.root.querySelector<HTMLButtonElement>('#verify-outcome-candidates button')!.click();
+  const active = panel.root.querySelector('.pdf-viewer__hl--active');
+  expect(active).not.toBeNull();
+  expect(panel.root.querySelectorAll('.pdf-viewer__hl')).toHaveLength(1);
+  panel.dispose();
+});
+
+test.each([true, false])('パイロットの一覧は追加フォームと候補ボタンを出す: name=%s', async (named) => {
+  const onOutcomeAdd = jest.fn().mockResolvedValue(undefined);
+  const { panel } = await createPanel({
+    canEditSchema: true,
+    fields: [makeField({ entityLevel: 'outcome_result', fieldName: named ? 'outcome_name' : 'value' })],
+    outcomeList: { schemaVersion: 1, outcomes: [{ outcomeId: 'pain', outcomeLabel: '痛み' } as SchemaOutcome], currentIds: new Set(['pain']), everIds: new Set(['pain']) },
+    evidence: [makeEvidence({ entityKey: 'outcome:candidate|arm:1', value: '候補名' })],
+  }, { pilot: true, onOutcomeAdd });
+  expect(panel.root.querySelector('#verify-outcome-add')).not.toBeNull();
+  panel.root.querySelector<HTMLButtonElement>('.verify__outcome-candidate-add')!.click();
+  expect(onOutcomeAdd).toHaveBeenCalledWith(expect.objectContaining({ outcomeId: 'candidate', outcomeLabel: named ? '候補名' : 'candidate', addedVia: 'pilot_candidate' }));
+  await flush();
+  panel.dispose();
+});
 
 test('テキスト表示で別文書の引用へジャンプすると文書タブとスニペットが切り替わる', async () => {
   const documents = [makeDocFixture(), makeDocFixture({

@@ -9,6 +9,10 @@ import { createQuoteAddBar, quoteAddReason as sharedQuoteAddReason, updateQuoteA
 // ストア再描画（route render）とライフサイクルの整合は renderCachedVerificationPanel が取る:
 // 同じ VerificationData 参照なら同一インスタンス（DOM / PDF canvas / 判定の楽観状態）を返し、
 // データが差し替わったときだけ作り直す
+import { createPilotOutcomeAdd } from './pilotOutcomeAdd';
+import type { SchemaOutcomeEditorRow } from '../../features/schema/types';
+import { outcomeListCandidates } from '../../features/schema/outcomeListContext';
+import { renderOutcomeCandidates, renderOutcomeSchemaNotice } from './outcomeListNotice';
 import { activeConsultFlags } from '../../features/verification/consultFlags';
 import { isConsultHintSeen, markConsultHintSeen } from '../../lib/storage/consultHintStore';
 import type { CellQuote, QuoteSetRow } from '../../domain/quoteSet';
@@ -111,6 +115,10 @@ import {
 export type { RelocateQuoteOutcome } from '../services/relocateQuoteService';
 
 export interface VerificationPanelOptions {
+  /** パイロット埋め込みではスキーマ編集の案内を保留する。 */
+  pilot?: boolean;
+  /** 一覧モードのパイロットで表のデザインに追加する。 */
+  onOutcomeAdd?: (row: SchemaOutcomeEditorRow) => Promise<void>;
   /** パネル内の最新進捗を画面上部の完了案内へ渡す。 */
   onProgressChange?: (progress: VerificationProgress) => void;
   data: VerificationData;
@@ -320,6 +328,8 @@ export function createVerificationPanel(
   const { data } = options;
   let progressListener = options.onProgressChange;
   const now = options.now ?? nowIso8601;
+  const outcomeAdd = options.pilot && data.canEditSchema && data.outcomeList != null && options.onOutcomeAdd
+    ? createPilotOutcomeAdd(data.outcomeList, options.onOutcomeAdd) : null;
   // 独立入力モード（独立二重レビュー機能。design §5.2）: data.annotatorType から導出する
   // （panelMode は annotatorType の派生であり、パネル外から直接指定はしない）。
   // AI の引用・ハイライト・値・accept/reject 操作を一切描画しない
@@ -469,7 +479,7 @@ export function createVerificationPanel(
   // 確定する。別のセルへ移る・他の判定・タブ切替で消す（quoteEdit などと同じくパネルのローカル状態）
   let unanchoredWarning: { cellKey: string; reason: UnanchoredReason } | null = null;
   let outcomeKeyDraft = nextOutcomeId(
-    entityInstances('outcome_result', currentEvidence(), ownDecisions, { armStructure }),
+    entityInstances('outcome_result', currentEvidence(), ownDecisions, { armStructure, outcomeList: data.outcomeList }),
   );
   let outcomeTimeDraft = '';
   let outcomeError: string | null = null;
@@ -509,7 +519,7 @@ export function createVerificationPanel(
   let expandedDecidedKey: string | null = null;
 
   const currentTabModel = (): TabModel =>
-    buildTabModel(activeTab, data.fields, currentEvidence(), ownDecisions, { armStructure });
+    buildTabModel(activeTab, data.fields, currentEvidence(), ownDecisions, { armStructure, outcomeList: data.outcomeList });
 
   /**
    * 「estimate 別の評価を追加」フォーム（issue #109・ui-states.md #/verify）の表示素材。
@@ -522,6 +532,7 @@ export function createVerificationPanel(
     }
     const estimateKeys = entityInstances('outcome_result', currentEvidence(), ownDecisions, {
       armStructure,
+      outcomeList: data.outcomeList,
     });
     const domains = robDomainOptions(data.fields);
     if (estimateKeys.length === 0 || domains.length === 0) {
@@ -550,7 +561,7 @@ export function createVerificationPanel(
   // --- フォーカスモード（issue #38）: ユニット単位のナビゲーション -------------
   /** 指定タブのユニット列を組み立てる（focusUnits.buildFocusUnits を現在の armStructure で呼ぶ） */
   const focusUnitsOf = (tab: EntityLevel): FocusUnit[] =>
-    buildFocusUnits(tab, buildTabModel(tab, data.fields, currentEvidence(), ownDecisions, { armStructure }), {
+    buildFocusUnits(tab, buildTabModel(tab, data.fields, currentEvidence(), ownDecisions, { armStructure, outcomeList: data.outcomeList }), {
       armStructure,
     });
 
@@ -561,7 +572,7 @@ export function createVerificationPanel(
   function computeInitialFocusKey(tab: EntityLevel): string | null {
     if (layoutMode === 'list') {
       return initialFocusKey(
-        buildTabModel(tab, data.fields, currentEvidence(), ownDecisions, { armStructure }).cells,
+        buildTabModel(tab, data.fields, currentEvidence(), ownDecisions, { armStructure, outcomeList: data.outcomeList }).cells,
       );
     }
     return initialFocusKeyForUnits(focusUnitsOf(tab));
@@ -1689,6 +1700,7 @@ export function createVerificationPanel(
     for (const tab of tabs) {
       const model = buildTabModel(tab, data.fields, currentEvidence(), ownDecisions, {
         armStructure,
+        outcomeList: data.outcomeList,
       });
       if (model.cells.some((cell) => cell.cellKey === cellKey)) {
         return tab;
@@ -1991,6 +2003,11 @@ export function createVerificationPanel(
       armEditing = false;
       armError = null;
       outcomeError = null;
+      // 一覧モードでは確定で一覧のアウトカムの空セルが現れ、セル 0 件のタブに初めてセルができる。
+      // フォーカス中のセルが今のタブに無ければ、初期のフォーカス先を求め直す
+      if (!currentTabModel().cells.some((cell) => cell.cellKey === focusedCellKey)) {
+        focusedCellKey = computeInitialFocusKey(activeTab);
+      }
       refreshForm();
       options.onArmConfirm?.(trimmed);
     },
@@ -2041,7 +2058,7 @@ export function createVerificationPanel(
         return;
       }
       const existing = new Set(
-        entityInstances('outcome_result', currentEvidence(), ownDecisions, { armStructure }),
+        entityInstances('outcome_result', currentEvidence(), ownDecisions, { armStructure, outcomeList: data.outcomeList }),
       );
       const duplicate = declarations.find((decision) => existing.has(decision.entityKey));
       if (duplicate !== undefined) {
@@ -2051,7 +2068,7 @@ export function createVerificationPanel(
       }
       ownDecisions.push(...declarations);
       outcomeKeyDraft = nextOutcomeId(
-        entityInstances('outcome_result', currentEvidence(), ownDecisions, { armStructure }),
+        entityInstances('outcome_result', currentEvidence(), ownDecisions, { armStructure, outcomeList: data.outcomeList }),
       );
       outcomeTimeDraft = '';
       outcomeError = null;
@@ -2087,7 +2104,7 @@ export function createVerificationPanel(
       }
       // セレクタの選択値は entityInstances / robDomainOptions 由来のため必ず有効なキーになる
       const entityKey = robEstimateEntityKeyOf(model.selectedDomain, model.selectedEstimate);
-      const existing = entityInstances('rob_domain', currentEvidence(), ownDecisions);
+      const existing = entityInstances('rob_domain', currentEvidence(), ownDecisions, { outcomeList: data.outcomeList });
       if (existing.includes(entityKey)) {
         robEstError = t('verify.robEstDuplicate', { key: entityKey });
         refreshForm();
@@ -2156,12 +2173,12 @@ export function createVerificationPanel(
           }
         : null,
       outcomeAdd:
-        activeTab === 'outcome_result' && armStructure !== null
+        activeTab === 'outcome_result' && armStructure !== null && data.outcomeList == null
           ? { outcomeKey: outcomeKeyDraft, time: outcomeTimeDraft, error: outcomeError }
           : null,
       robEstimateAdd: robEstimateAddModel(),
       armLocked: armLocked(),
-      progress: verificationProgress(data.fields, currentEvidence(), ownDecisions, { armStructure }),
+      progress: verificationProgress(data.fields, currentEvidence(), ownDecisions, { armStructure, outcomeList: data.outcomeList }),
       layoutMode,
       focusCard: layoutMode === 'focus' ? buildFocusCardModel() : null,
       mode: panelMode,
@@ -2186,7 +2203,24 @@ export function createVerificationPanel(
     progressListener?.(model.progress);
     // heightSplitter（issue #193）は refreshForm のたびに作り直される内容の末尾へ
     // 常に再付与する（sticky 配置で bottom:0 に固定され続ける）
-    formPane.replaceChildren(renderVerificationForm(model, handlers), heightSplitter);
+    const form = renderVerificationForm(model, handlers);
+    if (activeTab === 'outcome_result' && data.outcomeList != null) {
+      if (outcomeAdd !== null) {
+        form.append(outcomeAdd.root);
+      }
+      if (!options.pilot) {
+        form.prepend(renderOutcomeSchemaNotice('verify', data.canEditSchema === true));
+      }
+      if (panelMode !== 'independent') {
+        const candidates = outcomeListCandidates(data.study.studyId, currentEvidence(), data.fields, data.outcomeList);
+        if (candidates.length > 0) {
+          form.append(renderOutcomeCandidates('verify', candidates,
+            (evidence) => handlers.onJump(quoteKeyOf(evidence)), data.canEditSchema === true, options.pilot,
+            outcomeAdd === null ? undefined : (candidate) => outcomeAdd.addCandidate(candidate.id, candidate.name ?? candidate.id)));
+        }
+      }
+    }
+    formPane.replaceChildren(form, heightSplitter);
     formPane.scrollTop = savedScrollTop;
     applyReadOnlyState();
     const consultNote = typingConsultKey === null ? undefined
@@ -2241,6 +2275,7 @@ export function createVerificationPanel(
     // その場合は下の else（クラス切替のみ）を通る。判定済みブロックはリストモード限定の概念
     const target = buildTabModel(tab, data.fields, currentEvidence(), ownDecisions, {
       armStructure,
+      outcomeList: data.outcomeList,
     }).cells.find((cell) => cell.cellKey === cellKey) as VerificationCell;
     const expand =
       layoutMode === 'list' &&
@@ -2288,6 +2323,7 @@ export function createVerificationPanel(
       }
       const model = buildTabModel(tab, data.fields, currentEvidence(), ownDecisions, {
         armStructure,
+        outcomeList: data.outcomeList,
       });
       const cell = model.cells.find((candidate) => candidate.entityKey === entityKey || candidate.cellKey === entityKey);
       if (cell === undefined) {
@@ -2597,7 +2633,7 @@ export function createVerificationPanel(
     root,
     setProgressListener(listener) {
       progressListener = listener;
-      listener?.(verificationProgress(data.fields, currentEvidence(), ownDecisions, { armStructure }));
+      listener?.(verificationProgress(data.fields, currentEvidence(), ownDecisions, { armStructure, outcomeList: data.outcomeList }));
     },
     showCitationHighlight(citation) {
       if (

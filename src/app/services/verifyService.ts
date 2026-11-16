@@ -25,6 +25,8 @@ import {
   type CompletedRunMeta,
 } from '../../features/extraction/runRepository';
 import { getSchemaFieldsByVersion, listSchemaVersions } from '../../features/schema/schemaRepository';
+import { readAllSchemaOutcomes } from '../../features/schema/schemaOutcomeRepository';
+import { buildOutcomeListContext } from '../../features/schema/outcomeListContext';
 import {
   latestArmStructure,
   readAllArmStructures,
@@ -177,6 +179,7 @@ async function readIndependentVerifyTargetMaterials(
   if (latest === undefined) {
     return [];
   }
+  const outcomeList = buildOutcomeListContext(await readAllSchemaOutcomes(spreadsheetId, deps.google), versions, latest.schemaVersion);
   const fields = await getSchemaFieldsByVersion(spreadsheetId, latest.schemaVersion, deps.google);
   const allDecisions = await readAllDecisions(spreadsheetId, deps.google);
   const allArmRows = await readAllArmStructures(spreadsheetId, deps.google);
@@ -200,9 +203,10 @@ async function readIndependentVerifyTargetMaterials(
         documents: item.documents,
         evidence: [],
         quoteEvidence: [],
+        outcomeList,
         fields,
         schemaVersion: latest.schemaVersion,
-        progress: verificationProgress(fields, [], ownDecisions, { armStructure }),
+        progress: verificationProgress(fields, [], ownDecisions, { armStructure, outcomeList }),
         // 独立入力モードは AI 抽出の情報を一切見せない（issue #106 の警告も出さない）
         armWarnings: [],
         // 独立入力モードは AI 抽出の有無・実施状況を一切見せない盲検レビューのため、
@@ -246,6 +250,9 @@ export async function readVerifyTargetMaterials(
   }
   const documents = await resolveDocuments(store, deps, spreadsheetId, options.force);
   const studies = await resolveStudies(store, deps, spreadsheetId, options.force);
+  const outcomes = await readAllSchemaOutcomes(spreadsheetId, deps.google);
+  const versions = outcomes.length === 0 ? [] : await listSchemaVersions(spreadsheetId, deps.google);
+  const outcomeList = buildOutcomeListContext(outcomes, versions, versions[0]?.schemaVersion ?? 0);
   const allEvidence = await readEvidenceRows(spreadsheetId, deps.google);
   const completedRuns = await readCompletedRunMetas(spreadsheetId, deps.google);
   const allDecisions = await readAllDecisions(spreadsheetId, deps.google);
@@ -312,9 +319,10 @@ export async function readVerifyTargetMaterials(
         documents: item.documents,
         evidence,
         quoteEvidence: allEvidence.filter((row) => row.studyId === item.study.studyId),
+        outcomeList,
         fields,
         schemaVersion,
-        progress: verificationProgress(fields, evidence, ownDecisions, { armStructure }),
+        progress: verificationProgress(fields, evidence, ownDecisions, { armStructure, outcomeList }),
         armWarnings,
         aiExtractionStatus,
       },
@@ -463,6 +471,7 @@ export async function openVerifyStudy(
         study: target.study,
         documents: target.documents,
         fields: target.fields,
+        outcomeList: target.outcomeList,
         evidence: target.evidence,
         quoteEvidence: target.quoteEvidence,
         quoteSetRows: await readQuoteSetRows(project.spreadsheetId, deps.google),

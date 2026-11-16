@@ -27,6 +27,7 @@
 // 【項目の集計単位】study によって human annotator ペアが異なりうるが、v1 は「2 名の評価者間一致」
 // として全 ready study をプールして fieldId ごとに集計する（study ごとの κ を出して平均する、
 // といった加重はしない素朴な集計）。
+import type { OutcomeListContext } from '../schema/outcomeListContext';
 import { canonicalizeMultiSelectValue } from '../../domain/multiSelect';
 import { remapArmEntityKey } from './armMatch';
 import type { StudyDataRow, ResultsDataRow } from '../../domain/annotation';
@@ -253,6 +254,8 @@ export interface CalibrationAgreementInput {
   armRemaps?: ReadonlyMap<string, CalibrationArmRemap>;
   studies: readonly StudyRecord[];
   fields: readonly SchemaField[];
+  /** 現行のアウトカムの一覧。論文単位モードは null。 */
+  outcomeList?: OutcomeListContext | null;
   studyDataRows: readonly StudyDataRow[];
   resultsDataRows: readonly ResultsDataRow[];
   decisions: readonly Decision[];
@@ -340,6 +343,7 @@ export function computeCalibrationAgreement(
             decisions.filter((row) => row.annotator === annotatorB),
             annotatorB,
           ),
+          input.outcomeList,
         );
         pair.studies.push({ studyId: study.studyId, studyLabel: study.studyLabel, cells,
           bothWithAi: isBothWithAi(studyRows, resultRows, annotatorA, annotatorB) });

@@ -1,6 +1,7 @@
 import { NOT_REPORTED_TOKEN } from '../../../../../src/domain/annotation';
 import { parseCsv } from '../../../../../src/features/export/parseCsv';
 import { buildMaCsv } from '../../../../../src/features/export/rset/buildMaCsv';
+import { buildOutcomeListContext } from '../../../../../src/features/schema/outcomeListContext';
 import { ENTITY_INSTANCE_DECLARATION_FIELD_ID } from '../../../../../src/features/verification/instanceDeclarations';
 import {
   makeArmStructureRow,
@@ -8,6 +9,7 @@ import {
   makeField,
   makeResultsDataRow,
   makeStudy,
+  makeStudyDataRow,
 } from './testHelpers';
 
 const continuousFields = [
@@ -25,6 +27,39 @@ function row(overrides: Parameters<typeof makeResultsDataRow>[0]) {
 }
 
 describe('buildMaCsv', () => {
+  const outcomeList = buildOutcomeListContext([{
+    schemaVersion: 1, outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
+    description: null, typicalTimepoints: null, addedVia: 'schema_editor', note: null,
+  }], [], 1);
+
+  test.each([
+    makeStudyDataRow({ annotator: 'b@example.com' }),
+    makeStudyDataRow({ annotator: 'consensus', annotatorType: 'consensus' }),
+  ])('ResultsData がある study では study 項目だけの $annotator を確定者に混ぜない', (studyRow) => {
+    const result = buildMaCsv([makeStudy()], [
+      row({ fieldId: 'f-mean', value: '5', annotator: 'a@example.com' }),
+    ], [], [], [], continuousFields, outcomeList, [
+      makeStudyDataRow({ annotator: 'a@example.com' }), studyRow,
+    ]);
+    expect(result.rowCount).toBe(1);
+    expect(parseCsv(result.csv)[1]?.[12]).toBe('5');
+    expect(result.issues).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ issueType: 'skipped_study_no_final_annotator' }),
+    ]));
+  });
+
+  test.each([
+    { annotator: 'reviewer@example.com', annotatorType: 'human_with_ai' as const },
+    { annotator: 'consensus', annotatorType: 'consensus' as const },
+  ])('ResultsData がない study では StudyData の $annotator で空インスタンスを出力する', (final) => {
+    const result = buildMaCsv([makeStudy()], [], [], [], [
+      makeArmStructureRow(final),
+    ], continuousFields, outcomeList, [makeStudyDataRow(final)]);
+    expect(result.rowCount).toBe(1);
+    expect(parseCsv(result.csv)[1]?.[2]).toBe('mortality');
+    expect(parseCsv(result.statusCsv)[1]?.slice(-3)).toEqual(['unverified', 'unverified', 'unverified']);
+  });
+
   test('study が無ければヘッダーのみ', () => {
     const result = buildMaCsv([], [], [], [], [], []);
     expect(result.csv).toBe(`${result.header.join(',')}\r\n`);

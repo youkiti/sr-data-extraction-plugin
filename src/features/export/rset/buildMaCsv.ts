@@ -19,9 +19,11 @@ import {
 } from '../../../utils/entityKey';
 import { latestArmStructure } from '../../verification/armStructureRepository';
 import { entityInstances } from '../../verification/cells';
+import { isEntityKeyInOutcomeList, outcomeIdOfEntityKey, type OutcomeListContext } from '../../schema/outcomeListContext';
+import type { StudyDataRow } from '../../../domain/annotation';
 import { distinctAnnotators } from './annotatorPool';
 import { buildCsv } from '../csvEncode';
-import { selectFinalAnnotator } from '../finalAnnotator';
+import { selectFinalAnnotator, type AnnotatorTagged } from '../finalAnnotator';
 import type { RSetIssue } from './issues';
 import { applyNotApplicable } from './presetFields';
 import { activeRobToolFieldSets } from './robFields';
@@ -121,6 +123,8 @@ export function buildMaCsv(
   evidences: readonly Evidence[],
   armStructureRows: readonly ArmStructureRow[],
   fields: readonly SchemaField[],
+  outcomeList: OutcomeListContext | null = null,
+  studyDataRows: readonly StudyDataRow[] = [],
 ): MaBuildResult {
   const outcomeFields = fields
     .filter((field) => field.entityLevel === 'outcome_result')
@@ -144,10 +148,15 @@ export function buildMaCsv(
 
   for (const study of studies) {
     const studyResultsRows = resultsRows.filter((row) => row.studyId === study.studyId);
-    if (studyResultsRows.length === 0) {
+    if (studyResultsRows.length === 0 && outcomeList === null) {
       continue; // ma 行がない study は正常（results_long と同じ扱い）
     }
-    const final = selectFinalAnnotator(distinctAnnotators(studyResultsRows));
+    // 確定者は ResultsData の人の行から選ぶ。一覧モードで人の ResultsData がまだ無い study
+    // （一覧の空のインスタンスと AI の行だけの study）に限り、StudyData の行から選ぶ
+    const hasHumanResults = studyResultsRows.some((row) => row.annotatorType !== 'ai');
+    const final = selectFinalAnnotator(distinctAnnotators<AnnotatorTagged>(outcomeList !== null && !hasHumanResults
+      ? studyDataRows.filter((row) => row.studyId === study.studyId)
+      : studyResultsRows));
     if (final === null) {
       issues.push({
         issueType: 'skipped_study_no_final_annotator',
@@ -161,6 +170,8 @@ export function buildMaCsv(
 
     const studyEvidence = evidences.filter((evidence) => evidence.studyId === study.studyId);
     const studyDecisions = decisions.filter((decision) => decision.studyId === study.studyId);
+    const recordedOutcomeIds = new Set([...studyEvidence, ...studyDecisions, ...studyResultsRows]
+      .map((row) => outcomeIdOfEntityKey(row.entityKey)));
     const lookup = buildLookup(studyResultsRows, studyEvidence, final.annotator, final.annotatorType);
     const armRows = armStructureRows.filter((row) => row.studyId === study.studyId);
     const confirmedArms = latestArmStructure(armRows, final.annotator);
@@ -176,7 +187,7 @@ export function buildMaCsv(
     // （データ不整合・移行時の欠落等）でインスタンスごと ma.csv から黙って消えうるため、
     // 確定 annotator の ResultsData に実在する entity_key を必ず合流させる（要望 6 の防御）
     const instanceSet = new Set(
-      entityInstances('outcome_result', outcomeEvidence, outcomeDecisions, { armStructure: confirmedArms }),
+      entityInstances('outcome_result', outcomeEvidence, outcomeDecisions, { armStructure: confirmedArms, outcomeList }),
     );
     for (const key of lookup.index.keys()) {
       const [rowEntityKey] = key.split(SEP);
@@ -184,7 +195,7 @@ export function buildMaCsv(
         instanceSet.add(rowEntityKey);
       }
     }
-    const instances = [...instanceSet].sort((a, b) => a.localeCompare(b));
+    const instances = [...instanceSet].filter((key) => isEntityKeyInOutcomeList(key, outcomeList)).sort((a, b) => a.localeCompare(b));
 
     // rob:overall の複製 2 列（study 単位の base を 1 回だけ計算し、全 outcome 行へ複製する）
     let robOverallStatus: RSetStatus | null = null;
@@ -266,10 +277,12 @@ export function buildMaCsv(
       // field 配列と同じ並びで作る（2 パス目は配列を直接なめるため、存在しないキーの `?? 既定値` が
       // 不要になる。baseStatuses は 2 パス目で「対岸」プリセット項目の状態を引くためだけに残す）
       const baseStatuses = new Map<string, RSetStatus>();
+      // そのアウトカムの根拠・判定・データ行がなく一覧から補ったインスタンスだけを未検証にする。
+      const emptyListInstance = outcomeList !== null && !recordedOutcomeIds.has(parsed.outcome);
       const fieldCells = outcomeFields.map((field) => {
         const row = lookup.index.get(cellKey(entityKey, field.fieldId));
         const raw = resultsRowRawValue(row);
-        const hasEvidence = lookup.evidenceKeys.has(cellKey(entityKey, field.fieldId));
+        const hasEvidence = emptyListInstance || lookup.evidenceKeys.has(cellKey(entityKey, field.fieldId));
         const baseStatus = resolveRSetStatus(raw, hasEvidence);
         baseStatuses.set(field.fieldName, baseStatus);
         return { field, raw, baseStatus, schemaVersion: row?.schemaVersion ?? null };
@@ -291,7 +304,8 @@ export function buildMaCsv(
             studyId: study.studyId,
             fieldId: cell.field.fieldId,
             entityKey,
-            detail: `ma.csv: ${cell.field.fieldName} は AI 抽出のみで人間の判定が 0 件です`,
+            detail: emptyListInstance ? `ma.csv: ${cell.field.fieldName} は人間の判定が 0 件です`
+              : `ma.csv: ${cell.field.fieldName} は AI 抽出のみで人間の判定が 0 件です`,
           });
         }
         if (cell.field.fieldName === OUTCOME_NAME_FIELD_NAME) {
@@ -300,6 +314,10 @@ export function buildMaCsv(
         if (cell.schemaVersion !== null) {
           schemaVersionCandidate = Math.max(schemaVersionCandidate, cell.schemaVersion);
         }
+      }
+
+      if (outcomeList !== null) {
+        outcomeLabel = outcomeList.outcomes.find((outcome) => outcome.outcomeId === parsed.outcome)!.outcomeLabel;
       }
 
       const keyValues = [

@@ -7,6 +7,7 @@
 // bundle 組み立て時（loadVerificationBundle）に読むのは軽量な extracted_texts（.txt）だけで、
 // PDF バイナリは 1 件も読まない。文書ごとの重い PDF 素材は `loadPdfView` を通じて必要になった
 // ときだけ取得し、直近 PDF_CACHE_SIZE 件を features/verification/pdfViewCache がキャッシュする
+import type { OutcomeListContext } from '../schema/outcomeListContext';
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { Decision } from '../../domain/decision';
 import type { DocumentRecord } from '../../domain/document';
@@ -48,6 +49,8 @@ export interface VerificationData {
   documents: readonly VerificationDocumentView[];
   /** 当該 run の schema_version の全項目 */
   fields: readonly SchemaField[];
+  /** 現行のアウトカムの一覧。論文単位モードは null。 */
+  outcomeList?: OutcomeListContext | null;
   /** study の全文書ぶんの AI 根拠（表示中の run のもの。各行は document_id で出所を持つ） */
   evidence: readonly Evidence[];
   /** 当該 study の判定履歴（全 annotator。パネル側で自分の行に絞る） */

@@ -1,6 +1,7 @@
 // #/pilot（S6）のサービス層。
 // - パイロット実行: extractionService.runExtraction（runType = 'pilot'）を配線する
 // - 検証データ束の組み立て / 判定・群構成の永続化は S8 と共有の verificationService へ委譲する
+import { readCurrentOutcomeList } from './outcomeListService';
 import { isConsultAction, type Decision } from '../../domain/decision';
 import { resolveFetchedPricing } from '../fetchedPricing';
 import type { DocumentRecord } from '../../domain/document';
@@ -375,6 +376,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         run: outcome.run,
         matrix: emptyPilotMatrix(),
         runFields: [...fields],
+        outcomeList: undefined,
         evidence: outcome.result.evidence,
         batchFailures: outcome.result.batchFailures,
         rejectedCount: outcome.result.rejectedItems.length,
@@ -501,6 +503,7 @@ export async function loadPilotRun(
     run: null,
     matrix: emptyPilotMatrix(),
     runFields: null,
+    outcomeList: undefined,
     evidence: null,
     // 履歴 run はバッチ失敗の内訳を再構成できないため空にする（サマリは run.status で表示）
     batchFailures: [],
@@ -572,12 +575,17 @@ export async function loadPilotVerification(
     conflictMessage: null,
   });
   try {
+    const outcomeList = state.pilot.outcomeList === undefined
+      ? await readCurrentOutcomeList(project.spreadsheetId, deps.google)
+      : state.pilot.outcomeList;
+    patchPilot(store, { outcomeList });
     const bundle = await loadVerificationBundle(
       {
         spreadsheetId: project.spreadsheetId,
         study: item.study,
         documents: item.documents,
         fields: runFields,
+        outcomeList,
         quoteSetRows: [],
         quoteEvidence: [],
         evidence: evidence.filter((row) => row.studyId === studyId),

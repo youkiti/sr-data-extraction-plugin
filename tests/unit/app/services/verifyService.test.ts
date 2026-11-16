@@ -1,3 +1,6 @@
+import { readAllSchemaOutcomes } from '../../../../src/features/schema/schemaOutcomeRepository';
+import type { SchemaOutcome } from '../../../../src/domain/schemaOutcome';
+jest.mock('../../../../src/features/schema/schemaOutcomeRepository', () => ({ readAllSchemaOutcomes: jest.fn() }));
 import { quoteRow } from '../../features/verification/quoteSetFixtures';
 import { persistVerifyQuoteSet } from '../../../../src/app/services/verifyService';
 import { appendQuoteSetRows, readQuoteSetRows } from '../../../../src/features/verification/quoteSetRepository';
@@ -375,6 +378,7 @@ function makeStore(patch: {
 }
 
 beforeEach(() => {
+  jest.mocked(readAllSchemaOutcomes).mockResolvedValue([]);
   jest.mocked(readQuoteSetRows).mockResolvedValue([]);
   readEvidenceRowsMock.mockResolvedValue([makeEvidence()]);
   readCompletedRunMetasMock.mockResolvedValue([makeCompletedRunMeta()]);
@@ -390,6 +394,20 @@ beforeEach(() => {
   getFileBinaryMock.mockResolvedValue(new ArrayBuffer(8));
   getFileTextMock.mockResolvedValue('');
   readStudiesMock.mockResolvedValue([makeStudy()]);
+});
+
+test.each(['owner', 'reviewer_independent'] as const)('現行一覧を対象読込時に解決し、study 切替では再取得しない: %s', async (role) => {
+  jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ schemaVersion: 2, outcomeId: 'pain' } as SchemaOutcome]);
+  listSchemaVersionsMock.mockResolvedValue([2, 1].map((schemaVersion) => ({ schemaVersion } as SchemaVersion)));
+  getSchemaFieldsMock.mockResolvedValue([makeField({ entityLevel: 'outcome_result' })]);
+  const store = makeStore({ documents: [makeDocument()], role });
+  await loadVerifyTargets(store, makeDeps());
+  expect(store.getState().verify.targets?.[0]?.outcomeList?.currentIds).toEqual(new Set(['pain']));
+  await openVerifyStudy(store, makeDeps(), 'study-doc-1');
+  await openVerifyStudy(store, makeDeps(), 'study-doc-1');
+  expect(store.getState().verify.verification?.outcomeList?.schemaVersion).toBe(2);
+  expect(readAllSchemaOutcomes).toHaveBeenCalledTimes(1);
+  expect(listSchemaVersionsMock).toHaveBeenCalledTimes(1);
 });
 
 describe('latestRunEvidenceByStudy', () => {

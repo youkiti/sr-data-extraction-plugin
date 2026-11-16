@@ -1,4 +1,5 @@
 import { readDocuments } from '../../../src/features/documents/documentRepository';
+import * as pilotOutcomeService from '../../../src/app/services/pilotOutcomeService';
 import * as schemaEnumService from '../../../src/app/services/schemaEnumService';
 import { withSpreadsheetWriteLock } from '../../../src/app/services/verificationService';
 import * as pendingWrites from '../../../src/app/services/pendingWrites';
@@ -2300,6 +2301,39 @@ describe('bootstrapApp: #/pilot', () => {
       pilot: pilotPatch as AppState['pilot'],
     };
   }
+
+  test('パイロットの一覧への追加をサービスへ渡す', async () => {
+    const add = jest.spyOn(pilotOutcomeService, 'addPilotOutcome').mockResolvedValue(undefined);
+    const field = { ...FIELD, entityLevel: 'outcome_result' as const };
+    const outcomeList = { schemaVersion: 1, outcomes: [], currentIds: new Set<string>(), everIds: new Set<string>() };
+    const stub = createWindowStub(pilotPreloaded({
+      run: { ...RUN, provider: 'gemini' }, runFields: [field], evidence: [], verifyStudyId: 'study-1', outcomeList,
+      verification: {
+        quoteSetRows: [], quoteEvidence: [], study: STUDY_RECORD,
+        documents: [{ document: { ...DOC_RECORD, excluded: false, exclusionReason: null, exclusionNote: null, excludedAt: null }, extractedPages: [], extractedTextError: null }],
+        fields: [field], evidence: [], decisions: [], annotator: 'tester@example.com',
+        annotatorType: 'human_with_ai', schemaVersion: 1, canEditSchema: true, outcomeList,
+        armStructure: { version: 1, arms: [{ armKey: 'arm:1', armName: '全体' }] },
+        loadPdfView: async () => ({ pdf: null, pdfError: null, textPages: [] }),
+        retryPdfView: async () => ({ pdf: null, pdfError: null, textPages: [] }),
+      },
+    }));
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+    try {
+      const store = await bootstrapApp(asWindow(stub), deps);
+      stub.location.hash = '#/pilot';
+      stub.fireHashChange();
+      await flush();
+      const label = document.querySelector<HTMLInputElement>('#verify-outcome-label')!;
+      label.value = 'Sleep';
+      label.dispatchEvent(new Event('input'));
+      document.querySelector<HTMLButtonElement>('#verify-outcome-add-button')!.click();
+      expect(add).toHaveBeenCalledWith(store, deps, expect.objectContaining({ outcomeId: 'sleep', addedVia: 'pilot_verify' }));
+      await flush();
+    } finally {
+      add.mockRestore();
+    }
+  });
 
   test('seedState は pilot スライスも部分注入でマージする', async () => {
     const stub = createWindowStub({ pilot: { model: 'gemini-x' } as AppState['pilot'] });

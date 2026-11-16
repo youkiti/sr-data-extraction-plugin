@@ -9,6 +9,28 @@ import { createSheetsDataStore } from './helpers/sheetsStore';
 
 const QUOTE = 'Mortality was 12 percent';
 
+test('一覧モードの検証はスキーマ編集への案内を出し、一覧外のキーをセルに出さない', async ({ page }) => {
+  const evidence = [...EVIDENCE_ROW_1];
+  evidence[3] = OUTCOME_FIELD_ROW[1]!;
+  evidence[5] = 'outcome:outside_list|arm:1';
+  await setupRoutes(page, {
+    schemaRows: [OUTCOME_FIELD_ROW],
+    evidenceRows: [evidence],
+    outcomeRows: [['1', '1', 'pain', '痛み', '', '', 'schema_editor', '']],
+  });
+  await initApp(page, '#/verify?study=study-1');
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+  await page.locator('.verify__arm-name').first().fill('介入群');
+  await page.locator('#verify-arm-confirm').click();
+  await expect(page.locator('#verify-arm-revise')).toBeVisible();
+  await page.locator('.verify__tab', { hasText: 'アウトカム' }).click();
+  await expect(page.locator('#verify-outcome-schema-link')).toHaveAttribute('href', '#/schema?outcomes');
+  await expect(page.locator('#verify-outcome-add')).toHaveCount(0);
+  await expect(page.locator('[data-cell-key*="outside_list"]')).toHaveCount(0);
+  await expect(page.locator('#verify-outcome-candidates')).toContainText('outside_list');
+  await expect(page.locator('.focus-card__heading')).toContainText('pain');
+});
+
 test('オーナーの検証画面に自分の判定だけを表示する注記が出る', async ({ page }) => {
   await setupRoutes(page, { schemaRows: [STUDY_FIELD_ROW], evidenceRows: [EVIDENCE_ROW_1] });
   await initApp(page, '#/verify?study=study-1');
@@ -335,6 +357,7 @@ async function setupRoutes(
   page: Page,
   options: {
     schemaRows: string[][];
+    outcomeRows?: string[][];
     schemaHeaders?: string[];
     evidenceRows: string[][];
     rotatedPdf?: boolean;
@@ -363,6 +386,9 @@ async function setupRoutes(
   const pdfFetchIds: string[] = [];
   let studyDataConflictArmed = false;
   const titles = ['Meta', 'Documents', 'SchemaFields', 'Evidence', 'Decisions'];
+  if (options.outcomeRows !== undefined) {
+    titles.push('SchemaOutcomes');
+  }
   const quoteValues: string[][] = [];
 
   // 保存の競合検出 E2E の回帰対応（issue #248 回帰 2 / issue #252）: StudyData / ResultsData を
@@ -423,6 +449,14 @@ async function setupRoutes(
         }
       } else if (url.includes('/values/ResultsData')) {
         await route.fulfill({ json: { values: store.resultsValues() } });
+      } else if (url.includes('/values/SchemaOutcomes')) {
+        await route.fulfill({ json: { values: [SHEET_HEADERS.SchemaOutcomes, ...(options.outcomeRows ?? [])] } });
+      } else if (url.includes('/values/SchemaVersions') && options.outcomeRows !== undefined) {
+        const version: Record<string, string> = {
+          schema_version: '1', parent_version: '', protocol_version: '1', created_by_type: 'user_edit',
+          created_at: '2026-11-16', created_by: 'owner', note: '',
+        };
+        await route.fulfill({ json: { values: [SHEET_HEADERS.SchemaVersions, SHEET_HEADERS.SchemaVersions.map((header) => version[header] ?? '')] } });
       } else if (url.includes('/values/SchemaFields')) {
         await route.fulfill({ json: { values: [options.schemaHeaders ?? SCHEMA_FIELDS_HEADERS, ...options.schemaRows] } });
       } else {
