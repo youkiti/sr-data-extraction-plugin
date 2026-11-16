@@ -2,6 +2,7 @@
 // v0.10 フェーズ 3 = study 単位）。study × section の検証進捗マトリクスと、anchor 失敗率・
 // not_reported 率を組み立てる。1 study の Evidence は配下の全文書ぶんを合算する。
 // 進捗はセルモデル（cells.ts）基準 = 検証画面の進捗チップと同じ数え方（自分の判定のみ）
+import type { OutcomeListContext } from '../schema/outcomeListContext';
 import { activeConsultFlags } from './consultFlags';
 import { cellKeyOf, deriveCellStates } from './cellState';
 import type { Decision } from '../../domain/decision';
@@ -86,11 +87,12 @@ export interface DashboardData {
 
 /** 1 study ぶんの集計素材（verifyService の検証対象と同じ束 + 自分の判定） */
 export interface DashboardStudyInput {
-  outcomeList?: import('../schema/outcomeListContext').OutcomeListContext | null;
   studyId: string;
   /** 表示ラベル（Studies 由来） */
   studyLabel: string;
   fields: readonly SchemaField[];
+  /** 現行のアウトカムの一覧。論文単位モードは null。 */
+  outcomeList?: OutcomeListContext | null;
   /** study 配下の全文書ぶんの Evidence */
   evidence: readonly Evidence[];
   /** 自分の annotator 行への判定のみ（cells.ts と同じ契約） */

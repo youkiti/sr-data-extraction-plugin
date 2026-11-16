@@ -1,3 +1,4 @@
+import type { OutcomeListContext } from '../features/schema/outcomeListContext';
 import type { QuoteSetRow } from '../domain/quoteSet';
 import type { CriteriaState } from './services/acceptanceCriteriaService';
 // メインビューの中央ストア（単方向フロー）。view は render(state) の純粋関数とし、
@@ -385,7 +386,6 @@ export interface ConsultDocState {
 
 /** #/pilot（S6）の画面状態。run の結果と埋め込み検証 UI の素材はタブのセッション内で保持する */
 export interface PilotState {
-  outcomeList?: import('../features/schema/outcomeListContext').OutcomeListContext | null;
   checkingPreview: boolean;
   /** 実行前に確認したプレビュー版の疑いがあるファイル名。 */
   previewWarnings?: string[];
@@ -410,6 +410,8 @@ export interface PilotState {
   run: ExtractionRun | null;
   /** 直近 run に使ったスキーマ項目（判定保存時の field_name / entity_level 解決に使う） */
   runFields: SchemaField[] | null;
+  /** 現行のアウトカムの一覧。論文単位モードは null。 */
+  outcomeList?: OutcomeListContext | null;
   /** 直近 run の全 Evidence（文献切替時の検証素材。Sheets を読み直さない） */
   evidence: Evidence[] | null;
   batchFailures: BatchFailure[];
@@ -526,7 +528,6 @@ export interface ExtractState {
 
 /** #/verify（S8）の一覧 1 study ぶんの検証素材（Evidence がある study のみ。v0.10 フェーズ 3） */
 export interface VerifyTarget {
-  outcomeList?: import('../features/schema/outcomeListContext').OutcomeListContext | null;
   /** 引用の参照解決用に保持する、この study の全 run の根拠 */
   quoteEvidence: Evidence[];
   study: StudyRecord;
@@ -536,6 +537,8 @@ export interface VerifyTarget {
   evidence: Evidence[];
   /** 表示する run の schema_version の全項目 */
   fields: SchemaField[];
+  /** 現行のアウトカムの一覧。論文単位モードは null。 */
+  outcomeList?: OutcomeListContext | null;
   schemaVersion: number;
   /** セレクタの進捗チップ（判定済み n / 総セル m） */
   progress: VerificationProgress;
@@ -678,7 +681,6 @@ export interface AdjudicateStudyRow {
  * （features/verification/pdfViewCache の LRU キャッシュを内部に閉じ込める）
  */
 export interface AdjudicateWorking {
-  outcomeList?: import('../features/schema/outcomeListContext').OutcomeListContext | null;
   /** 項目ごとの最新の完了 run から合成した、未編集レビュアー用の AI 引用。 */
   quoteAiEvidence: Evidence[];
   quoteSetRows: QuoteSetRow[];
@@ -703,6 +705,8 @@ export interface AdjudicateWorking {
   annotatorB: string;
   /** 突き合わせに使う表のデザイン（最新確定版）の全項目 */
   fields: SchemaField[];
+  /** 現行のアウトカムの一覧。論文単位モードは null。 */
+  outcomeList?: OutcomeListContext | null;
   schemaVersion: number;
   armsA: readonly { armKey: string; armName: string }[];
   armsB: readonly { armKey: string; armName: string }[];
@@ -744,7 +748,8 @@ export interface AdjudicateWorking {
 
 /** `#/adjudicate`（S12）の画面状態 */
 export interface AdjudicateState {
-  outcomeList?: import('../features/schema/outcomeListContext').OutcomeListContext | null;
+  /** 現行のアウトカムの一覧。論文単位モードは null。 */
+  outcomeList?: OutcomeListContext | null;
   agreementOutsideCount: number;
   calibrationAgreement: CalibrationPairAgreement[] | null;
   /** study 一覧（ゲート付き）。null = 未読込 */

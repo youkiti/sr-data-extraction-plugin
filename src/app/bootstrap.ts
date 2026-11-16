@@ -1,3 +1,4 @@
+import { addPilotOutcome } from './services/pilotOutcomeService';
 import { addEditorOutcome, updateEditorOutcome, moveEditorOutcome, restoreEditorOutcome, requestRemoveEditorOutcome, confirmRemoveEditorOutcome, cancelRemoveEditorOutcome } from './services/schemaService';
 import { suggestEnum, updateEnumSuggestion, applyEnumSuggestion, cancelEnumSuggestion } from './services/schemaEnumService';
 import { initGuide } from './guide';
@@ -788,6 +789,7 @@ export async function bootstrapApp(
       },
     },
     pilot: {
+      onOutcomeAdd: (row) => addPilotOutcome(store, deps, row),
       onCriteriaDraft: (draft) => changeCriteriaDraft(store, draft),
       onConfirmCriteria: (confirmed) => { void saveCriteria(store, deps, confirmed); },
       onCancelCriteria: () => cancelCriteriaConfirmation(store),

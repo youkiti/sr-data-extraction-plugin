@@ -576,7 +576,7 @@ function outcomeCandidateSection(working: AdjudicateWorking, canEditSchema: bool
     return [];
   }
   return [renderOutcomeCandidates('adjudicate', candidates, (evidence) => showAdjudicateCitation(working, {
-    documentIndex: 1,
+    documentIndex: working.documents.findIndex((document) => document.documentId === evidence.documentId) + 1,
     documentId: evidence.documentId,
     quote: evidence.quote!,
     page: evidence.page,

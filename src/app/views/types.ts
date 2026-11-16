@@ -200,6 +200,8 @@ export interface SchemaViewCallbacks {
 
 /** #/pilot（S6）のユーザー操作コールバック */
 export interface PilotViewCallbacks {
+  /** パイロットの検証から表のデザインにアウトカムを追加する。 */
+  onOutcomeAdd?: (row: SchemaOutcomeEditorRow) => Promise<void>;
   /** 全ページ画像の追加送信を切り替える。 */
   onTogglePageImages(enabled: boolean): void;
   onCriteriaDraft?(draft: import('../../features/verification/acceptanceCriteria').CriteriaDraft): void;

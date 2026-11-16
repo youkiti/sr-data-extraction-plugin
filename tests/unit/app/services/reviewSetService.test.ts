@@ -1,5 +1,9 @@
+import { readCurrentOutcomeList } from '../../../../src/app/services/outcomeListService';
+jest.mock('../../../../src/app/services/outcomeListService', () => ({ readCurrentOutcomeList: jest.fn() }));
 // 担当セットのロード順・owner 操作・共有進捗素材をローカルの I/O モックで検証する。
 import { outcomeEvidence } from '../../features/review/reviewSetFixtures';
+import type { SchemaOutcome } from '../../../../src/domain/schemaOutcome';
+import { reviewerSetProgress } from '../../../../src/features/review/reviewSets';
 import { readEvidenceRows } from '../../../../src/features/extraction/evidenceRepository';
 import { readCompletedRunMetas } from '../../../../src/features/extraction/runRepository';
 import { createInitialState, createStore } from '../../../../src/app/store';
@@ -157,6 +161,7 @@ test('全文書が除外された study は分割・担当絞り込み・進捗�
 });
 beforeEach(() => {
   jest.resetAllMocks();
+  jest.mocked(readCurrentOutcomeList).mockResolvedValue(null);
   jest.mocked(readEvidenceRows).mockResolvedValue([]);
   jest.mocked(readCompletedRunMetas).mockResolvedValue([]);
   document.body.innerHTML = '';
@@ -181,6 +186,31 @@ beforeEach(() => {
   jest
     .mocked(readVerifyTargetMaterials)
     .mockResolvedValue({ materials: [], runStartedAt: new Map() });
+});
+
+test('現行の一覧で Home と担当セットの未入力セルを数える', async () => {
+  const result = activeStore('reviewer_with_ai');
+  const outcomeList = {
+    schemaVersion: 2,
+    outcomes: [{ outcomeId: 'pain', outcomeLabel: '痛み' } as SchemaOutcome],
+    currentIds: new Set(['pain']), everIds: new Set(['pain', 'removed']),
+  };
+  jest.mocked(readCurrentOutcomeList).mockResolvedValue(outcomeList);
+  jest.mocked(listSchemaVersions).mockResolvedValue([{ schemaVersion: 2 } as NonNullable<Awaited<ReturnType<typeof listSchemaVersions>>[number]>]);
+  jest.mocked(getSchemaFieldsByVersion).mockResolvedValue([field({ entityLevel: 'outcome_result' })]);
+  jest.mocked(readAllDecisions).mockResolvedValue([decision({ entityKey: 'outcome:removed|arm:1' })]);
+  jest.mocked(readAllArmStructures).mockResolvedValue([{
+    studyId: 's1', version: 1, armKey: 'arm:1', armName: '全体',
+    annotator: 'a@example.com', annotatorType: 'human_with_ai', confirmedAt: 't0', note: null,
+  }]);
+  jest.mocked(getCurrentUserEmail).mockResolvedValue('a@example.com');
+  const material = await readReviewSetProgressMaterials(result, deps);
+  expect(material.outcomeList).toBe(outcomeList);
+  expect(reviewerSetProgress({ ...material, sets: [reviewSet()], reviewerEmails: ['a@example.com'] })).toEqual([
+    { email: 'a@example.com', setId: 'group-1', done: 0, total: 1 },
+  ]);
+  await loadAssignedProgress(result, deps);
+  expect(result.getState().home.assignedProgress).toEqual({ done: 0, total: 2 });
 });
 
 describe('担当セットのロード', () => {

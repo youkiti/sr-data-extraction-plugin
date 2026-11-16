@@ -54,6 +54,53 @@ const STUDY_DATA_HEADERS = [...SHEET_HEADERS.StudyData];
 
 const RESULTS_DATA_HEADERS = [...SHEET_HEADERS.ResultsData];
 
+test('パイロットで一覧に追加したアウトカムが別の論文にも空セルとして出る', async ({ page }) => {
+  const values: Record<string, string[][]> = {
+    Protocol: [PROTOCOL_ROW],
+    SchemaVersions: [['1', '', '1', 'user_edit', '2026-07-01T00:00:00Z', 'e2e@example.com', '']],
+    SchemaFields: [['1', 'f-outcome', '1', 'results', 'outcome_name', 'アウトカム名', 'outcome_result', 'text', '', '', 'TRUE', '原文どおり', '', 'FALSE', '']],
+    SchemaOutcomes: [['1', '1', 'pain', '痛み', '', '', 'schema_editor', '']],
+    ExtractionRuns: [['run-1', 'pilot', '1', 'study-1,study-2', 'gemini', 'gemini-test', '', 'text_only', 'done', 't1', 't2', '', '', '']],
+    ArmStructures: ['study-1', 'study-2'].map((studyId) => [studyId, '1', 'arm:1', '全体', 'e2e@example.com', 'human_with_ai', 't1', '']),
+  };
+  await page.route('https://sheets.googleapis.com/**', async (route) => {
+    const request = route.request();
+    const url = decodeURIComponent(request.url());
+    const tab = Object.keys(SHEET_HEADERS).find((name) => url.includes(`/values/${name}`)) as keyof typeof SHEET_HEADERS | undefined;
+    if (request.method() === 'POST' && tab !== undefined) {
+      values[tab] = [...(values[tab] ?? []), ...(request.postDataJSON() as { values: string[][] }).values];
+      await route.fulfill({ json: {} });
+      return;
+    }
+    await route.fulfill({ json: tab === undefined
+      ? { sheets: Object.keys(SHEET_HEADERS).map((title) => ({ properties: { title } })) }
+      : { values: [[...SHEET_HEADERS[tab]], ...(values[tab] ?? [])] } });
+  });
+  await page.route('https://www.googleapis.com/**', async (route) => {
+    const url = route.request().url();
+    await route.fulfill(url.includes('txt-1')
+      ? { contentType: 'text/plain', body: QUOTE }
+      : { contentType: 'application/pdf', body: minimalPdf(QUOTE) });
+  });
+  await initApp(page, {
+    documents: [DOCUMENT, { ...DOCUMENT, documentId: 'doc-2', studyId: 'study-2', filename: 'other.pdf' }],
+    pilot: { history: null, historyInitialized: false },
+  });
+  await page.locator('.verify__tab', { hasText: 'アウトカム' }).click();
+  await page.locator('#verify-outcome-label').fill('Sleep quality');
+  await expect(page.locator('#verify-outcome-key')).toHaveValue('sleep_quality');
+  await page.locator('#verify-outcome-add-button').click();
+  await expect.poll(() => values.SchemaVersions!.length).toBe(2);
+  await expect(page.locator('#pilot-verify-loading')).toHaveCount(0);
+  await page.locator('#pilot-verify-study').selectOption('study-2');
+  await expect(page.locator('#pilot-verify-loading')).toHaveCount(0);
+  await page.locator('.verify__tab', { hasText: 'アウトカム' }).click();
+  await page.locator('#verify-layout-toggle').click();
+  const added = page.locator('.verify__cell[data-cell-key*="sleep_quality"]');
+  await expect(added).toContainText('AI 抽出なし');
+  expect(values.SchemaOutcomes!.some((row) => row[0] === '2' && row[2] === 'sleep_quality')).toBe(true);
+});
+
 test.beforeEach(async ({ page }) => {
   await page.route('https://sheets.googleapis.com/**', async (route) => {
     const url = decodeURIComponent(route.request().url());

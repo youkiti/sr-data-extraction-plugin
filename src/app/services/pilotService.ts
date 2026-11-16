@@ -1,7 +1,7 @@
-import { readCurrentOutcomeList } from './outcomeListService';
 // #/pilot（S6）のサービス層。
 // - パイロット実行: extractionService.runExtraction（runType = 'pilot'）を配線する
 // - 検証データ束の組み立て / 判定・群構成の永続化は S8 と共有の verificationService へ委譲する
+import { readCurrentOutcomeList } from './outcomeListService';
 import { isConsultAction, type Decision } from '../../domain/decision';
 import { resolveFetchedPricing } from '../fetchedPricing';
 import type { DocumentRecord } from '../../domain/document';

@@ -35,7 +35,7 @@ test.each(['human_with_ai', 'human_independent'] as const)('一覧外キーを�
     fields: [makeField({ entityLevel: 'outcome_result', fieldName: 'outcome_name' })],
     outcomeList: {
       schemaVersion: 2,
-      outcomes: [{ outcomeId: 'pain' } as SchemaOutcome],
+      outcomes: [{ outcomeId: 'pain', outcomeLabel: '痛み' } as SchemaOutcome],
       currentIds: new Set(['pain']),
       everIds: new Set(['pain', 'removed']),
     },
@@ -53,15 +53,45 @@ test.each(['human_with_ai', 'human_independent'] as const)('一覧外キーを�
   panel.dispose();
 });
 
-test.each([true, false])('一覧モードはパイロットで追加フォームを隠し、本番の共同研究者には相談を案内する: pilot=%s', async (pilot) => {
+test.each([true, false])('一覧モードは追加の権限が無ければフォームを隠し、本番の共同研究者には相談を案内する: pilot=%s', async (pilot) => {
   const { panel } = await createPanel({
     fields: [makeField({ entityLevel: 'outcome_result' })],
-    outcomeList: { schemaVersion: 2, outcomes: [{ outcomeId: 'pain' } as SchemaOutcome], currentIds: new Set(['pain']), everIds: new Set(['pain']) },
+    outcomeList: { schemaVersion: 2, outcomes: [{ outcomeId: 'pain', outcomeLabel: '痛み' } as SchemaOutcome], currentIds: new Set(['pain']), everIds: new Set(['pain']) },
     evidence: [],
   }, { pilot });
   expect(panel.root.querySelector('#verify-outcome-add')).toBeNull();
   expect(panel.root.querySelector('#verify-outcome-candidates')).toBeNull();
   expect(panel.root.querySelector('#verify-outcome-schema-hint') !== null).toBe(!pilot);
+  panel.dispose();
+});
+
+test.each([true, false])('一覧外の候補の引用から PDF のハイライトへ移動する: pilot=%s', async (pilot) => {
+  const candidate = makeEvidence({ entityKey: 'outcome:candidate|arm:1' });
+  const { panel } = await createPanel({
+    canEditSchema: true,
+    fields: [makeField({ entityLevel: 'outcome_result' })],
+    outcomeList: { schemaVersion: 1, outcomes: [{ outcomeId: 'pain', outcomeLabel: '痛み' } as SchemaOutcome], currentIds: new Set(['pain']), everIds: new Set(['pain']) },
+    evidence: [candidate],
+  }, { pilot });
+  panel.root.querySelector<HTMLButtonElement>('#verify-outcome-candidates button')!.click();
+  const active = panel.root.querySelector('.pdf-viewer__hl--active');
+  expect(active).not.toBeNull();
+  expect(panel.root.querySelectorAll('.pdf-viewer__hl')).toHaveLength(1);
+  panel.dispose();
+});
+
+test.each([true, false])('パイロットの一覧は追加フォームと候補ボタンを出す: name=%s', async (named) => {
+  const onOutcomeAdd = jest.fn().mockResolvedValue(undefined);
+  const { panel } = await createPanel({
+    canEditSchema: true,
+    fields: [makeField({ entityLevel: 'outcome_result', fieldName: named ? 'outcome_name' : 'value' })],
+    outcomeList: { schemaVersion: 1, outcomes: [{ outcomeId: 'pain', outcomeLabel: '痛み' } as SchemaOutcome], currentIds: new Set(['pain']), everIds: new Set(['pain']) },
+    evidence: [makeEvidence({ entityKey: 'outcome:candidate|arm:1', value: '候補名' })],
+  }, { pilot: true, onOutcomeAdd });
+  expect(panel.root.querySelector('#verify-outcome-add')).not.toBeNull();
+  panel.root.querySelector<HTMLButtonElement>('.verify__outcome-candidate-add')!.click();
+  expect(onOutcomeAdd).toHaveBeenCalledWith(expect.objectContaining({ outcomeId: 'candidate', outcomeLabel: named ? '候補名' : 'candidate', addedVia: 'pilot_candidate' }));
+  await flush();
   panel.dispose();
 });
 

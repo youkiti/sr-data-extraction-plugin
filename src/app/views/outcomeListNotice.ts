@@ -17,6 +17,7 @@ export function renderOutcomeCandidates(
   onQuote: (evidence: Evidence) => void,
   canEditSchema: boolean,
   pilot = false,
+  onAdd?: (candidate: OutcomeListCandidate) => void,
 ): HTMLElement {
   const section = el('section', { id: `${prefix}-outcome-candidates`, className: 'outcome-candidates' }, [
     el('h4', { text: t('verify.outcomeCandidates') }),
@@ -34,6 +35,11 @@ export function renderOutcomeCandidates(
       const quote = el('button', { text: evidence.quote, attributes: { type: 'button' } });
       quote.addEventListener('click', () => onQuote(evidence));
       row.append(quote);
+    }
+    if (pilot && onAdd !== undefined) {
+      const add = el('button', { className: 'verify__outcome-candidate-add', text: t('verify.outcomeAddToSchema'), attributes: { type: 'button' } });
+      add.addEventListener('click', () => onAdd(candidate));
+      row.append(add);
     }
     section.append(row);
   }

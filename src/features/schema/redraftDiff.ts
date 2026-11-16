@@ -303,7 +303,7 @@ export function defaultRedraftSelection(diff: RedraftDiff): RedraftSelection {
   return { added, changed, removed };
 }
 
-function schemaFieldToEditorRow(field: SchemaField): SchemaEditorRow {
+export function schemaFieldToEditorRow(field: SchemaField): SchemaEditorRow {
   return {
     fieldId: field.fieldId,
     section: field.section,

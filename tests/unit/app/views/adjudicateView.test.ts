@@ -5,6 +5,7 @@ import { makeAskTurn } from '../askPaperFixtures';
 import { renderAdjudicateView } from '../../../../src/app/views/adjudicateView';
 import { setUiLanguage, t } from '../../../../src/lib/i18n';
 import { disposeAdjudicatePdfPaneCache } from '../../../../src/app/views/adjudicatePdfPane';
+import * as adjudicatePdfPane from '../../../../src/app/views/adjudicatePdfPane';
 import {
   createInitialState,
   type AdjudicateStudyRow,
@@ -39,6 +40,26 @@ test('一覧モードでも候補が無ければ候補欄を出さない', () =>
   const working = makeWorking({ outcomeList: { schemaVersion: 2, outcomes: [], currentIds: new Set(), everIds: new Set() } });
   const root = render(makeState({ rows: [], working }), ctx);
   expect(root.querySelector('#adjudicate-outcome-candidates')).toBeNull();
+});
+
+test('裁定の一覧外候補の引用は出所文書の番号で開く', () => {
+  const show = jest.spyOn(adjudicatePdfPane, 'showAdjudicateCitation').mockImplementation(() => undefined);
+  const { ctx } = makeCtx();
+  const working = makeWorking({ outcomeList: { schemaVersion: 1, outcomes: [], currentIds: new Set(), everIds: new Set() } });
+  working.documents = ['doc-first', 'doc-second'].map((documentId) => ({
+    documentId, studyId: working.study.studyId, documentRole: 'article', driveFileId: 'pdf',
+    sourceFileId: null, filename: `${documentId}.pdf`, pmid: null, doi: null, textRef: null,
+    textStatus: 'ok', pageCount: 1, charCount: 100, importedAt: 't0', importedBy: 'owner@example.com',
+    note: null, excluded: false, exclusionReason: null, exclusionNote: null, excludedAt: null,
+  }));
+  working.quoteAiEvidence = [makeEvidence({ studyId: working.study.studyId, documentId: 'doc-second', entityKey: 'outcome:candidate', quote: '引用' })];
+  try {
+    const root = render(makeState({ rows: [], working }), ctx);
+    root.querySelector<HTMLButtonElement>('#adjudicate-outcome-candidates button')!.click();
+    expect(show).toHaveBeenCalledWith(working, expect.objectContaining({ documentId: 'doc-second', documentIndex: 2 }));
+  } finally {
+    show.mockRestore();
+  }
 });
 
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<AdjudicateViewCallbacks> } {

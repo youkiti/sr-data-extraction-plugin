@@ -23,6 +23,9 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ### その他の変更 / Other changes
 
+- パイロットの検証から表のデザインのアウトカムの一覧へ追加できるようにしました。追加は新しい版として保存し、同じパイロットの全論文に反映します（2026-11-16、issue #539）。
+  Outcomes can now be added to the table design from pilot verification. Each addition creates a new version and applies to every paper in the pilot (2026-11-16, issue #539).
+
 - 表のデザインでアウトカムの一覧を追加・名称変更・並べ替え・外す・戻すことができ、版ごとに保存するようにしました。外すときは判定済みのセル数と論文数を確認できます。JSON の読み書きにも一覧を含めました（2026-11-16、issue #539）。
   Added a versioned outcome list to the schema editor, with naming, reordering, removal, and restoration. Removal shows the numbers of judged cells and papers for confirmation. JSON import and export also carry the list (2026-11-16, issue #539).
 
