@@ -56,8 +56,47 @@ describe('buildDraftSchemaUserPrompt', () => {
 });
 
 describe('parseDraftSchemaResponse', () => {
+  const draftedOutcome = {
+    outcome_id: 'mortality', outcome_label: '全死亡', description: null, typical_timepoints: '30d|90d',
+  };
+
+  test('一覧の案を変換し、形式違反と重複した id は捨てる', () => {
+    const result = parseDraftSchemaResponse(JSON.stringify({
+      fields: [{ ...DRAFTED_ITEM, entity_level: 'outcome_result' }],
+      outcomes: [
+        draftedOutcome,
+        { ...draftedOutcome, outcome_label: '重複' },
+        { ...draftedOutcome, outcome_id: 'Invalid' },
+        { ...draftedOutcome, outcome_id: 'a'.repeat(65) },
+        { ...draftedOutcome, outcome_id: 'empty_label', outcome_label: ' ' },
+        null,
+        { ...draftedOutcome, outcome_id: 'pain', outcome_label: '疼痛', description: '定義', typical_timepoints: null },
+      ],
+    }));
+    expect(result.rows).toHaveLength(1);
+    expect(result.outcomes).toEqual([
+      { outcomeId: 'mortality', outcomeLabel: '全死亡', description: null, typicalTimepoints: '30d|90d',
+        addedVia: 'ai_draft', idLocked: false, idEdited: false, note: null },
+      { outcomeId: 'pain', outcomeLabel: '疼痛', description: '定義', typicalTimepoints: null,
+        addedVia: 'ai_draft', idLocked: false, idEdited: false, note: null },
+    ]);
+  });
+
+  test.each([
+    { fields: [DRAFTED_ITEM], outcomes: [draftedOutcome] },
+    { fields: [{ ...DRAFTED_ITEM, entity_level: 'outcome_result' }], outcomes: [] },
+  ])('結果の項目が無いか案が空なら一覧は空', (response) => {
+    expect(parseDraftSchemaResponse(JSON.stringify(response)).outcomes).toEqual([]);
+  });
+
+  test('オブジェクトの応答には fields と outcomes の配列が必要', () => {
+    expect(() => parseDraftSchemaResponse(JSON.stringify({ fields: [DRAFTED_ITEM] }))).toThrow(DraftSchemaFormatError);
+    expect(() => parseDraftSchemaResponse(JSON.stringify({ fields: [], outcomes: [] }))).toThrow(DraftSchemaFormatError);
+  });
+
   test('妥当な JSON 配列をエディタ行へ変換する（fieldId null / aiGenerated true）', () => {
-    const rows = parseDraftSchemaResponse(JSON.stringify([DRAFTED_ITEM]));
+    const { rows, outcomes } = parseDraftSchemaResponse(JSON.stringify([DRAFTED_ITEM]));
+    expect(outcomes).toEqual([]);
     expect(rows).toEqual([
       {
         maxQuotes: null,
@@ -82,7 +121,7 @@ describe('parseDraftSchemaResponse', () => {
   });
 
   test('markdown フェンスで包まれた応答も剥がしてパースする', () => {
-    const rows = parseDraftSchemaResponse('```json\n' + JSON.stringify([DRAFTED_ITEM]) + '\n```');
+    const { rows } = parseDraftSchemaResponse('```json\n' + JSON.stringify([DRAFTED_ITEM]) + '\n```');
     expect(rows).toHaveLength(1);
   });
 
@@ -102,13 +141,13 @@ describe('parseDraftSchemaResponse', () => {
   // issue #48: AI が StudyData の固定列名（study_id 等）をそのまま field_name に
   // 提案してしまい、保存時のバリデーションで手戻りが発生する事象への対処
   test('StudyData 固定列名と衝突しない field_name は変更しない', () => {
-    const rows = parseDraftSchemaResponse(JSON.stringify([DRAFTED_ITEM]));
+    const { rows } = parseDraftSchemaResponse(JSON.stringify([DRAFTED_ITEM]));
     expect(rows[0]?.fieldName).toBe('sample_size_total');
   });
 
   test('StudyData 固定列名（study_id）と衝突する field_name は "_reported" を付けて自動リネームする', () => {
     const items = [{ ...DRAFTED_ITEM, field_name: 'study_id' }];
-    const rows = parseDraftSchemaResponse(JSON.stringify(items));
+    const { rows } = parseDraftSchemaResponse(JSON.stringify(items));
     expect(rows[0]?.fieldName).toBe('study_id_reported');
   });
 
@@ -118,7 +157,7 @@ describe('parseDraftSchemaResponse', () => {
       { ...DRAFTED_ITEM, field_name: 'study_id' },
       { ...DRAFTED_ITEM, field_name: 'study_id' },
     ];
-    const rows = parseDraftSchemaResponse(JSON.stringify(items));
+    const { rows } = parseDraftSchemaResponse(JSON.stringify(items));
     expect(rows.map((row) => row.fieldName)).toEqual([
       'study_id_reported',
       'study_id_reported_2',
@@ -131,16 +170,33 @@ describe('parseDraftSchemaResponse', () => {
       { ...DRAFTED_ITEM, field_name: 'study_id' },
       { ...DRAFTED_ITEM, field_name: 'study_id_reported' },
     ];
-    const rows = parseDraftSchemaResponse(JSON.stringify(items));
+    const { rows } = parseDraftSchemaResponse(JSON.stringify(items));
     expect(rows.map((row) => row.fieldName)).toEqual(['study_id_reported_2', 'study_id_reported']);
   });
 });
 
 describe('定数', () => {
+  test('strict 構造化出力の全オブジェクトで全プロパティを必須にする', () => {
+    const schema = DRAFT_SCHEMA_RESPONSE_SCHEMA as {
+      properties: Record<string, { items: { properties: Record<string, unknown>; required: string[]; additionalProperties: boolean } }>;
+      required: string[]; additionalProperties: boolean;
+    };
+    expect(schema.additionalProperties).toBe(false);
+    expect(schema.required).toEqual(Object.keys(schema.properties));
+    for (const array of Object.values(schema.properties)) {
+      expect(array.items.additionalProperties).toBe(false);
+      expect(array.items.required).toEqual(Object.keys(array.items.properties));
+    }
+    expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('one protocol-defined outcome per row');
+    expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('one index test per row');
+    expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('one prognostic-factor/outcome pair per row');
+    expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('they are distinct');
+  });
+
   test('プロンプト版数とシステムプロンプト・応答スキーマが定義されている', () => {
-    expect(DRAFT_SCHEMA_PROMPT_VERSION).toBe(4);
+    expect(DRAFT_SCHEMA_PROMPT_VERSION).toBe(5);
     expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('snake_case');
-    expect(DRAFT_SCHEMA_RESPONSE_SCHEMA['type']).toBe('array');
+    expect(DRAFT_SCHEMA_RESPONSE_SCHEMA['type']).toBe('object');
   });
 
   // 版数 2: レビュータイプ適応。scoping / DTA / 予後のプロトコルに PICO・比較研究の

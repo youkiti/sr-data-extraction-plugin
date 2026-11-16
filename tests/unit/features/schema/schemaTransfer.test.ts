@@ -192,6 +192,8 @@ test('JSON の一覧は版と追加経路を含まず往復し、古いファイ
   expect(raw.outcomes.map((row: { outcomeId: string }) => row.outcomeId)).toEqual(['mortality', 'pain']);
   expect(Object.keys(raw.outcomes[0]).sort()).toEqual(['description', 'note', 'outcomeId', 'outcomeLabel', 'typicalTimepoints']);
   expect(parseSchemaExport(text).outcomes).toEqual(raw.outcomes.map((row: object) => ({ ...row, addedVia: 'file_import', idLocked: false, idEdited: true })));
+  raw.outcomes[0].addedVia = 'ai_draft';
+  expect(parseSchemaExport(JSON.stringify(raw)).outcomes?.[0]?.addedVia).toBe('file_import');
   expect(parseSchemaExport(fileWith([VALID_RAW])).outcomes).toBeNull();
   expect(parseSchemaExport(fileWith([VALID_RAW], { outcomes: [] })).outcomes).toEqual([]);
 });

@@ -232,7 +232,7 @@ function makeDeps(overrides: Partial<SchemaServiceDeps> = {}): {
   chatMock: jest.Mock<Promise<ChatResponse>, Parameters<LLMProvider['chat']>>;
 } {
   const chatMock = jest.fn<Promise<ChatResponse>, Parameters<LLMProvider['chat']>>(async () => ({
-    text: JSON.stringify([DRAFTED_ITEM]),
+    text: JSON.stringify({ fields: [DRAFTED_ITEM], outcomes: [] }),
     tokensIn: 100,
     tokensOut: 50,
     cachedTokensIn: null,
@@ -419,6 +419,61 @@ describe('toggleSampleDocument / setDraftModel', () => {
 });
 
 describe('runDraftSchema', () => {
+  test('初回の一覧の案を編集し、AI 由来の経路を保ったまま最初の版を確定する', async () => {
+    const store = makeStore();
+    seedForDraft(store);
+    const { deps, chatMock } = makeDeps();
+    chatMock.mockResolvedValueOnce({
+      text: JSON.stringify({
+        fields: [{ ...DRAFTED_ITEM, entity_level: 'outcome_result' }],
+        outcomes: [{ outcome_id: 'mortality', outcome_label: '全死亡', description: null, typical_timepoints: '30d|90d' }],
+      }),
+      tokensIn: 1, tokensOut: 1, cachedTokensIn: null, raw: {},
+    });
+    await runDraftSchema(store, deps);
+    expect(store.getState().schema.editorOutcomes).toEqual([
+      { outcomeId: 'mortality', outcomeLabel: '全死亡', description: null, typicalTimepoints: '30d|90d',
+        addedVia: 'ai_draft', idLocked: false, idEdited: false, note: null },
+    ]);
+    updateEditorOutcome(store, 0, { outcomeLabel: '死亡' });
+    expect(store.getState().schema.editorOutcomes[0]?.addedVia).toBe('ai_draft');
+    const saved = { schemaVersion: 1, outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '死亡',
+      description: null, typicalTimepoints: '30d|90d', addedVia: 'ai_draft' as const, note: null };
+    saveVersionMock.mockResolvedValue({ version: makeVersion(1), fields: [makeField()], outcomes: [saved] });
+    await confirmSchema(store, deps, '');
+    expect(saveVersionMock).toHaveBeenCalledWith(expect.objectContaining({
+      outcomes: [expect.objectContaining({ outcomeLabel: '死亡', addedVia: 'ai_draft' })], listModeBefore: false,
+    }), expect.anything());
+    expect(store.getState().schema.currentOutcomes).toEqual([saved]);
+    expect(store.getState().schema.allOutcomes).toEqual([saved]);
+  });
+
+  test('再ドラフトは一覧を提案させず、応答に案があっても現行の一覧を引き継ぐ', async () => {
+    const store = makeStore();
+    seedForDraft(store);
+    const current = schemaOutcome();
+    store.setState({ schema: {
+      ...store.getState().schema, versions: [makeVersion(1)], currentFields: [makeField()],
+      currentOutcomes: [current], allOutcomes: [current],
+    } });
+    const { deps, chatMock } = makeDeps();
+    chatMock.mockResolvedValueOnce({
+      text: JSON.stringify({
+        fields: [{ ...DRAFTED_ITEM, entity_level: 'outcome_result' }],
+        outcomes: [{ outcome_id: 'pain', outcome_label: '疼痛', description: null, typical_timepoints: null }],
+      }),
+      tokensIn: 1, tokensOut: 1, cachedTokensIn: null, raw: {},
+    });
+    await runDraftSchema(store, deps);
+    expect(chatMock.mock.calls[0]?.[0][0]?.content).toContain('This is a redraft of an existing schema');
+    applyRedraft(store);
+    expect(store.getState().schema.editorOutcomes).toEqual([
+      { outcomeId: current.outcomeId, outcomeLabel: current.outcomeLabel, description: current.description,
+        typicalTimepoints: current.typicalTimepoints, addedVia: current.addedVia, note: current.note,
+        idLocked: true, idEdited: false },
+    ]);
+  });
+
   test('接続方式とモデルが食い違う場合は LLM を呼ばず案内する', async () => {
     const store = makeStore();
     seedForDraft(store);

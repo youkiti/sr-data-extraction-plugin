@@ -6,13 +6,13 @@
 import { z } from 'zod';
 import type { EntityLevel, FieldDataType } from '../../../domain/schemaField';
 import { STUDY_DATA_FIXED_HEADERS } from '../../../domain/sheetsSchema';
-import type { SchemaEditorRow } from '../types';
+import type { SchemaEditorRow, SchemaOutcomeEditorRow } from '../types';
 
 /** LLMApiLog.purpose（draft_schema）と対応づける skill 識別子 */
 export const DRAFT_SCHEMA_SKILL_NAME = 'draft-schema';
 
 /** プロンプト版数。プロンプト文言・スキーマを変えたら必ずインクリメントする */
-export const DRAFT_SCHEMA_PROMPT_VERSION = 4;
+export const DRAFT_SCHEMA_PROMPT_VERSION = 5;
 
 /** サンプル論文 1 本ぶんのページ別本文（extracted_texts/{id}.txt 由来） */
 export interface DraftSchemaSamplePaper {
@@ -45,13 +45,15 @@ export interface DraftSchemaPromptInput {
  * 版数 4: レビュータイプにかかわらず、プロトコルとサンプル論文の本文から群比較・
  * 群別や結果別の数値データの有無を判断し、どちらもなければ study レベルだけで提案する。
  *
+ * 版数 5: 初回ドラフトに、プロトコルに基づくアウトカムの一覧の案を追加する。
+ *
  * 末尾の "Propose 10-40 fields" は AI が一度に提案する項目数の目安であり、
  * スキーマ全体の項目数上限ではない（issue #80）。ユーザーは表形式エディタで項目を
  * 自由に追加・編集でき、SchemaFields タブ・CSV エクスポートのいずれも項目数を制限しない
  */
 export const DRAFT_SCHEMA_SYSTEM_PROMPT = `
 You are an experienced systematic review methodologist designing a data extraction schema (coding sheet).
-Read the review protocol and the sample articles, then propose the extraction fields and return ONLY a JSON array — no markdown fences, no commentary.
+Read the review protocol and the sample articles, then propose the extraction fields and outcome list and return ONLY a JSON object with "fields" and "outcomes" arrays — no markdown fences, no commentary.
 
 Rules:
 - "field_name": a unique snake_case identifier (lowercase letters, digits, underscores; must start with a letter). It becomes a CSV column name.
@@ -74,6 +76,10 @@ Rules:
   - Scoping or mapping reviews: chart the concepts the protocol lists as "study" level fields, following the study-design and data rule above.
   - Other review types (prevalence, qualitative, ...): choose the closest structure above; prefer "study" level when in doubt.
 - Propose 10-40 fields. Do not include risk-of-bias domains.
+- Whenever proposing outcome_result fields, also propose an outcome list for every review type: one protocol-defined outcome per row for intervention reviews, one index test per row for diagnostic test accuracy reviews, and one prognostic-factor/outcome pair per row for prognosis reviews. Use the corresponding result-instance unit for other review types.
+- Outcome ids name result instances, whereas outcome_result field_name values name columns of values; they are distinct. Each "outcome_id" must follow the same snake_case rule as field_name, be unique within the list, and contain at most 64 characters.
+- Each outcome has "outcome_label" (a short Japanese display name), "description" (a string or null), and "typical_timepoints" (a string or null, e.g. "30d|90d"). Typical timepoints are reference values separated by "|", never fixed constraints.
+- Return an empty outcomes array if the protocol does not determine the list, or if there are no outcome_result fields. For a redraft of an existing schema, do not propose outcomes; return an empty outcomes array and let the application retain the current list.
 `.trim();
 
 /**
@@ -94,12 +100,14 @@ export function buildDraftSchemaUserPrompt(input: DraftSchemaPromptInput): strin
     sections.push(`## Sample article: ${sample.label}\n\n${body}`);
   }
   sections.push(
-    `## Output format\n\nReturn a JSON array. Each element must be:\n` +
+    `## Output format\n\nReturn { "fields": [...], "outcomes": [...] }. Each fields element must be:\n` +
       `{ "section": "<group>", "field_name": "<snake_case>", "field_label": "<日本語の表示名>", ` +
       `"entity_level": "study" | "arm" | "outcome_result", ` +
       `"data_type": "text" | "integer" | "float" | "boolean" | "enum" | "date", ` +
       `"unit": "<unit>" | null, "allowed_values": "<v1|v2|...>" | null, "required": true | false, ` +
-      `"extraction_instruction": "<instruction in English>", "example": "<example>" | null }`,
+      `"extraction_instruction": "<instruction in English>", "example": "<example>" | null }\n` +
+      `Each outcomes element must be: { "outcome_id": "<snake_case>", "outcome_label": "<日本語の表示名>", ` +
+      `"description": "<description>" | null, "typical_timepoints": "<30d|90d>" | null }`,
   );
   return sections.join('\n\n');
 }
@@ -108,7 +116,7 @@ export function buildDraftSchemaUserPrompt(input: DraftSchemaPromptInput): strin
  * 構造化出力（constrained decoding）用の JSON Schema。
  * LLMProvider の ChatOptions.responseSchema に渡す（標準 JSON Schema 方言）
  */
-export const DRAFT_SCHEMA_RESPONSE_SCHEMA: Record<string, unknown> = {
+const draftedFieldsResponseSchema = {
   type: 'array',
   items: {
     type: 'object',
@@ -140,6 +148,29 @@ export const DRAFT_SCHEMA_RESPONSE_SCHEMA: Record<string, unknown> = {
   },
 };
 
+export const DRAFT_SCHEMA_RESPONSE_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    fields: draftedFieldsResponseSchema,
+    outcomes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          outcome_id: { type: 'string' },
+          outcome_label: { type: 'string' },
+          description: { type: ['string', 'null'] },
+          typical_timepoints: { type: ['string', 'null'] },
+        },
+        required: ['outcome_id', 'outcome_label', 'description', 'typical_timepoints'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['fields', 'outcomes'],
+  additionalProperties: false,
+};
+
 /** AI 応答が期待形式でないときの失敗（ドラフト全体の失敗として扱う） */
 export class DraftSchemaFormatError extends Error {
   constructor(message: string) {
@@ -162,6 +193,18 @@ const draftedFieldSchema = z.object({
 });
 
 const draftedArraySchema = z.array(draftedFieldSchema).min(1);
+
+const draftedResponseSchema = z.object({
+  fields: draftedArraySchema,
+  outcomes: z.array(z.unknown()),
+});
+
+const draftedOutcomeSchema = z.object({
+  outcome_id: z.string().regex(/^[a-z][a-z0-9_]*$/).max(64),
+  outcome_label: z.string().trim().min(1),
+  description: z.string().nullable(),
+  typical_timepoints: z.string().nullable(),
+});
 
 /** 構造化出力を要求しても markdown フェンスで包むモデルがあるため防御的に剥がす */
 function stripJsonFence(text: string): string {
@@ -203,16 +246,17 @@ function resolveReservedFieldNameCollisions(rows: SchemaEditorRow[]): SchemaEdit
 /**
  * LLM 応答テキストをパースしてスキーマエディタの行（SchemaEditorRow）へ変換する。
  * fieldId は null（確定時に採番）・aiGenerated は true 固定。
+ * 一覧の形式違反・重複した id の行は捨て、結果の項目が無ければ一覧を空にする。
  * JSON / 形式エラーは DraftSchemaFormatError
  */
-export function parseDraftSchemaResponse(text: string): SchemaEditorRow[] {
+export function parseDraftSchemaResponse(text: string): { rows: SchemaEditorRow[]; outcomes: SchemaOutcomeEditorRow[] } {
   let raw: unknown;
   try {
     raw = JSON.parse(stripJsonFence(text));
   } catch (error) {
     throw new DraftSchemaFormatError(`AI 応答が JSON としてパースできません: ${String(error)}`);
   }
-  const result = draftedArraySchema.safeParse(raw);
+  const result = draftedResponseSchema.safeParse(Array.isArray(raw) ? { fields: raw, outcomes: [] } : raw);
   if (!result.success) {
     throw new DraftSchemaFormatError(
       `AI 応答が表のデザインドラフトの形式に合いません: ${result.error.issues
@@ -220,7 +264,7 @@ export function parseDraftSchemaResponse(text: string): SchemaEditorRow[] {
         .join(' / ')}`,
     );
   }
-  const rows = result.data.map((item) => ({
+  const rows = result.data.fields.map((item) => ({
     fieldId: null,
     section: item.section,
     fieldName: item.field_name,
@@ -239,5 +283,27 @@ export function parseDraftSchemaResponse(text: string): SchemaEditorRow[] {
     exclusiveValues: null,
     freeTextValues: null,
   }));
-  return resolveReservedFieldNameCollisions(rows);
+  const outcomes: SchemaOutcomeEditorRow[] = [];
+  const seen = new Set<string>();
+  if (rows.some((row) => row.entityLevel === 'outcome_result')) {
+    for (const rawOutcome of result.data.outcomes) {
+      const outcome = draftedOutcomeSchema.safeParse(rawOutcome);
+      if (!outcome.success || seen.has(outcome.data.outcome_id)) {
+        continue;
+      }
+      const item = outcome.data;
+      seen.add(item.outcome_id);
+      outcomes.push({
+        outcomeId: item.outcome_id,
+        outcomeLabel: item.outcome_label,
+        description: item.description,
+        typicalTimepoints: item.typical_timepoints,
+        addedVia: 'ai_draft',
+        idLocked: false,
+        idEdited: false,
+        note: null,
+      });
+    }
+  }
+  return { rows: resolveReservedFieldNameCollisions(rows), outcomes };
 }

@@ -13,6 +13,17 @@ const outcome = {
   description: '定義', typicalTimepoints: '30d|90d', addedVia: 'migration' as const, note: '注記',
 };
 
+test('AI ドラフト由来の経路を読み書きする', async () => {
+  jest.mocked(getSheetTitles).mockResolvedValue(['SchemaOutcomes']);
+  const draftedRow = [...row];
+  draftedRow[6] = 'ai_draft';
+  jest.mocked(getSheetValues).mockResolvedValue([header, draftedRow]);
+  const drafted = { ...outcome, addedVia: 'ai_draft' as const };
+  await expect(readAllSchemaOutcomes('s', deps)).resolves.toEqual([drafted]);
+  await appendSchemaOutcomes('s', [drafted], deps);
+  expect(appendRows).toHaveBeenCalledWith('s', 'SchemaOutcomes', [[1, 1, ...draftedRow.slice(2)]], deps);
+});
+
 test('タブの無い旧プロジェクトは空で読む', async () => {
   jest.mocked(getSheetTitles).mockResolvedValue([]);
   await expect(readAllSchemaOutcomes('s', deps)).resolves.toEqual([]);
