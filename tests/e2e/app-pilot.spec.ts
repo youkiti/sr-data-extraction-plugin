@@ -66,6 +66,15 @@ test('パイロットで一覧に追加したアウトカムが別の論文に�
   await page.route('https://sheets.googleapis.com/**', async (route) => {
     const request = route.request();
     const url = decodeURIComponent(request.url());
+    // 版の確定はヘッダの確認を values:batchGet（ranges=<タブ>!1:1）で読む
+    if (url.includes('values:batchGet')) {
+      const ranges = new URL(request.url()).searchParams.getAll('ranges');
+      await route.fulfill({ json: { valueRanges: ranges.map((range) => {
+        const name = range.split('!')[0] as keyof typeof SHEET_HEADERS;
+        return { range, values: [[...SHEET_HEADERS[name]], ...(values[name] ?? [])] };
+      }) } });
+      return;
+    }
     const tab = Object.keys(SHEET_HEADERS).find((name) => url.includes(`/values/${name}`)) as keyof typeof SHEET_HEADERS | undefined;
     if (request.method() === 'POST' && tab !== undefined) {
       values[tab] = [...(values[tab] ?? []), ...(request.postDataJSON() as { values: string[][] }).values];
@@ -90,15 +99,16 @@ test('パイロットで一覧に追加したアウトカムが別の論文に�
   await page.locator('#verify-outcome-label').fill('Sleep quality');
   await expect(page.locator('#verify-outcome-key')).toHaveValue('sleep_quality');
   await page.locator('#verify-outcome-add-button').click();
-  await expect.poll(() => values.SchemaVersions!.length).toBe(2);
+  await expect.poll(() => values.SchemaOutcomes!.some((row) => String(row[0]) === '2' && row[2] === 'sleep_quality')).toBe(true);
   await expect(page.locator('#pilot-verify-loading')).toHaveCount(0);
+  await expect(page.locator('#verify-outcome-error')).toHaveText('');
   await page.locator('#pilot-verify-study').selectOption('study-2');
   await expect(page.locator('#pilot-verify-loading')).toHaveCount(0);
   await page.locator('.verify__tab', { hasText: 'アウトカム' }).click();
   await page.locator('#verify-layout-toggle').click();
   const added = page.locator('.verify__cell[data-cell-key*="sleep_quality"]');
   await expect(added).toContainText('AI 抽出なし');
-  expect(values.SchemaOutcomes!.some((row) => row[0] === '2' && row[2] === 'sleep_quality')).toBe(true);
+  expect(values.SchemaOutcomes!.some((row) => String(row[0]) === '2' && row[2] === 'sleep_quality')).toBe(true);
 });
 
 test.beforeEach(async ({ page }) => {

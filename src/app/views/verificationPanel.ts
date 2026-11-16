@@ -2003,6 +2003,11 @@ export function createVerificationPanel(
       armEditing = false;
       armError = null;
       outcomeError = null;
+      // 一覧モードでは確定で一覧のアウトカムの空セルが現れ、セル 0 件のタブに初めてセルができる。
+      // フォーカス中のセルが今のタブに無ければ、初期のフォーカス先を求め直す
+      if (!currentTabModel().cells.some((cell) => cell.cellKey === focusedCellKey)) {
+        focusedCellKey = computeInitialFocusKey(activeTab);
+      }
       refreshForm();
       options.onArmConfirm?.(trimmed);
     },

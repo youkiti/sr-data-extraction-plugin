@@ -19,8 +19,10 @@ test('一覧モードの検証はスキーマ編集への案内を出し、一�
     outcomeRows: [['1', '1', 'pain', '痛み', '', '', 'schema_editor', '']],
   });
   await initApp(page, '#/verify?study=study-1');
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
   await page.locator('.verify__arm-name').first().fill('介入群');
   await page.locator('#verify-arm-confirm').click();
+  await expect(page.locator('#verify-arm-revise')).toBeVisible();
   await page.locator('.verify__tab', { hasText: 'アウトカム' }).click();
   await expect(page.locator('#verify-outcome-schema-link')).toHaveAttribute('href', '#/schema?outcomes');
   await expect(page.locator('#verify-outcome-add')).toHaveCount(0);
