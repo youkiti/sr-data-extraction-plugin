@@ -97,6 +97,8 @@ describe('createInitialState', () => {
         editorOutcomeErrors: [],
         outcomeRemoval: null,
         outcomeDecisions: null,
+        acknowledgedRemovedOutcomeIds: [],
+        pendingOutcomeRemovals: null,
         versions: null,
         currentFields: null,
         loading: false,

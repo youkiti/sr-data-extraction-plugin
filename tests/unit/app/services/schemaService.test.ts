@@ -1,3 +1,5 @@
+import { importSchemaFile } from '../../../../src/app/services/schemaTransferService';
+import { serializeSchemaExport } from '../../../../src/features/schema/schemaTransfer';
 import { addEditorOutcome, updateEditorOutcome, moveEditorOutcome, restoreEditorOutcome, requestRemoveEditorOutcome, confirmRemoveEditorOutcome, cancelRemoveEditorOutcome, importedOutcomeRows } from '../../../../src/app/services/schemaService';
 import { readAllDecisions } from '../../../../src/features/verification/decisionRepository';
 import type { SchemaOutcome } from '../../../../src/domain/schemaOutcome';
@@ -1943,7 +1945,10 @@ test.each(['close', 'other', 'project', 'reject'] as const)('遅れて返る削�
   restoreEditorOutcome(store, 'pain');
   let resolve!: (value: Decision[]) => void;
   let reject!: (reason: Error) => void;
-  jest.mocked(readAllDecisions).mockReturnValueOnce(new Promise((res, rej) => { resolve = res; reject = rej; }));
+  jest.mocked(readAllDecisions).mockReturnValueOnce(new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  }));
   const pending = requestRemoveEditorOutcome(store, makeDeps().deps, 0);
   if (kind === 'close' || kind === 'reject') {
     cancelEditor(store);
@@ -1997,4 +2002,193 @@ test('ファイルの既存 id を固定し、一覧が無いファイルは現�
   const initial = createInitialState().schema;
   expect(importedOutcomeRows(initial, null)).toEqual([]);
   expect(importedOutcomeRows(initial, schema.editorOutcomes)[0]?.idLocked).toBe(false);
+});
+
+async function importReplacementOutcomes(store: Store): Promise<void> {
+  seedOutcomeEditor(store);
+  cancelEditor(store);
+  const text = serializeSchemaExport([makeField()], {
+    projectName: '別の SR', schemaVersion: 1, exportedAt: '2026-11-16T00:00:00Z',
+    exportedBy: 'a', extractPromptVersion: 14, appVersion: '0.1.0',
+  }, [schemaOutcome({ outcomeId: 'pain', outcomeLabel: '疼痛' })]);
+  await importSchemaFile(store, {
+    name: 'schema.json', size: text.length, text: async () => text,
+    arrayBuffer: async () => new ArrayBuffer(0),
+  });
+  applyRedraft(store);
+  expect(store.getState().schema.editorOutcomes.map((row) => row.outcomeId)).toEqual(['pain']);
+}
+
+function mockOutcomeSave(): void {
+  saveVersionMock.mockResolvedValue({ version: makeVersion(3), fields: [makeField()], outcomes: [schemaOutcome({ schemaVersion: 3, outcomeId: 'pain' })] });
+  jest.mocked(listProtocols).mockResolvedValue([makeProtocol()]);
+}
+
+test('JSON の読み込みで消える判定済みアウトカムは確定前に確認し、承認で改訂理由を保って保存する', async () => {
+  const store = makeStore();
+  await importReplacementOutcomes(store);
+  mockOutcomeSave();
+  jest.mocked(readAllDecisions).mockResolvedValue([outcomeDecision()]);
+  await confirmSchema(store, makeDeps().deps, '一覧を見直す');
+  expect(saveVersionMock).not.toHaveBeenCalled();
+  expect(store.getState().schema.pendingOutcomeRemovals).toEqual({
+    loading: false, error: null,
+    items: [{ outcomeId: 'mortality', outcomeLabel: '最新版', cells: 1, studies: 1 }],
+  });
+  expect(store.getState().schema.editorNoteDefault).toBe('一覧を見直す');
+  await confirmSchema(store, makeDeps().deps, '一覧を見直す', true);
+  expect(saveVersionMock).toHaveBeenCalledWith(expect.objectContaining({ note: '一覧を見直す' }), expect.anything());
+  expect(readAllDecisions).toHaveBeenCalledTimes(1);
+  expect(store.getState().schema).toMatchObject({ acknowledgedRemovedOutcomeIds: [], pendingOutcomeRemovals: null });
+});
+
+test('確定前の削除確認をやめてもエディタの一覧は変えず保存しない', async () => {
+  const store = makeStore();
+  await importReplacementOutcomes(store);
+  jest.mocked(readAllDecisions).mockResolvedValue([outcomeDecision()]);
+  await confirmSchema(store, makeDeps().deps, '');
+  const rows = store.getState().schema.editorOutcomes;
+  cancelRemoveEditorOutcome(store);
+  expect(store.getState().schema.pendingOutcomeRemovals).toBeNull();
+  expect(store.getState().schema.editorOutcomes).toBe(rows);
+  expect(saveVersionMock).not.toHaveBeenCalled();
+});
+
+test('一覧の置き換えで消えるアウトカムの判定がゼロなら確認なしで保存する', async () => {
+  const store = makeStore();
+  await importReplacementOutcomes(store);
+  mockOutcomeSave();
+  await confirmSchema(store, makeDeps().deps, '');
+  expect(saveVersionMock).toHaveBeenCalledTimes(1);
+  expect(store.getState().schema.pendingOutcomeRemovals).toBeNull();
+});
+
+test.each([false, true])('行の外すで確認済みの id は確定前に聞き直さない（判定あり=%s）', async (judged) => {
+  const store = makeStore();
+  seedOutcomeEditor(store);
+  restoreEditorOutcome(store, 'pain');
+  mockOutcomeSave();
+  jest.mocked(readAllDecisions).mockResolvedValue(judged ? [outcomeDecision()] : []);
+  await requestRemoveEditorOutcome(store, makeDeps().deps, 0);
+  if (judged) {
+    confirmRemoveEditorOutcome(store);
+  }
+  expect(store.getState().schema.acknowledgedRemovedOutcomeIds).toContain('mortality');
+  await confirmSchema(store, makeDeps().deps, '');
+  expect(saveVersionMock).toHaveBeenCalledTimes(1);
+  expect(readAllDecisions).toHaveBeenCalledTimes(1);
+});
+
+test('確定前の Decisions 読み込み失敗では保存せず、もう一度確認できる', async () => {
+  const store = makeStore();
+  await importReplacementOutcomes(store);
+  jest.mocked(readAllDecisions).mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce([outcomeDecision()]);
+  await confirmSchema(store, makeDeps().deps, '');
+  expect(store.getState().schema.pendingOutcomeRemovals).toEqual({ loading: false, error: 'offline', items: [] });
+  expect(saveVersionMock).not.toHaveBeenCalled();
+  await confirmSchema(store, makeDeps().deps, '');
+  expect(store.getState().schema.pendingOutcomeRemovals?.items).toHaveLength(1);
+  expect(saveVersionMock).not.toHaveBeenCalled();
+});
+
+test.each(['add', 'edit', 'move', 'restore', 'remove'] as const)('確定前の確認中に一覧を操作すると確認を消す: %s', async (operation) => {
+  const store = makeStore();
+  await importReplacementOutcomes(store);
+  addEditorOutcome(store);
+  updateEditorOutcome(store, 1, { outcomeLabel: '新しいアウトカム' });
+  jest.mocked(readAllDecisions).mockResolvedValue([outcomeDecision()]);
+  await confirmSchema(store, makeDeps().deps, '');
+  expect(store.getState().schema.pendingOutcomeRemovals?.items).toHaveLength(1);
+  switch (operation) {
+    case 'add':
+      addEditorOutcome(store);
+      break;
+    case 'edit':
+      updateEditorOutcome(store, 0, { outcomeLabel: '変更' });
+      break;
+    case 'move':
+      moveEditorOutcome(store, 0, 1);
+      break;
+    case 'restore':
+      restoreEditorOutcome(store, 'mortality');
+      break;
+    case 'remove':
+      await requestRemoveEditorOutcome(store, makeDeps().deps, 1);
+      break;
+  }
+  expect(store.getState().schema.pendingOutcomeRemovals).toBeNull();
+  expect(saveVersionMock).not.toHaveBeenCalled();
+});
+
+test.each(['edit', 'cancel', 'close', 'project', 'failure'] as const)('確定前の読み込み中の操作や遅い応答で保存しない: %s', async (operation) => {
+  const store = makeStore();
+  await importReplacementOutcomes(store);
+  let resolve!: (value: Decision[]) => void;
+  let reject!: (reason: Error) => void;
+  jest.mocked(readAllDecisions).mockReturnValueOnce(new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  }));
+  const task = confirmSchema(store, makeDeps().deps, '');
+  expect(store.getState().schema.pendingOutcomeRemovals?.loading).toBe(true);
+  await confirmSchema(store, makeDeps().deps, '');
+  expect(readAllDecisions).toHaveBeenCalledTimes(1);
+  if (operation === 'edit') {
+    updateEditorOutcome(store, 0, { outcomeLabel: '変更' });
+  } else if (operation === 'close') {
+    cancelEditor(store);
+  } else if (operation === 'project') {
+    store.setState({ currentProject: null });
+  } else {
+    cancelRemoveEditorOutcome(store);
+  }
+  if (operation === 'failure') {
+    reject(new Error('遅い失敗'));
+  } else {
+    resolve([outcomeDecision()]);
+  }
+  await task;
+  expect(saveVersionMock).not.toHaveBeenCalled();
+});
+
+test('前の版の一覧へ戻す場合も現行版から消える判定済みアウトカムを確認する', async () => {
+  const store = makeStore();
+  seedOutcomeEditor(store);
+  cancelEditor(store);
+  store.setState({ schema: {
+    ...store.getState().schema,
+    allOutcomes: [schemaOutcome({ schemaVersion: 2 }), schemaOutcome({ outcomeId: 'pain', outcomeLabel: '疼痛' })],
+  } });
+  getFieldsMock.mockResolvedValue([makeField()]);
+  await startRevertFromVersion(store, makeDeps().deps, 1);
+  applyRedraft(store);
+  jest.mocked(readAllDecisions).mockResolvedValue([outcomeDecision()]);
+  await confirmSchema(store, makeDeps().deps, '旧版へ戻す');
+  expect(store.getState().schema.pendingOutcomeRemovals?.items).toEqual([
+    { outcomeId: 'mortality', outcomeLabel: '最新版', cells: 1, studies: 1 },
+  ]);
+  expect(saveVersionMock).not.toHaveBeenCalled();
+});
+
+test('読み込み済み Decisions を使い、判定ゼロの id だけを自動確認済みにする', async () => {
+  const store = makeStore();
+  await importReplacementOutcomes(store);
+  store.setState({ schema: {
+    ...store.getState().schema,
+    currentOutcomes: [...store.getState().schema.currentOutcomes!, schemaOutcome({ outcomeId: 'sleep', outcomeLabel: '睡眠' })],
+    outcomeDecisions: [outcomeDecision()],
+  } });
+  await confirmSchema(store, makeDeps().deps, '');
+  expect(readAllDecisions).not.toHaveBeenCalled();
+  expect(store.getState().schema.acknowledgedRemovedOutcomeIds).toEqual(['sleep']);
+  expect(store.getState().schema.pendingOutcomeRemovals?.items.map((item) => item.outcomeId)).toEqual(['mortality']);
+});
+
+test('二重の確定操作は保存を一度だけ実行する', async () => {
+  const store = makeStore();
+  seedOutcomeEditor(store);
+  mockOutcomeSave();
+  const { deps } = makeDeps();
+  await Promise.all([confirmSchema(store, deps, ''), confirmSchema(store, deps, '')]);
+  expect(saveVersionMock).toHaveBeenCalledTimes(1);
 });

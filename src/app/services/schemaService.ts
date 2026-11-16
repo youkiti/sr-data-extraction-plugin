@@ -363,6 +363,8 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
         editorOutcomes: [],
         editorOutcomeErrors: [],
         outcomeRemoval: null,
+        acknowledgedRemovedOutcomeIds: [],
+        pendingOutcomeRemovals: null,
         outcomeDecisions: null,
         editorErrors: [],
         editorOrigin: 'ai_draft',
@@ -646,6 +648,8 @@ export function startEditorFromCurrent(store: Store): void {
     editorOutcomes: outcomeEditorRows(store.getState().schema.currentOutcomes ?? []),
     editorOutcomeErrors: [],
     outcomeRemoval: null,
+    acknowledgedRemovedOutcomeIds: [],
+    pendingOutcomeRemovals: null,
     outcomeDecisions: null,
     editorRows: currentFields.map((field) => ({
       fieldId: field.fieldId,
@@ -741,6 +745,8 @@ export function cancelEditor(store: Store): void {
     editorOutcomes: [],
     editorOutcomeErrors: [],
     outcomeRemoval: null,
+    acknowledgedRemovedOutcomeIds: [],
+    pendingOutcomeRemovals: null,
     outcomeDecisions: null,
     editorRows: null,
     editorErrors: [],
@@ -800,6 +806,8 @@ export function applyRedraft(store: Store): void {
       editorOutcomes: outcomeEditorRows(outcomes),
       editorOutcomeErrors: [],
       outcomeRemoval: null,
+      acknowledgedRemovedOutcomeIds: [],
+      pendingOutcomeRemovals: null,
       outcomeDecisions: null,
       editorRows: rows,
       editorErrors: validateEditorRows(rows),
@@ -818,6 +826,8 @@ export function applyRedraft(store: Store): void {
       editorOutcomes: importedOutcomeRows(store.getState().schema, redraft.importedOutcomes ?? null),
       editorOutcomeErrors: [],
       outcomeRemoval: null,
+      acknowledgedRemovedOutcomeIds: [],
+      pendingOutcomeRemovals: null,
       outcomeDecisions: null,
       editorRows: rows,
       editorErrors: validateEditorRows(rows),
@@ -833,6 +843,8 @@ export function applyRedraft(store: Store): void {
     editorOutcomes: outcomeEditorRows(store.getState().schema.currentOutcomes ?? []),
     editorOutcomeErrors: [],
     outcomeRemoval: null,
+    acknowledgedRemovedOutcomeIds: [],
+    pendingOutcomeRemovals: null,
     outcomeDecisions: null,
     editorRows: rows,
     editorErrors: validateEditorRows(rows),
@@ -856,6 +868,7 @@ export async function confirmSchema(
   store: Store,
   deps: SchemaServiceDeps,
   note: string,
+  acknowledgeRemovals = false,
 ): Promise<void> {
   const state = store.getState();
   const project = state.currentProject;
@@ -871,6 +884,22 @@ export async function confirmSchema(
       editorOutcomeErrors: outcomeErrors,
       draftError: rows.length === 0 ? t('schema.errNoRows') : null,
     });
+    return;
+  }
+  if (state.schema.pendingOutcomeRemovals?.loading) {
+    return;
+  }
+  if (acknowledgeRemovals && state.schema.pendingOutcomeRemovals?.error === null) {
+    patchSchema(store, {
+      acknowledgedRemovedOutcomeIds: [...state.schema.acknowledgedRemovedOutcomeIds, ...state.schema.pendingOutcomeRemovals.items.map((item) => item.outcomeId)],
+      pendingOutcomeRemovals: null,
+    });
+  }
+  if (!await checkRemovedOutcomes(store, deps, note)) {
+    return;
+  }
+  const afterCheck = store.getState();
+  if (afterCheck.schema.confirming || afterCheck.schema.editorRows !== rows || afterCheck.schema.editorOutcomes !== state.schema.editorOutcomes || afterCheck.currentProject !== project) {
     return;
   }
   patchSchema(store, { confirming: true });
@@ -928,6 +957,8 @@ export async function confirmSchema(
         editorOutcomes: [],
         editorOutcomeErrors: [],
         outcomeRemoval: null,
+        acknowledgedRemovedOutcomeIds: [],
+        pendingOutcomeRemovals: null,
         outcomeDecisions: null,
         editorRows: null,
         editorErrors: [],
@@ -965,9 +996,49 @@ export function importedOutcomeRows(schema: SchemaState, rows: SchemaOutcomeEdit
   }));
 }
 
+/** 現行版から消えるアウトカムを、確定前にまとめて確認する。 */
+async function checkRemovedOutcomes(store: Store, deps: SchemaServiceDeps, note: string): Promise<boolean> {
+  const state = store.getState();
+  const schema = state.schema;
+  const removed = (schema.currentOutcomes ?? []).filter((row) =>
+    !schema.editorOutcomes.some((edited) => edited.outcomeId === row.outcomeId)
+    && !schema.acknowledgedRemovedOutcomeIds.includes(row.outcomeId),
+  );
+  if (removed.length === 0) {
+    return true;
+  }
+  const pending = { loading: true, error: null, items: [] };
+  patchSchema(store, { pendingOutcomeRemovals: pending, editorNoteDefault: note });
+  try {
+    const decisions = schema.outcomeDecisions ?? await readAllDecisions(state.currentProject!.spreadsheetId, deps.google);
+    const after = store.getState();
+    if (after.schema.pendingOutcomeRemovals !== pending || after.schema.editorRows === null || after.currentProject !== state.currentProject) {
+      return false;
+    }
+    const counted = removed.map((row) => ({
+      outcomeId: row.outcomeId,
+      outcomeLabel: row.outcomeLabel,
+      ...countJudgedCellsForOutcome(decisions, row.outcomeId),
+    }));
+    const items = counted.filter((item) => item.cells > 0);
+    patchSchema(store, {
+      outcomeDecisions: decisions,
+      acknowledgedRemovedOutcomeIds: [...after.schema.acknowledgedRemovedOutcomeIds, ...counted.filter((item) => item.cells === 0).map((item) => item.outcomeId)],
+      pendingOutcomeRemovals: items.length > 0 ? { loading: false, error: null, items } : null,
+    });
+    return items.length === 0;
+  } catch (err) {
+    if (store.getState().schema.pendingOutcomeRemovals === pending) {
+      patchSchema(store, { pendingOutcomeRemovals: { loading: false, error: toMessage(err), items: [] } });
+    }
+    return false;
+  }
+}
+
 function patchEditorOutcomes(store: Store, rows: SchemaOutcomeEditorRow[]): void {
   patchSchema(store, {
     editorOutcomes: rows,
+    pendingOutcomeRemovals: null,
     editorOutcomeErrors: validateOutcomeRows(rows, { listModeBefore: isOutcomeListMode(store.getState().schema.allOutcomes ?? []) }),
     editorOrigin: 'user_edit',
     outcomeRemoval: null,
@@ -1028,7 +1099,7 @@ export function restoreEditorOutcome(store: Store, id: string): void {
 
 /** アウトカムを外す確認を取り消す。 */
 export function cancelRemoveEditorOutcome(store: Store): void {
-  patchSchema(store, { outcomeRemoval: null });
+  patchSchema(store, { outcomeRemoval: null, pendingOutcomeRemovals: null });
 }
 
 /** 判定済みセルの件数を確認したアウトカムを一覧から外す。 */
@@ -1037,6 +1108,8 @@ export function confirmRemoveEditorOutcome(store: Store): void {
   if (schema.editorRows === null || !schema.outcomeRemoval?.counts) {
     return;
   }
+  const outcomeId = schema.editorOutcomes[schema.outcomeRemoval.index]!.outcomeId;
+  patchSchema(store, { acknowledgedRemovedOutcomeIds: [...schema.acknowledgedRemovedOutcomeIds, outcomeId] });
   patchEditorOutcomes(store, schema.editorOutcomes.filter((_, index) => index !== schema.outcomeRemoval!.index));
 }
 
@@ -1052,7 +1125,7 @@ export async function requestRemoveEditorOutcome(store: Store, deps: Pick<Schema
     return;
   }
   const removal = { index, loading: true, error: null, counts: null };
-  patchSchema(store, { outcomeRemoval: removal });
+  patchSchema(store, { outcomeRemoval: removal, pendingOutcomeRemovals: null });
   try {
     const decisions = state.schema.outcomeDecisions ?? await readAllDecisions(state.currentProject.spreadsheetId, deps.google);
     const after = store.getState();
@@ -1062,6 +1135,7 @@ export async function requestRemoveEditorOutcome(store: Store, deps: Pick<Schema
     patchSchema(store, { outcomeDecisions: decisions });
     const counts = countJudgedCellsForOutcome(decisions, row.outcomeId);
     if (counts.cells === 0) {
+      patchSchema(store, { acknowledgedRemovedOutcomeIds: [...after.schema.acknowledgedRemovedOutcomeIds, row.outcomeId] });
       patchEditorOutcomes(store, after.schema.editorOutcomes.filter((_, i) => i !== index));
     } else {
       patchSchema(store, { outcomeRemoval: { index, loading: false, error: null, counts } });

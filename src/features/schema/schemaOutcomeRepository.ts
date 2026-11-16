@@ -9,6 +9,9 @@ const ADDED_VIA: readonly string[] = ['schema_editor', 'pilot_verify', 'pilot_ca
 
 async function validateHeader(spreadsheetId: string, deps: GoogleApiDeps): Promise<string[][]> {
   const values = await getSheetValues(spreadsheetId, TAB, deps);
+  if (!values[0]?.some((cell) => cell.trim() !== '')) {
+    return [];
+  }
   if (SHEET_HEADERS.SchemaOutcomes.some((name, index) => values[0]?.[index] !== name)) {
     throw new Error('SchemaOutcomes: ヘッダーが一致しません');
   }
@@ -51,7 +54,10 @@ export async function appendSchemaOutcomes(spreadsheetId: string, outcomes: read
     await addSheetTab(spreadsheetId, TAB, deps);
     await writeHeaderRow(spreadsheetId, TAB, SHEET_HEADERS.SchemaOutcomes, deps);
   } else {
-    await validateHeader(spreadsheetId, deps);
+    const values = await validateHeader(spreadsheetId, deps);
+    if (values.length === 0) {
+      await writeHeaderRow(spreadsheetId, TAB, SHEET_HEADERS.SchemaOutcomes, deps);
+    }
   }
   await appendRows(spreadsheetId, TAB, outcomes.map((row) => [
     row.schemaVersion, row.outcomeIndex, row.outcomeId, row.outcomeLabel,

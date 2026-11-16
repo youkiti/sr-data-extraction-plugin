@@ -21,11 +21,9 @@ test('タブの無い旧プロジェクトは空で読む', async () => {
 
 test('ヘッダーを検証し、壊れた行を捨て、未知の追加経路を既定値で読む', async () => {
   jest.mocked(getSheetTitles).mockResolvedValue(['SchemaOutcomes']);
-  for (const values of [[], [['wrong']]]) {
-    jest.mocked(getSheetValues).mockResolvedValue(values);
-    await expect(readAllSchemaOutcomes('s', deps)).rejects.toThrow('ヘッダー');
-    await expect(appendSchemaOutcomes('s', [outcome], deps)).rejects.toThrow('ヘッダー');
-  }
+  jest.mocked(getSheetValues).mockResolvedValue([['wrong']]);
+  await expect(readAllSchemaOutcomes('s', deps)).rejects.toThrow('ヘッダー');
+  await expect(appendSchemaOutcomes('s', [outcome], deps)).rejects.toThrow('ヘッダー');
   jest.mocked(getSheetValues).mockResolvedValue([
     [...header, 'future_column'], row, ['2', '1', 'pain', '疼痛', '', '', 'future'],
     ['bad', '1', 'x'], ['', '1', 'x'], ['1', '1', ''], [], ['1', '2', 'sparse'],
@@ -51,4 +49,15 @@ test('空なら I/O せず、初回はタブとヘッダーを作り、以降は
   await appendSchemaOutcomes('s', [{ ...outcome, description: null, typicalTimepoints: null, note: null }], deps);
   expect(addSheetTab).not.toHaveBeenCalled();
   expect(appendRows).toHaveBeenLastCalledWith('s', 'SchemaOutcomes', [[1, 1, 'mortality', '全死亡', '', '', 'migration', '']], deps);
+});
+
+test.each<{ values: string[][] }>([{ values: [] }, { values: [[]] }, { values: [['', '  ']] }])('空のタブは空一覧として読み、ヘッダーを復旧してから追記する: %j', async ({ values }) => {
+  jest.mocked(getSheetTitles).mockResolvedValue(['SchemaOutcomes']);
+  jest.mocked(getSheetValues).mockResolvedValue(values);
+  await expect(readAllSchemaOutcomes('s', deps)).resolves.toEqual([]);
+  await appendSchemaOutcomes('s', [outcome], deps);
+  expect(addSheetTab).not.toHaveBeenCalled();
+  expect(writeHeaderRow).toHaveBeenCalledWith('s', 'SchemaOutcomes', header, deps);
+  expect(appendRows).toHaveBeenCalledWith('s', 'SchemaOutcomes', [[1, 1, ...row.slice(2)]], deps);
+  expect(jest.mocked(writeHeaderRow).mock.invocationCallOrder[0]).toBeLessThan(jest.mocked(appendRows).mock.invocationCallOrder[0]!);
 });

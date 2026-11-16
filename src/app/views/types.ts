@@ -172,7 +172,7 @@ export interface SchemaViewCallbacks {
   /** 同ダイアログ: キャンセル（挿入せず閉じる） */
   onCancelPresetDialog(): void;
   /** 「版として確定」（note = 改訂理由） */
-  onConfirm(note: string): void;
+  onConfirm(note: string, acknowledgeRemovals?: boolean): void;
   onCancelEditor(): void;
   /** 確定済み画面の「新しい版を作る」 */
   onStartNewVersion(): void;

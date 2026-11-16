@@ -317,6 +317,12 @@ export interface SchemaState {
   editorOutcomes: SchemaOutcomeEditorRow[];
   editorOutcomeErrors: OutcomeValidationError[];
   outcomeRemoval: { index: number; loading: boolean; error: string | null; counts: { cells: number; studies: number } | null } | null;
+  acknowledgedRemovedOutcomeIds: string[];
+  pendingOutcomeRemovals: {
+    loading: boolean;
+    error: string | null;
+    items: { outcomeId: string; outcomeLabel: string; cells: number; studies: number }[];
+  } | null;
   outcomeDecisions: Decision[] | null;
   /** 自由記述から選択肢への変換案（未反映の下書き）。 */
   enumSuggestion?: EnumSuggestion | null;
@@ -955,6 +961,8 @@ export function createInitialState(): AppState {
       editorOutcomes: [],
       editorOutcomeErrors: [],
       outcomeRemoval: null,
+      acknowledgedRemovedOutcomeIds: [],
+      pendingOutcomeRemovals: null,
       outcomeDecisions: null,
       versions: null,
       currentFields: null,

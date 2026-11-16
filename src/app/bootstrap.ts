@@ -747,8 +747,8 @@ export async function bootstrapApp(
       onCancelPresetDialog: () => {
         cancelRobPrespecDialog(store);
       },
-      onConfirm: (note) => {
-        void confirmSchema(store, deps, note);
+      onConfirm: (note, acknowledgeRemovals) => {
+        void confirmSchema(store, deps, note, acknowledgeRemovals);
       },
       onCancelEditor: () => {
         cancelEditor(store);

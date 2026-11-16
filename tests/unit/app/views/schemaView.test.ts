@@ -1,5 +1,6 @@
 // #/schema view の描画テスト（ui-states.md §3 の各状態）。
 // render は純粋関数のため、状態を組み立てて DOM を検証する
+import { captureFocusState, restoreFocusState } from '../../../../src/app/ui/preserveFocus';
 import { focusSchemaField, focusSchemaOutcomes, renderSchemaView } from '../../../../src/app/views/schemaView';
 import { DTA_ARM_FIELD_REPLACEMENTS } from '../../../../src/features/schema/dtaArmFieldCheck';
 import { updateEditorRow } from '../../../../src/app/services/schemaService';
@@ -2365,4 +2366,60 @@ test('一覧へのスクロールは編集中の欄を優先する', () => {
   expect(editor.scrollIntoView).toHaveBeenCalled();
   document.body.innerHTML = '';
   focusSchemaOutcomes(document);
+});
+
+test.each(['ja', 'en'] as const)('アウトカムの全入力欄は行ごとに一意で、再描画しても二行目の入力値を保つ: %s', (language) => {
+  setUiLanguage(language);
+  const { ctx } = makeCtx();
+  const state = makeState({
+    versions: [makeVersion(1)], editorRows: [makeEditorRow()],
+    editorOutcomes: [viewOutcomeRow, { ...viewOutcomeRow, outcomeId: 'pain', outcomeLabel: '疼痛' }],
+  });
+  document.body.replaceChildren(renderSchemaView(state, ctx));
+  const inputs = document.querySelectorAll<HTMLInputElement>('#schema-outcomes input');
+  expect(inputs).toHaveLength(8);
+  expect(new Set(Array.from(inputs, (input) => input.getAttribute('aria-label'))).size).toBe(8);
+  const second = document.querySelectorAll<HTMLInputElement>('.schema__outcome-label')[1]!;
+  second.focus();
+  second.value = '入力途中の疼痛';
+  second.setSelectionRange(2, 4);
+  const snapshot = captureFocusState(document);
+  document.body.replaceChildren(renderSchemaView(state, ctx));
+  restoreFocusState(document, snapshot);
+  const labels = document.querySelectorAll<HTMLInputElement>('.schema__outcome-label');
+  expect(labels[0]!.value).toBe('全死亡');
+  expect(labels[1]!.value).toBe('入力途中の疼痛');
+  expect(document.activeElement).toBe(labels[1]);
+  expect(labels[1]!.selectionStart).toBe(2);
+  document.body.replaceChildren();
+  setUiLanguage('ja');
+});
+
+test.each(['loading', 'error', 'ready'] as const)('確定前の削除確認は件数・再試行・取消を表示し、改訂理由を渡す: %s', (mode) => {
+  const { ctx, callbacks } = makeCtx();
+  const root = renderSchemaView(makeState({
+    versions: [makeVersion(1)], editorRows: [makeEditorRow()], editorOutcomes: [viewOutcomeRow],
+    editorNoteDefault: '一覧を見直す',
+    pendingOutcomeRemovals: {
+      loading: mode === 'loading', error: mode === 'error' ? 'offline' : null,
+      items: [{ outcomeId: 'mortality', outcomeLabel: '全死亡', cells: 3, studies: 2 }],
+    },
+  }), ctx);
+  const alert = root.querySelector('#schema-outcome-removals-confirm')!;
+  expect(alert.getAttribute('role')).toBe('alert');
+  expect(root.querySelector<HTMLButtonElement>('#schema-confirm')!.disabled).toBe(true);
+  const buttons = alert.querySelectorAll<HTMLButtonElement>('button');
+  if (mode === 'loading') {
+    expect(alert.textContent).toContain('判定済みのセルを確認しています');
+  } else if (mode === 'error') {
+    expect(alert.textContent).toContain('offline');
+    buttons[0]!.click();
+    expect(callbacks.onConfirm).toHaveBeenCalledWith('一覧を見直す');
+  } else {
+    expect(alert.querySelector('li')!.textContent).toBe('全死亡（mortality）: 判定済みのセルが 3 個（2 本の論文）');
+    buttons[0]!.click();
+    expect(callbacks.onConfirm).toHaveBeenCalledWith('一覧を見直す', true);
+  }
+  buttons[buttons.length - 1]!.click();
+  expect(callbacks.onCancelRemoveOutcome).toHaveBeenCalled();
 });

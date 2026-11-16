@@ -1481,7 +1481,7 @@ function renderEditor(
     text: schema.confirming ? t('schema.confirming') : t('schema.confirm'),
     attributes: { type: 'button', 'data-tour': 'schema-confirm' },
   });
-  confirmButton.disabled = schema.confirming || schema.editorErrors.length > 0 || schema.editorOutcomeErrors.length > 0 || schema.outcomeRemoval !== null;
+  confirmButton.disabled = schema.confirming || schema.editorErrors.length > 0 || schema.editorOutcomeErrors.length > 0 || schema.outcomeRemoval !== null || schema.pendingOutcomeRemovals !== null;
   confirmButton.addEventListener('click', () => ctx.schema.onConfirm(noteInput.value));
   const cancelButton = el('button', {
     id: 'schema-editor-cancel',
@@ -1547,6 +1547,26 @@ function renderEditor(
     }),
     el('div', { className: 'schema__actions' }, [noteInput, confirmButton, cancelButton]),
   );
+  const pending = schema.pendingOutcomeRemovals;
+  if (pending !== null) {
+    const details: HTMLElement[] = [];
+    if (pending.loading) {
+      details.push(el('p', { text: t('schema.outcomeLoading') }));
+    } else if (pending.error !== null) {
+      details.push(
+        el('p', { className: 'schema__error', text: pending.error }),
+        outcomeButton(t('schema.outcomeRetry'), () => ctx.schema.onConfirm(noteInput.value)),
+      );
+    } else {
+      details.push(
+        el('p', { text: t('schema.outcomeRemovalsLead') }),
+        el('ul', {}, pending.items.map((item) => el('li', { text: t('schema.outcomeRemovalItem', item) }))),
+        outcomeButton(t('schema.outcomeRemovalsConfirm'), () => ctx.schema.onConfirm(noteInput.value, true)),
+      );
+    }
+    details.push(outcomeButton(t('common.cancel'), () => ctx.schema.onCancelRemoveOutcome()));
+    children.push(el('div', { id: 'schema-outcome-removals-confirm', attributes: { role: 'alert' } }, details));
+  }
   return el('div', { id: 'schema-editor', className: 'schema__editor' }, children);
 }
 
@@ -2015,7 +2035,7 @@ function renderOutcomeEditor(schema: SchemaState, ctx: ViewContext): HTMLElement
     const cells: HTMLElement[] = columns.map(([key, classSuffix, label]) => {
       const input = el('input', {
         className: `schema__outcome-${classSuffix}`,
-        attributes: { type: 'text', 'aria-label': t(label) },
+        attributes: { type: 'text', 'aria-label': t('schema.outcomeCellAria', { label: t(label), row: index + 1 }) },
       });
       input.value = row[key] ?? '';
       input.readOnly = key === 'outcomeId' && row.idLocked;

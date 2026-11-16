@@ -184,6 +184,8 @@ export async function importSchemaFile(
           editorOutcomes: importedOutcomeRows(after.schema, outcomes),
           editorOutcomeErrors: [],
           outcomeRemoval: null,
+          acknowledgedRemovedOutcomeIds: [],
+          pendingOutcomeRemovals: null,
           outcomeDecisions: null,
           editorErrors: validateEditorRows(rows),
           editorOrigin: 'user_edit',
