@@ -1,6 +1,18 @@
 // S5 スキーマエディタの行型。SchemaFields タブの 1 行に対応するが、
 // schema_version / field_index は「版として確定」時に採番するためここでは持たない
 import type { EntityLevel, FieldDataType } from '../../domain/schemaField';
+import type { OutcomeAddedVia } from '../../domain/schemaOutcome';
+
+export interface SchemaOutcomeEditorRow {
+  outcomeId: string;
+  outcomeLabel: string;
+  description: string | null;
+  typicalTimepoints: string | null;
+  addedVia: OutcomeAddedVia;
+  note: string | null;
+  idLocked: boolean;
+  idEdited: boolean;
+}
 
 export interface SchemaEditorRow {
   /** 既存版から引き継いだ項目は同じ ID を維持（改名追跡。requirements.md §3.2）。新規行は null → 確定時に採番 */

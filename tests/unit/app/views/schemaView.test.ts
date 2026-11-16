@@ -1,6 +1,7 @@
 // #/schema view の描画テスト（ui-states.md §3 の各状態）。
 // render は純粋関数のため、状態を組み立てて DOM を検証する
-import { focusSchemaField, renderSchemaView } from '../../../../src/app/views/schemaView';
+import { captureFocusState, restoreFocusState } from '../../../../src/app/ui/preserveFocus';
+import { focusSchemaField, focusSchemaOutcomes, renderSchemaView } from '../../../../src/app/views/schemaView';
 import { DTA_ARM_FIELD_REPLACEMENTS } from '../../../../src/features/schema/dtaArmFieldCheck';
 import { updateEditorRow } from '../../../../src/app/services/schemaService';
 import { createStore } from '../../../../src/app/store';
@@ -158,6 +159,13 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
     onUpdateEnumSuggestion: jest.fn(),
     onApplyEnumSuggestion: jest.fn(),
     onCancelEnumSuggestion: jest.fn(),
+    onAddOutcome: jest.fn(),
+    onEditOutcome: jest.fn(),
+    onMoveOutcome: jest.fn(),
+    onRestoreOutcome: jest.fn(),
+    onRemoveOutcome: jest.fn(),
+    onConfirmRemoveOutcome: jest.fn(),
+    onCancelRemoveOutcome: jest.fn(),
     onAddRow: jest.fn(),
     onRemoveRow: jest.fn(),
     onMoveRow: jest.fn(),
@@ -2233,4 +2241,185 @@ test.each(['ja', 'en'] as const)('必須と削除の説明を %s で表示する
   } finally {
     setUiLanguage('ja');
   }
+});
+
+const viewOutcome = {
+  schemaVersion: 1, outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
+  description: '定義', typicalTimepoints: '30d|90d', addedVia: 'schema_editor' as const, note: null,
+};
+const viewOutcomeRow = {
+  outcomeId: 'mortality', outcomeLabel: '全死亡', description: null, typicalTimepoints: null,
+  addedVia: 'schema_editor' as const, note: null, idLocked: true, idEdited: false,
+};
+
+test('アウトカムの編集欄は対象項目か一覧があるときだけ出し、各操作を配線する', () => {
+  const { ctx, callbacks } = makeCtx();
+  expect(renderSchemaView(makeState({ versions: [], editorRows: [makeEditorRow()] }), ctx).querySelector('#schema-outcomes')).toBeNull();
+  const state = makeState({
+    versions: [makeVersion(1)], editorRows: [makeEditorRow()], allOutcomes: [viewOutcome, { ...viewOutcome, outcomeId: 'pain' }],
+    editorOutcomes: [viewOutcomeRow, { ...viewOutcomeRow, outcomeId: 'pain', outcomeLabel: '疼痛', idLocked: false }],
+    editorOutcomeErrors: [{ index: 1, message: '行のエラー' }, { index: -1, message: '一覧のエラー' }],
+  });
+  const root = renderSchemaView(state, ctx);
+  expect(root.querySelector('[data-help="schema-outcomes"]')).not.toBeNull();
+  const ids = root.querySelectorAll<HTMLInputElement>('.schema__outcome-id');
+  expect(ids[0]?.readOnly).toBe(true);
+  expect(ids[1]?.readOnly).toBe(false);
+  for (const [selector, key] of [
+    ['.schema__outcome-label', 'outcomeLabel'], ['.schema__outcome-id', 'outcomeId'],
+    ['.schema__outcome-description', 'description'], ['.schema__outcome-timepoints', 'typicalTimepoints'],
+  ]) {
+    const input = root.querySelector<HTMLInputElement>(selector!)!;
+    input.value = 'edited';
+    input.dispatchEvent(new Event('change'));
+    expect(callbacks.onEditOutcome).toHaveBeenCalledWith(0, { [key!]: 'edited' });
+  }
+  const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>('#schema-outcomes button'));
+  buttons.find((button) => button.textContent === '下へ')!.click();
+  expect(callbacks.onMoveOutcome).toHaveBeenCalledWith(0, 1);
+  buttons.filter((button) => button.textContent === '上へ')[1]!.click();
+  expect(callbacks.onMoveOutcome).toHaveBeenCalledWith(1, 0);
+  root.querySelector<HTMLButtonElement>('.schema__outcome-remove')!.click();
+  expect(callbacks.onRemoveOutcome).toHaveBeenCalledWith(0);
+  root.querySelector<HTMLButtonElement>('#schema-outcome-add')!.click();
+  expect(callbacks.onAddOutcome).toHaveBeenCalled();
+  expect(root.textContent).toContain('以前の版で外した id');
+  expect(root.textContent).toContain('行のエラー');
+  expect(root.textContent).toContain('一覧のエラー');
+  expect(root.querySelector<HTMLButtonElement>('#schema-confirm')?.disabled).toBe(true);
+});
+
+test('全版の一覧が null の編集欄では過去の id の案内と復元候補を出さない', () => {
+  const { ctx } = makeCtx();
+  const root = renderSchemaView(makeState({
+    versions: [makeVersion(1)], editorRows: [makeEditorRow()], allOutcomes: null,
+    editorOutcomes: [{ ...viewOutcomeRow, idLocked: false }],
+  }), ctx);
+  expect(root.querySelector('.schema__outcome-id')).not.toBeNull();
+  expect(root.textContent).not.toContain('以前の版で外した id');
+  expect(root.querySelector('#schema-outcome-restore')).toBeNull();
+});
+
+test('復元候補は最終版を表示し、選択した id を渡す', () => {
+  const { ctx, callbacks } = makeCtx();
+  const root = renderSchemaView(makeState({
+    versions: [makeVersion(1)], editorRows: [makeEditorRow({ entityLevel: 'outcome_result' })],
+    allOutcomes: [viewOutcome], editorOutcomes: [],
+  }), ctx);
+  const select = root.querySelector<HTMLSelectElement>('#schema-outcome-restore')!;
+  expect(select.textContent).toContain('mortality — 全死亡 (v1)');
+  Array.from(root.querySelectorAll<HTMLButtonElement>('#schema-outcomes button')).find((button) => button.textContent === '戻す')!.click();
+  expect(callbacks.onRestoreOutcome).toHaveBeenCalledWith('mortality');
+});
+
+test.each(['loading', 'error', 'counts', 'empty'] as const)('外す確認の各状態を表示する: %s', (mode) => {
+  const { ctx, callbacks } = makeCtx();
+  const removal = { index: 0, loading: mode === 'loading', error: mode === 'error' ? 'offline' : null, counts: mode === 'counts' ? { cells: 4, studies: 2 } : null };
+  const root = renderSchemaView(makeState({
+    versions: [makeVersion(1)], editorRows: [makeEditorRow()], editorOutcomes: [viewOutcomeRow], outcomeRemoval: removal,
+  }), ctx);
+  const alert = root.querySelector<HTMLElement>('.schema__outcome-remove-confirm')!;
+  expect(alert.getAttribute('role')).toBe('alert');
+  const buttons = Array.from(alert.querySelectorAll<HTMLButtonElement>('button'));
+  if (mode === 'loading') {
+    expect(root.querySelector<HTMLButtonElement>('.schema__outcome-remove')?.disabled).toBe(true);
+    expect(alert.textContent).toContain('確認しています');
+  } else if (mode === 'error') {
+    expect(alert.textContent).toContain('offline');
+    buttons.find((button) => button.textContent === 'もう一度')!.click();
+    expect(callbacks.onRemoveOutcome).toHaveBeenCalledWith(0);
+  } else if (mode === 'counts') {
+    expect(alert.textContent).toContain('4 個（2 本の論文）');
+    buttons.find((button) => button.textContent === '外す')!.click();
+    expect(callbacks.onConfirmRemoveOutcome).toHaveBeenCalled();
+  }
+  buttons.find((button) => button.textContent === t('common.cancel'))!.click();
+  expect(callbacks.onCancelRemoveOutcome).toHaveBeenCalled();
+});
+
+test('確定済みサマリは一覧・未作成の文言・欠けた版の警告を表示する', () => {
+  const { ctx } = makeCtx();
+  const fields = [makeField({ entityLevel: 'outcome_result' })];
+  const empty = renderSchemaView(makeState({ versions: [makeVersion(2)], currentFields: fields }), ctx);
+  expect(empty.querySelector('#schema-outcomes-summary')?.textContent).toContain('アウトカムの一覧はまだありません');
+  expect(empty.querySelector('#schema-outcomes-missing')).toBeNull();
+  for (const source of [1, 2]) {
+    const root = renderSchemaView(makeState({ versions: [makeVersion(2)], currentFields: fields, currentOutcomes: [viewOutcome], currentOutcomesSourceVersion: source }), ctx);
+    expect(root.querySelector('#schema-outcomes-summary')?.textContent).toContain('全死亡');
+    expect(root.querySelector('#schema-outcomes-missing') !== null).toBe(source === 1);
+  }
+  const nulls = renderSchemaView(makeState({ versions: [makeVersion(2)], currentFields: [], currentOutcomes: [{ ...viewOutcome, description: null, typicalTimepoints: null }], currentOutcomesSourceVersion: 2 }), ctx);
+  expect(nulls.querySelector('#schema-outcomes-summary')).not.toBeNull();
+});
+
+test('一覧へのスクロールは編集中の欄を優先する', () => {
+  document.body.innerHTML = '<section id="schema-outcomes-summary"></section>';
+  const summary = document.getElementById('schema-outcomes-summary')!;
+  summary.scrollIntoView = jest.fn();
+  focusSchemaOutcomes(document);
+  expect(summary.scrollIntoView).toHaveBeenCalled();
+  const editor = document.createElement('section');
+  editor.id = 'schema-outcomes';
+  editor.scrollIntoView = jest.fn();
+  document.body.append(editor);
+  focusSchemaOutcomes(document);
+  expect(editor.scrollIntoView).toHaveBeenCalled();
+  document.body.innerHTML = '';
+  focusSchemaOutcomes(document);
+});
+
+test.each(['ja', 'en'] as const)('アウトカムの全入力欄は行ごとに一意で、再描画しても二行目の入力値を保つ: %s', (language) => {
+  setUiLanguage(language);
+  const { ctx } = makeCtx();
+  const state = makeState({
+    versions: [makeVersion(1)], editorRows: [makeEditorRow()],
+    editorOutcomes: [viewOutcomeRow, { ...viewOutcomeRow, outcomeId: 'pain', outcomeLabel: '疼痛' }],
+  });
+  document.body.replaceChildren(renderSchemaView(state, ctx));
+  const inputs = document.querySelectorAll<HTMLInputElement>('#schema-outcomes input');
+  expect(inputs).toHaveLength(8);
+  expect(new Set(Array.from(inputs, (input) => input.getAttribute('aria-label'))).size).toBe(8);
+  const second = document.querySelectorAll<HTMLInputElement>('.schema__outcome-label')[1]!;
+  second.focus();
+  second.value = '入力途中の疼痛';
+  second.setSelectionRange(2, 4);
+  const snapshot = captureFocusState(document);
+  document.body.replaceChildren(renderSchemaView(state, ctx));
+  restoreFocusState(document, snapshot);
+  const labels = document.querySelectorAll<HTMLInputElement>('.schema__outcome-label');
+  expect(labels[0]!.value).toBe('全死亡');
+  expect(labels[1]!.value).toBe('入力途中の疼痛');
+  expect(document.activeElement).toBe(labels[1]);
+  expect(labels[1]!.selectionStart).toBe(2);
+  document.body.replaceChildren();
+  setUiLanguage('ja');
+});
+
+test.each(['loading', 'error', 'ready'] as const)('確定前の削除確認は件数・再試行・取消を表示し、改訂理由を渡す: %s', (mode) => {
+  const { ctx, callbacks } = makeCtx();
+  const root = renderSchemaView(makeState({
+    versions: [makeVersion(1)], editorRows: [makeEditorRow()], editorOutcomes: [viewOutcomeRow],
+    editorNoteDefault: '一覧を見直す',
+    pendingOutcomeRemovals: {
+      loading: mode === 'loading', error: mode === 'error' ? 'offline' : null,
+      items: [{ outcomeId: 'mortality', outcomeLabel: '全死亡', cells: 3, studies: 2 }],
+    },
+  }), ctx);
+  const alert = root.querySelector('#schema-outcome-removals-confirm')!;
+  expect(alert.getAttribute('role')).toBe('alert');
+  expect(root.querySelector<HTMLButtonElement>('#schema-confirm')!.disabled).toBe(true);
+  const buttons = alert.querySelectorAll<HTMLButtonElement>('button');
+  if (mode === 'loading') {
+    expect(alert.textContent).toContain('判定済みのセルを確認しています');
+  } else if (mode === 'error') {
+    expect(alert.textContent).toContain('offline');
+    buttons[0]!.click();
+    expect(callbacks.onConfirm).toHaveBeenCalledWith('一覧を見直す');
+  } else {
+    expect(alert.querySelector('li')!.textContent).toBe('全死亡（mortality）: 判定済みのセルが 3 個（2 本の論文）');
+    buttons[0]!.click();
+    expect(callbacks.onConfirm).toHaveBeenCalledWith('一覧を見直す', true);
+  }
+  buttons[buttons.length - 1]!.click();
+  expect(callbacks.onCancelRemoveOutcome).toHaveBeenCalled();
 });

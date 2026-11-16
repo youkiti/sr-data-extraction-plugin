@@ -1,4 +1,4 @@
-// Google Sheets の 19 タブ定義。
+// Google Sheets の 20 タブ定義。
 // 実 I/O は lib/google/sheets.ts 側で行う。
 // Meta / Protocol / LLMApiLog は sr-query-builder のスキーマを流用（ProtocolBlocks は持たない）。
 // v0.10 で study / document を分離: Studies を新設し、データ行のキーを document_id → study_id へ改名。
@@ -17,6 +17,7 @@ export const SHEET_TABS = [
   'Documents',
   'SchemaVersions',
   'SchemaFields',
+  'SchemaOutcomes',
   'ExtractionRuns',
   'StudyData',
   'ResultsData',
@@ -55,6 +56,7 @@ export const META_BUDGET_COLUMNS = ['budget_usd', 'budget_updated_by', 'budget_u
  * StudyData は固定列のみ（値列は buildStudyDataHeader で動的生成）。
  */
 export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
+  SchemaOutcomes: ['schema_version', 'outcome_index', 'outcome_id', 'outcome_label', 'description', 'typical_timepoints', 'added_via', 'note'],
   AcceptanceCriteria: [
     // 保存済みの版を読むため保存名は維持する。表示名は偽陽性 / 偽陰性 / 誤分類。
     'version', 'confirmed_at', 'confirmed_by', 'comparator', 'entity_levels', 'min_accuracy',

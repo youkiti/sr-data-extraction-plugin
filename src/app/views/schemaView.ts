@@ -31,6 +31,7 @@ import type {
   Rob2DeviationType,
   RobinsIEffect,
 } from '../../features/schema/presets/robTemplates';
+import { restorableOutcomes } from '../../features/schema/schemaOutcomes';
 import { isCsvImportSource } from '../../features/schema/schemaTransfer';
 import type { SchemaEditorRow } from '../../features/schema/types';
 import type { FieldValidationError } from '../../features/schema/validateField';
@@ -1480,7 +1481,7 @@ function renderEditor(
     text: schema.confirming ? t('schema.confirming') : t('schema.confirm'),
     attributes: { type: 'button', 'data-tour': 'schema-confirm' },
   });
-  confirmButton.disabled = schema.confirming || schema.editorErrors.length > 0;
+  confirmButton.disabled = schema.confirming || schema.editorErrors.length > 0 || schema.editorOutcomeErrors.length > 0 || schema.outcomeRemoval !== null || schema.pendingOutcomeRemovals !== null;
   confirmButton.addEventListener('click', () => ctx.schema.onConfirm(noteInput.value));
   const cancelButton = el('button', {
     id: 'schema-editor-cancel',
@@ -1529,6 +1530,9 @@ function renderEditor(
       attributes: { 'data-preserve-scroll': 'schema-editor' },
     }, [table]),
   );
+  if (rows.some((row) => row.entityLevel === 'outcome_result') || schema.editorOutcomes.length > 0 || schema.editorOutcomeErrors.length > 0) {
+    children.push(renderOutcomeEditor(schema, ctx));
+  }
   if (errorItems.length > 0) {
     children.push(
       el('ul', { id: 'schema-editor-errors', className: 'schema__editor-errors' }, errorItems),
@@ -1543,6 +1547,26 @@ function renderEditor(
     }),
     el('div', { className: 'schema__actions' }, [noteInput, confirmButton, cancelButton]),
   );
+  const pending = schema.pendingOutcomeRemovals;
+  if (pending !== null) {
+    const details: HTMLElement[] = [];
+    if (pending.loading) {
+      details.push(el('p', { text: t('schema.outcomeLoading') }));
+    } else if (pending.error !== null) {
+      details.push(
+        el('p', { className: 'schema__error', text: pending.error }),
+        outcomeButton(t('schema.outcomeRetry'), () => ctx.schema.onConfirm(noteInput.value)),
+      );
+    } else {
+      details.push(
+        el('p', { text: t('schema.outcomeRemovalsLead') }),
+        el('ul', {}, pending.items.map((item) => el('li', { text: t('schema.outcomeRemovalItem', item) }))),
+        outcomeButton(t('schema.outcomeRemovalsConfirm'), () => ctx.schema.onConfirm(noteInput.value, true)),
+      );
+    }
+    details.push(outcomeButton(t('common.cancel'), () => ctx.schema.onCancelRemoveOutcome()));
+    children.push(el('div', { id: 'schema-outcome-removals-confirm', attributes: { role: 'alert' } }, details));
+  }
   return el('div', { id: 'schema-editor', className: 'schema__editor' }, children);
 }
 
@@ -1624,6 +1648,9 @@ function renderConfirmed(
     ]),
   );
 
+  if ((schema.currentOutcomes?.length ?? 0) > 0 || fields.some((field) => field.entityLevel === 'outcome_result')) {
+    children.push(renderOutcomeSummary(schema, latest.schemaVersion));
+  }
   const newVersionButton = el('button', {
     id: 'schema-new-version',
     className: 'schema__primary',
@@ -1974,4 +2001,120 @@ export function renderSchemaView(state: AppState, ctx: ViewContext): HTMLElement
     children.push(renderBody(state, ctx));
   }
   return el('section', { className: 'view view--schema' }, children);
+}
+
+/** 一覧へのリンクではエディタを開かず、現在表示中の欄へ移動する。 */
+export function focusSchemaOutcomes(doc: Document): void {
+  const target = doc.getElementById('schema-outcomes') ?? doc.getElementById('schema-outcomes-summary');
+  target?.scrollIntoView?.({ block: 'start' });
+}
+
+function outcomeButton(text: string, action: () => void, disabled = false): HTMLButtonElement {
+  const button = el('button', { text, attributes: { type: 'button' } });
+  button.disabled = disabled;
+  button.addEventListener('click', action);
+  return button;
+}
+
+function renderOutcomeEditor(schema: SchemaState, ctx: ViewContext): HTMLElement {
+  const children: HTMLElement[] = [
+    headingWithHelp('h3', t('schema.outcomeTitle'), 'schema-outcomes'),
+    el('p', { text: t('schema.outcomeLead') }),
+    el('p', { text: t('schema.outcomeTimepointsHint') }),
+  ];
+  const columns = [
+    ['outcomeId', 'id', 'schema.outcomeId'],
+    ['outcomeLabel', 'label', 'schema.outcomeLabel'],
+    ['description', 'description', 'schema.outcomeDescription'],
+    ['typicalTimepoints', 'timepoints', 'schema.outcomeTimepoints'],
+  ] as const;
+  const body: HTMLElement[] = [];
+  schema.editorOutcomes.forEach((row, index) => {
+    const removal = schema.outcomeRemoval?.index === index ? schema.outcomeRemoval : null;
+    const busy = schema.confirming || schema.outcomeRemoval?.loading === true;
+    const cells: HTMLElement[] = columns.map(([key, classSuffix, label]) => {
+      const input = el('input', {
+        className: `schema__outcome-${classSuffix}`,
+        attributes: { type: 'text', 'aria-label': t('schema.outcomeCellAria', { label: t(label), row: index + 1 }) },
+      });
+      input.value = row[key] ?? '';
+      input.readOnly = key === 'outcomeId' && row.idLocked;
+      input.disabled = busy;
+      input.addEventListener('change', () => ctx.schema.onEditOutcome(index, { [key]: input.value }));
+      return el('td', {}, [input]);
+    });
+    const remove = outcomeButton(t('schema.outcomeRemove'), () => ctx.schema.onRemoveOutcome(index), busy);
+    remove.className = 'schema__outcome-remove';
+    cells.push(el('td', {}, [
+      outcomeButton(t('schema.outcomeUp'), () => ctx.schema.onMoveOutcome(index, index - 1), busy || index === 0),
+      outcomeButton(t('schema.outcomeDown'), () => ctx.schema.onMoveOutcome(index, index + 1), busy || index === schema.editorOutcomes.length - 1),
+      remove,
+    ]));
+    body.push(el('tr', {}, cells));
+    const details: HTMLElement[] = [];
+    if (!row.idLocked && (schema.allOutcomes ?? []).some((old) => old.outcomeId === row.outcomeId.trim())) {
+      details.push(el('p', { text: t('schema.outcomeReuse') }));
+    }
+    details.push(...schema.editorOutcomeErrors.filter((error) => error.index === index).map((error) =>
+      el('p', { className: 'schema__error', text: error.message }),
+    ));
+    if (removal !== null) {
+      const confirmChildren: HTMLElement[] = [];
+      if (removal.loading) {
+        confirmChildren.push(el('p', { text: t('schema.outcomeLoading') }));
+      } else if (removal.error !== null) {
+        confirmChildren.push(
+          el('p', { className: 'schema__error', text: removal.error }),
+          outcomeButton(t('schema.outcomeRetry'), () => ctx.schema.onRemoveOutcome(index)),
+        );
+      } else if (removal.counts !== null) {
+        confirmChildren.push(
+          el('p', { text: t('schema.outcomeRemoveConfirm', removal.counts) }),
+          outcomeButton(t('schema.outcomeRemove'), () => ctx.schema.onConfirmRemoveOutcome()),
+        );
+      }
+      confirmChildren.push(outcomeButton(t('common.cancel'), () => ctx.schema.onCancelRemoveOutcome()));
+      details.push(el('div', { className: 'schema__outcome-remove-confirm', attributes: { role: 'alert' } }, confirmChildren));
+    }
+    if (details.length > 0) {
+      body.push(el('tr', {}, [el('td', { attributes: { colspan: '5' } }, details)]));
+    }
+  });
+  children.push(el('div', { className: 'schema__table-wrap' }, [el('table', { className: 'schema__table' }, [
+    el('thead', {}, [el('tr', {}, [...columns.map(([, , label]) => el('th', { text: t(label) })), el('th', { text: t('schema.headActions') })])]),
+    el('tbody', {}, body),
+  ])]));
+  children.push(...schema.editorOutcomeErrors.filter((error) => error.index < 0).map((error) => el('p', { className: 'schema__error', text: error.message })));
+  const add = outcomeButton(t('schema.outcomeAdd'), () => ctx.schema.onAddOutcome(), schema.confirming);
+  add.id = 'schema-outcome-add';
+  children.push(add);
+  const restorable = restorableOutcomes(schema.allOutcomes ?? [], schema.editorOutcomes.map((row) => row.outcomeId));
+  if (restorable.length > 0) {
+    const select = el('select', { id: 'schema-outcome-restore', attributes: { 'aria-label': t('schema.outcomeRestoreSelect') } }, restorable.map((row) =>
+      el('option', { text: `${row.outcomeId} — ${row.outcomeLabel} (v${row.schemaVersion})`, attributes: { value: row.outcomeId } }),
+    ));
+    select.disabled = schema.confirming;
+    children.push(select, outcomeButton(t('schema.outcomeRestore'), () => ctx.schema.onRestoreOutcome(select.value), schema.confirming));
+  }
+  return el('section', { id: 'schema-outcomes' }, children);
+}
+
+function renderOutcomeSummary(schema: SchemaState, version: number): HTMLElement {
+  const outcomes = schema.currentOutcomes ?? [];
+  const children: HTMLElement[] = [headingWithHelp('h3', t('schema.outcomeTitle'), 'schema-outcomes')];
+  if (outcomes.length === 0) {
+    children.push(el('p', { text: t('schema.outcomeEmpty') }));
+  } else {
+    children.push(el('table', { className: 'schema__table' }, [
+      el('thead', {}, [el('tr', {}, ['schema.outcomeLabel', 'schema.outcomeId', 'schema.outcomeDescription', 'schema.outcomeTimepoints'].map((key) => el('th', { text: t(key as MessageKey) })))]),
+      el('tbody', {}, outcomes.map((row) => el('tr', {}, [row.outcomeLabel, row.outcomeId, row.description ?? '', row.typicalTimepoints ?? ''].map((text) => el('td', { text }))))),
+    ]));
+    if (schema.currentOutcomesSourceVersion !== version) {
+      children.push(el('p', {
+        id: 'schema-outcomes-missing', attributes: { role: 'status' },
+        text: t('schema.outcomeMissing', { version, source: schema.currentOutcomesSourceVersion! }),
+      }));
+    }
+  }
+  return el('section', { id: 'schema-outcomes-summary' }, children);
 }

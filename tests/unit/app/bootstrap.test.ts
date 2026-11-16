@@ -1469,8 +1469,8 @@ describe('bootstrapApp', () => {
     stub.fireHashChange();
     await flush();
 
-    // SchemaVersions / Documents / Protocol の 3 タブを読む
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    // SchemaVersions / Documents / Protocol とアウトカムのタブの有無を読む
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(document.getElementById('schema-draft-form')).not.toBeNull();
 
     // モデル入力とドラフト実行の配線（選択 0 本 → ガード文言）
@@ -5723,4 +5723,58 @@ describe('bootstrapApp: 担当セットの配線', () => {
     select.dispatchEvent(new Event('change'));
     expect(store.getState().documents.mergeDialog?.reviewSet).toBeNull();
   });
+});
+
+test('アウトカム一覧のクエリと編集操作をサービスへ配線する', async () => {
+  installChromeMock();
+  document.body.innerHTML = APP_TEMPLATE;
+  const state = createInitialState();
+  state.currentProject = PROJECT;
+  state.role.role = 'owner';
+  state.home.countsLoaded = true;
+  state.protocol.records = [];
+  state.documents.records = [];
+  state.counts = { ...state.counts, documents: 1, schemaVersions: 1, protocolVersions: 1 };
+  state.schema.versions = [];
+  state.schema.currentFields = [matrixField()];
+  const outcome = {
+    schemaVersion: 1, outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
+    description: null, typicalTimepoints: null, addedVia: 'schema_editor' as const, note: null,
+  };
+  state.schema.allOutcomes = [outcome, { ...outcome, outcomeId: 'pain' }];
+  state.schema.currentOutcomes = [outcome];
+  state.schema.currentOutcomesSourceVersion = 1;
+  state.schema.editorRows = [{ ...matrixField(), multiSelect: false, exclusiveValues: null, freeTextValues: null }];
+  state.schema.editorOutcomes = [{ ...outcome, idLocked: true, idEdited: false }, { ...outcome, outcomeId: 'new', idLocked: false, idEdited: false }];
+  const stub = createWindowStub(state);
+  const { deps } = createFakeDeps([]);
+  const names = ['addEditorOutcome', 'updateEditorOutcome', 'moveEditorOutcome', 'restoreEditorOutcome', 'confirmRemoveEditorOutcome', 'cancelRemoveEditorOutcome'] as const;
+  const spies = names.map((name) => jest.spyOn(schemaServices, name).mockImplementation(() => undefined));
+  const removeSpy = jest.spyOn(schemaServices, 'requestRemoveEditorOutcome').mockResolvedValue(undefined);
+  try {
+    const store = (await bootstrapApp(asWindow(stub), deps))!;
+    stub.location.hash = '#/schema?outcomes';
+    stub.fireHashChange();
+    await flush();
+    document.querySelector<HTMLButtonElement>('#schema-outcome-add')!.click();
+    const label = document.querySelector<HTMLInputElement>('.schema__outcome-label')!;
+    label.value = '名称';
+    label.dispatchEvent(new Event('change'));
+    Array.from(document.querySelectorAll<HTMLButtonElement>('#schema-outcomes button')).find((button) => button.textContent === '下へ')!.click();
+    Array.from(document.querySelectorAll<HTMLButtonElement>('#schema-outcomes button')).find((button) => button.textContent === '戻す')!.click();
+    document.querySelector<HTMLButtonElement>('.schema__outcome-remove')!.click();
+    store.setState({ schema: { ...store.getState().schema, outcomeRemoval: { index: 0, loading: false, error: null, counts: { cells: 1, studies: 1 } } } });
+    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('.schema__outcome-remove-confirm button'));
+    buttons[0]!.click();
+    buttons[1]!.click();
+    for (const spy of spies) {
+      expect(spy).toHaveBeenCalled();
+    }
+    expect(removeSpy).toHaveBeenCalled();
+  } finally {
+    for (const spy of spies) {
+      spy.mockRestore();
+    }
+    removeSpy.mockRestore();
+  }
 });
