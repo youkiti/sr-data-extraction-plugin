@@ -2,7 +2,7 @@
 // セルモデル（cells.ts）を entity タブ横断で数え、判定済み（unverified 以外）を分子にする
 import type { Decision } from '../../domain/decision';
 import type { Evidence } from '../../domain/evidence';
-import type { ConfirmedArmStructure } from '../../domain/armStructure';
+import type { TabModelOptions } from './cells';
 import type { EntityLevel, SchemaField } from '../../domain/schemaField';
 import { availableTabs, buildTabModel } from './cells';
 import { cellKeyOf } from './cellState';
@@ -41,7 +41,7 @@ export function verificationProgress(
   fields: readonly SchemaField[],
   evidence: readonly Evidence[],
   ownDecisions: readonly Decision[],
-  options: { armStructure?: ConfirmedArmStructure | null } = {},
+  options: TabModelOptions = {},
 ): VerificationProgress {
   const byTab: TabProgress[] = [];
   let decided = 0;

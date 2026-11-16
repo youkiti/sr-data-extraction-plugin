@@ -16,7 +16,7 @@ const statusKeys: Record<PilotCellStatus, MessageKey> = {
 };
 export function pilotMatrixRows(state: AppState): PilotMatrixRow[] {
   return buildPilotMatrix(state.pilot.run?.studyIds ?? [], state.pilot.runFields ?? [],
-    state.pilot.evidence ?? [], state.pilot.matrix?.decisions ?? []);
+    state.pilot.evidence ?? [], state.pilot.matrix?.decisions ?? [], state.pilot.outcomeList);
 }
 function labelOf(state: AppState, studyId: string): string {
   return state.documents.studies?.find((study) => study.studyId === studyId)?.studyLabel ?? studyId;
@@ -50,7 +50,7 @@ export function renderPilotMatrix(state: AppState, ctx: ViewContext): HTMLElemen
   const previous = matrix.previous;
   const previousRows = previous === null ? [] : buildPilotMatrix(previous.studyIds,
     state.pilot.runFields ?? [], matrix.previousEvidence,
-    previousPilotDecisions(run, previous, matrix.decisions))
+    previousPilotDecisions(run, previous, matrix.decisions), state.pilot.outcomeList)
     .filter((row) => row.extractedStudies > 0);
   if (previous !== null && (new Set(previous.studyIds).size !== new Set(run.studyIds).size
       || previous.studyIds.some((id) => !run.studyIds.includes(id)))) {

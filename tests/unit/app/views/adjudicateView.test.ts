@@ -18,6 +18,28 @@ import type { Evidence } from '../../../../src/domain/evidence';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { StudyRecord } from '../../../../src/domain/study';
 import type { Decision } from '../../../../src/domain/decision';
+import type { SchemaOutcome } from '../../../../src/domain/schemaOutcome';
+
+test.each(['owner', 'adjudicator'] as const)('一覧モードの裁定は案内と AI の一覧外候補を欄外に出す: %s', (role) => {
+  const { ctx } = makeCtx();
+  const working = makeWorking({
+    outcomeList: { schemaVersion: 2, outcomes: [{ outcomeId: 'pain' } as SchemaOutcome], currentIds: new Set(['pain']), everIds: new Set(['pain']) },
+  });
+  working.quoteAiEvidence = [makeEvidence({ studyId: working.study.studyId, entityKey: 'outcome:candidate', quote: '候補の引用', page: null, anchorStatus: role === 'owner' ? null : 'exact' })];
+  const state = makeState({ rows: [], working });
+  state.role.role = role;
+  const root = render(state, ctx);
+  expect(root.querySelector(role === 'owner' ? '#adjudicate-outcome-schema-link' : '#adjudicate-outcome-schema-hint')).not.toBeNull();
+  expect(root.querySelector('#adjudicate-outcome-candidates')?.textContent).toContain('candidate');
+  root.querySelector<HTMLButtonElement>('#adjudicate-outcome-candidates button')!.click();
+});
+
+test('一覧モードでも候補が無ければ候補欄を出さない', () => {
+  const { ctx } = makeCtx();
+  const working = makeWorking({ outcomeList: { schemaVersion: 2, outcomes: [], currentIds: new Set(), everIds: new Set() } });
+  const root = render(makeState({ rows: [], working }), ctx);
+  expect(root.querySelector('#adjudicate-outcome-candidates')).toBeNull();
+});
 
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<AdjudicateViewCallbacks> } {
   const callbacks: jest.Mocked<AdjudicateViewCallbacks> = {

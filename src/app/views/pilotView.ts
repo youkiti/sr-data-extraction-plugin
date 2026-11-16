@@ -444,6 +444,7 @@ function renderVerification(run: ExtractionRun, state: AppState, ctx: ViewContex
     children.push(
       renderCachedVerificationPanel({
         data: state.pilot.verification,
+        pilot: true,
         onDecision: (decision) => ctx.pilot.onDecision(decision),
         onArmConfirm: (arms) => ctx.pilot.onArmConfirm(arms),
         onInstanceDeclare: (decisions) => ctx.pilot.onInstanceDeclare?.(decisions),

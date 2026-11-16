@@ -1,3 +1,6 @@
+import { readAllSchemaOutcomes } from '../../features/schema/schemaOutcomeRepository';
+import { buildOutcomeListContext } from '../../features/schema/outcomeListContext';
+import { readCurrentOutcomeList } from './outcomeListService';
 import { isConsultAction } from '../../domain/decision';
 import { reviewerQuoteType } from '../../features/adjudication/cellQuotes';
 import type { CellQuote } from '../../domain/quoteSet';
@@ -187,6 +190,9 @@ export async function loadAdjudicateTargets(
     const byStudy = composeEvidenceByStudy(allEvidence, completedRuns);
     const versions = await listSchemaVersions(spreadsheetId, deps.google);
     const latest = versions[0];
+    const outcomeList = buildOutcomeListContext(
+      await readAllSchemaOutcomes(spreadsheetId, deps.google), versions, latest?.schemaVersion ?? 0,
+    );
     const fields = latest === undefined ? [] : await getSchemaFieldsByVersion(spreadsheetId, latest.schemaVersion, deps.google);
 
     const selection = buildStudySelection(studies, documents);
@@ -213,7 +219,7 @@ export async function loadAdjudicateTargets(
       if (pair.kind === 'ready') {
         const armStructureA = latestArmStructure(studyArmRows, pair.annotatorA);
         const armStructureB = latestArmStructure(studyArmRows, pair.annotatorB);
-        gate = computeStudyGate(pair.annotatorA, pair.annotatorB, fields, studyDecisions, armStructureA, armStructureB, aiEvidence);
+        gate = computeStudyGate(pair.annotatorA, pair.annotatorB, fields, studyDecisions, armStructureA, armStructureB, aiEvidence, outcomeList);
       } else if (pair.kind === 'selectable') {
         // issue #63: 3 名以上は全 2 名組合せ（email 昇順ペア）のゲートを事前計算する
         pairOptions = [];
@@ -233,6 +239,7 @@ export async function loadAdjudicateTargets(
                 latestArmStructure(studyArmRows, annotatorA),
                 latestArmStructure(studyArmRows, annotatorB),
                 aiEvidence,
+                outcomeList,
               ),
             });
           }
@@ -244,11 +251,11 @@ export async function loadAdjudicateTargets(
         ...outsideAnnotators,
       ]);
       const annotatorProgress = [...annotators].map((email) =>
-        computeAnnotatorProgress(email, fields, studyDecisions, latestArmStructure(studyArmRows, email), aiEvidence),
+        computeAnnotatorProgress(email, fields, studyDecisions, latestArmStructure(studyArmRows, email), aiEvidence, outcomeList),
       );
       rows.push({ study, pair, gate, pairOptions, outsideAnnotators, annotatorProgress });
     }
-    patchAdjudicate(store, { loading: false, rows });
+    patchAdjudicate(store, { loading: false, rows, outcomeList });
   } catch (err) {
     patchAdjudicate(store, { loading: false, rows: null, loadError: toMessage(err) });
   }
@@ -345,6 +352,10 @@ export async function openAdjudicateStudy(
     if (latest === undefined) {
       throw new Error(t('adjudicate.svcNoSchema'));
     }
+    const outcomeList = store.getState().adjudicate.outcomeList === undefined
+      ? buildOutcomeListContext(await readAllSchemaOutcomes(spreadsheetId, deps.google), versions, latest.schemaVersion)
+      : store.getState().adjudicate.outcomeList;
+    patchAdjudicate(store, { outcomeList });
     const fields = await getSchemaFieldsByVersion(spreadsheetId, latest.schemaVersion, deps.google);
     const studySheet = await readStudyDataSheet(spreadsheetId, deps.google);
     const resultsRows = await readResultsDataRows(spreadsheetId, deps.google);
@@ -417,6 +428,7 @@ export async function openAdjudicateStudy(
         resultsRowsB.map((r) => ({ ...r, entityKey: remapArmEntityKey(r.entityKey, safeRemap) })),
         decisionsA,
         decisionsB.map((d) => ({ ...d, entityKey: remapArmEntityKey(d.entityKey, safeRemap) })),
+        outcomeList,
       );
     };
     const cells = rebuildCells(armKeyRemap);
@@ -425,6 +437,7 @@ export async function openAdjudicateStudy(
     const pdfCache = createPdfViewCache({ google: deps.google, loadPdf: deps.loadPdf });
     const driveFileIdByDocument = new Map(item.documents.map((doc) => [doc.documentId, doc.driveFileId]));
     const working: AdjudicateWorking = {
+      outcomeList,
       quoteSetRows,
       quoteAiEvidence,
       quoteEvidence: allEvidence.filter((evidence) => evidence.studyId === studyId),
@@ -855,6 +868,7 @@ async function collectReadyStudyInputs(
   incompleteCount: number;
   calibration: CalibrationPairAgreement[] | null;
 }> {
+  const outcomeList = await readCurrentOutcomeList(spreadsheetId, deps.google);
   const documents = await resolveDocuments(store, deps, spreadsheetId);
   const studies = await resolveStudies(store, deps, spreadsheetId);
   const studySheet = await readStudyDataSheet(spreadsheetId, deps.google);
@@ -876,6 +890,7 @@ async function collectReadyStudyInputs(
       latestArmStructure(studyArmRows, annotatorA),
       latestArmStructure(studyArmRows, annotatorB),
       evidenceByStudy.get(studyId)?.evidence ?? [],
+      outcomeList,
     ).ready;
   };
 
@@ -920,6 +935,7 @@ async function collectReadyStudyInputs(
           studies: calibrationStudies,
           sets,
           armRemaps,
+          outcomeList,
           fields,
           studyDataRows: studySheet.rows,
           resultsDataRows: resultsRows,
@@ -968,7 +984,7 @@ async function collectReadyStudyInputs(
       persistedRemap === null
         ? resultsRowsB
         : resultsRowsB.map((r) => ({ ...r, entityKey: remapArmEntityKey(r.entityKey, persistedRemap) }));
-    const cells = buildAdjudicationCells(fields, studyDataRowA, studyDataRowB, resultsRowsA, remappedResultsRowsB);
+    const cells = buildAdjudicationCells(fields, studyDataRowA, studyDataRowB, resultsRowsA, remappedResultsRowsB, [], [], outcomeList);
     inputs.push({ studyId: study.studyId, studyLabel: study.studyLabel, cells,
       bothWithAi: isBothWithAi(
         studySheet.rows.filter((row) => row.studyId === study.studyId),

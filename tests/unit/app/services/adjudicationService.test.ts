@@ -1,3 +1,6 @@
+import { readAllSchemaOutcomes } from '../../../../src/features/schema/schemaOutcomeRepository';
+import type { SchemaOutcome } from '../../../../src/domain/schemaOutcome';
+jest.mock('../../../../src/features/schema/schemaOutcomeRepository', () => ({ readAllSchemaOutcomes: jest.fn() }));
 import { quotesForCell } from '../../../../src/app/views/adjudicateQuoteData';
 import { reviewerQuoteType } from '../../../../src/features/adjudication/cellQuotes';
 import { saveConsensusQuotes } from '../../../../src/app/services/adjudicationService';
@@ -426,6 +429,7 @@ function seedStore(): Store {
 }
 
 beforeEach(() => {
+  jest.mocked(readAllSchemaOutcomes).mockResolvedValue([]);
   (readQuoteSetRows as jest.Mock).mockResolvedValue([]);
   (appendQuoteSetRows as jest.Mock).mockResolvedValue(undefined);
   jest.clearAllMocks();
@@ -442,6 +446,20 @@ beforeEach(() => {
 });
 
 describe('loadAdjudicateTargets', () => {
+  test('一覧の文脈を一覧読込から裁定へ引き継ぎ、開き直しても再取得しない', async () => {
+    setupTwoAnnotatorsReady();
+    jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ schemaVersion: 1, outcomeId: 'pain' } as SchemaOutcome]);
+    const store = seedStore();
+    await loadAdjudicateTargets(store, makeDeps());
+    await openAdjudicateStudy(store, makeDeps(), 'study-1');
+    await openAdjudicateStudy(store, makeDeps(), 'study-1');
+    expect(store.getState().adjudicate.working?.outcomeList?.currentIds).toEqual(new Set(['pain']));
+    expect(readAllSchemaOutcomes).toHaveBeenCalledTimes(1);
+    store.setState({ adjudicate: { ...store.getState().adjudicate, outcomeList: undefined } });
+    await openAdjudicateStudy(store, makeDeps(), 'study-1');
+    expect(store.getState().adjudicate.working?.outcomeList?.currentIds).toEqual(new Set(['pain']));
+    expect(readAllSchemaOutcomes).toHaveBeenCalledTimes(2);
+  });
   test('プロジェクト未選択は no-op', async () => {
     const store = createStore();
     await loadAdjudicateTargets(store, makeDeps());

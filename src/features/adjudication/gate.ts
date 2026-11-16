@@ -7,6 +7,7 @@ import type { Evidence } from '../../domain/evidence';
 import type { Decision } from '../../domain/decision';
 import type { SchemaField } from '../../domain/schemaField';
 import { verificationProgress } from '../verification/progress';
+import type { OutcomeListContext } from '../schema/outcomeListContext';
 
 export interface AnnotatorProgressSummary {
   annotator: string;
@@ -33,9 +34,10 @@ export function computeAnnotatorProgress(
   studyDecisions: readonly Decision[],
   armStructure: ConfirmedArmStructure | null,
   aiEvidence: readonly Evidence[],
+  outcomeList: OutcomeListContext | null = null,
 ): AnnotatorProgressSummary {
   const own = studyDecisions.filter((decision) => decision.annotator === annotator);
-  const progress = verificationProgress(fields, isIndependentAnnotator(own) ? [] : aiEvidence, own, { armStructure });
+  const progress = verificationProgress(fields, isIndependentAnnotator(own) ? [] : aiEvidence, own, { armStructure, outcomeList });
   return {
     annotator,
     decided: progress.decided,
@@ -72,8 +74,9 @@ export function computeStudyGate(
   armStructureA: ConfirmedArmStructure | null,
   armStructureB: ConfirmedArmStructure | null,
   aiEvidence: readonly Evidence[],
+  outcomeList: OutcomeListContext | null = null,
 ): StudyGate {
-  const progressA = computeAnnotatorProgress(annotatorA, fields, studyDecisions, armStructureA, aiEvidence);
-  const progressB = computeAnnotatorProgress(annotatorB, fields, studyDecisions, armStructureB, aiEvidence);
+  const progressA = computeAnnotatorProgress(annotatorA, fields, studyDecisions, armStructureA, aiEvidence, outcomeList);
+  const progressB = computeAnnotatorProgress(annotatorB, fields, studyDecisions, armStructureB, aiEvidence, outcomeList);
   return { progressA, progressB, ready: progressA.complete && progressB.complete };
 }

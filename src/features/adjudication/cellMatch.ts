@@ -12,6 +12,7 @@ import type { EntityLevel, SchemaField } from '../../domain/schemaField';
 import { parseEntityKey, STUDY_ENTITY_KEY } from '../../utils/entityKey';
 import { cellKeyOf, deriveCellStates, type CellState } from '../verification/cellState';
 import { bundleEvidence } from '../verification/evidenceBundles';
+import { isEntityKeyInOutcomeList, type OutcomeListContext } from '../schema/outcomeListContext';
 
 export interface AdjudicationCell {
   aiAcceptA?: boolean;
@@ -155,6 +156,7 @@ export function buildAdjudicationCells(
   resultsRowsB: readonly ResultsDataRow[],
   decisionsA: readonly Decision[] = [],
   decisionsB: readonly Decision[] = [],
+  outcomeList: OutcomeListContext | null = null,
 ): AdjudicationCell[] {
   const cells: AdjudicationCell[] = [];
   const indexA = indexResultsRows(resultsRowsA);
@@ -188,7 +190,8 @@ export function buildAdjudicationCells(
       }
       continue;
     }
-    const entityKeys = unionEntityKeysForLevel(level, resultsRowsA, resultsRowsB);
+    const entityKeys = unionEntityKeysForLevel(level, resultsRowsA, resultsRowsB)
+      .filter((key) => isEntityKeyInOutcomeList(key, outcomeList));
     for (const entityKey of entityKeys) {
       for (const field of levelFields) {
         const key = cellKeyOf(field.fieldId, entityKey);

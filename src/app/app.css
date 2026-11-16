@@ -4548,3 +4548,16 @@ section.documents__tiab {
   font-size: 12px;
   color: var(--color-text-muted);
 }
+
+.outcome-candidates {
+  margin-block: 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border, #ccc);
+}
+
+.outcome-candidates__row {
+  display: grid;
+  gap: 0.5rem;
+  margin-block: 0.75rem;
+  overflow-wrap: anywhere;
+}

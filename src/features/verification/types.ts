@@ -39,6 +39,7 @@ export interface VerificationDocumentView {
 }
 
 export interface VerificationData {
+  outcomeList?: import('../schema/outcomeListContext').OutcomeListContext | null;
   /** 検証単位の study（Studies 由来。study_label / registration_id を保持） */
   study: StudyRecord;
   /**

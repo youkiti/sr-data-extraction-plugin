@@ -4,6 +4,7 @@ import type { SchemaField } from '../../domain/schemaField';
 import type { ExtractionRun } from '../../domain/extractionRun';
 import { deriveCellStates } from './cellState';
 import { bundleEvidence } from './evidenceBundles';
+import { isEntityKeyInOutcomeList, type OutcomeListContext } from '../schema/outcomeListContext';
 
 export type PilotCellStatus = 'accept' | 'edit' | 'reject' | 'nrAccepted' | 'nrMiss' | 'nr' | 'failed' | 'unverified' | 'empty';
 export const PILOT_SYMBOLS: Record<PilotCellStatus, string> = {
@@ -47,10 +48,11 @@ export interface PilotMatrixRow {
 export function buildPilotMatrix(
   studyIds: readonly string[], fields: readonly SchemaField[],
   evidence: readonly Evidence[], decisions: readonly Decision[],
+  outcomeList: OutcomeListContext | null = null,
 ): PilotMatrixRow[] {
   const byStudy = new Map(studyIds.map((studyId) => {
     const states = deriveCellStates(decisions.filter((item) => item.studyId === studyId));
-    const entities = [...bundleEvidence(evidence.filter((item) => item.studyId === studyId))]
+    const entities = [...bundleEvidence(evidence.filter((item) => item.studyId === studyId && isEntityKeyInOutcomeList(item.entityKey, outcomeList)))]
       .map(([key, bundle]): PilotEntity => {
         const stack = states.get(key)?.stack ?? [];
         const decision = stack[stack.length - 1] ?? null;

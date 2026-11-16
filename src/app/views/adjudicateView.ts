@@ -1,5 +1,7 @@
 import { createSavingBadge } from '../ui/savingBadge';
 import { resolveFetchedPricing } from '../fetchedPricing';
+import { outcomeListCandidates } from '../../features/schema/outcomeListContext';
+import { renderOutcomeCandidates, renderOutcomeSchemaNotice } from './outcomeListNotice';
 import { renderAdjudicateQuotes } from './adjudicateQuotes';
 // `#/adjudicate`: 裁定（S12。docs/design-independent-dual-review.md §6・§9 PR3・§13）。
 // owner / adjudicator のみ到達可能（guards.ts）。状態: 読み込み中 / 失敗 / study 一覧
@@ -564,6 +566,26 @@ function renderCellRow(
   return el('tr', { className: `adjudicate__cell-row adjudicate__cell-row--${status}` }, row);
 }
 
+/** 裁定で保持している AI 引用から一覧外の候補を欄外に表示する。 */
+function outcomeCandidateSection(working: AdjudicateWorking, canEditSchema: boolean): HTMLElement[] {
+  if (working.outcomeList == null) {
+    return [];
+  }
+  const candidates = outcomeListCandidates(working.study.studyId, working.quoteAiEvidence, working.fields, working.outcomeList);
+  if (candidates.length === 0) {
+    return [];
+  }
+  return [renderOutcomeCandidates('adjudicate', candidates, (evidence) => showAdjudicateCitation(working, {
+    documentIndex: 1,
+    documentId: evidence.documentId,
+    quote: evidence.quote!,
+    page: evidence.page,
+    anchorStatus: evidence.anchorStatus ?? 'failed',
+    anchoredPage: evidence.page,
+    highlightable: evidence.anchorStatus !== null && evidence.anchorStatus !== 'failed',
+  }), canEditSchema)];
+}
+
 function renderCellSection(state: AppState, ctx: ViewContext, working: AdjudicateWorking): HTMLElement {
   const consensusStates = deriveCellStates(working.consensusDecisions);
   // issue #63: セルごとに「根拠を表示」ボタンを出すかどうかの判定に使う（AI の Evidence があるか）
@@ -636,6 +658,7 @@ function renderCellSection(state: AppState, ctx: ViewContext, working: Adjudicat
   return el('div', { className: 'adjudicate__panes' }, [
     el('div', { className: 'adjudicate__pane--pdf' }, [renderAdjudicatePdfPane(working, ctx.adjudicate, state.adjudicate.saving)]),
     el('div', { className: 'adjudicate__pane--cells' }, [
+      ...(working.outcomeList == null ? [] : [renderOutcomeSchemaNotice('adjudicate', enumContext.canEditSchema)]),
       el('div', { className: 'adjudicate__cells-toolbar' }, [
         el('label', { className: 'adjudicate__filter-label' }, [
           filterCheckbox,
@@ -648,6 +671,7 @@ function renderCellSection(state: AppState, ctx: ViewContext, working: Adjudicat
         text: t('adjudicate.summaryLine', { match: matchCount, mismatch: mismatchCount, empty: bothEmptyCount }),
       }),
       body,
+      ...outcomeCandidateSection(working, enumContext.canEditSchema),
     ]),
   ]);
 }

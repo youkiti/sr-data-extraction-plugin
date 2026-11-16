@@ -1,7 +1,28 @@
 // アウトカムの一覧の文脈と、キーの所属・候補の判定のテスト。
 import type { SchemaOutcome } from '../../../../src/domain/schemaOutcome';
 import type { SchemaVersion } from '../../../../src/domain/schemaVersion';
-import { buildOutcomeListContext, isEntityKeyInOutcomeList, isOutcomeListCandidateId, outcomeIdOfEntityKey } from '../../../../src/features/schema/outcomeListContext';
+import { buildOutcomeListContext, isEntityKeyInOutcomeList, isOutcomeListCandidateId, outcomeIdOfEntityKey, outcomeListCandidates } from '../../../../src/features/schema/outcomeListContext';
+import type { Evidence } from '../../../../src/domain/evidence';
+import type { SchemaField } from '../../../../src/domain/schemaField';
+
+test('候補は study の outcome_result だけで、過去の一覧にも無い id を名前と全根拠でまとめる', () => {
+  const context = buildOutcomeListContext([outcome(), outcome({ schemaVersion: 2, outcomeId: 'pain' })], versions, 2)!;
+  const evidence = [
+    { studyId: 's', entityKey: 'outcome:new_id', fieldId: 'value', value: '1' },
+    { studyId: 's', entityKey: 'outcome:new_id|arm:1', fieldId: 'name', value: null },
+    { studyId: 's', entityKey: 'outcome:new_id|arm:2', fieldId: 'name', value: '最初の名前' },
+    { studyId: 's', entityKey: 'outcome:new_id', fieldId: 'name', value: '別の名前' },
+    { studyId: 's', entityKey: 'outcome:unnamed', fieldId: 'value', value: null },
+    { studyId: 'other', entityKey: 'outcome:other' },
+    { studyId: 's', entityKey: 'rob:d|outcome:new_id' },
+    { studyId: 's', entityKey: 'outcome:mortality' },
+    { studyId: 's', entityKey: 'outcome:pain' },
+  ] as Evidence[];
+  expect(outcomeListCandidates('s', evidence, [{ fieldId: 'name', fieldName: 'outcome_name' }] as SchemaField[], context)).toEqual([
+    { id: 'new_id', name: '最初の名前', evidence: evidence.slice(0, 4) },
+    { id: 'unnamed', name: null, evidence: [evidence[4]] },
+  ]);
+});
 
 const outcome = (patch: Partial<SchemaOutcome> = {}): SchemaOutcome => ({
   schemaVersion: 1, outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
@@ -22,7 +43,7 @@ test('論文単位モードは null、一覧モードは指定版と直近の前
   expect(buildOutcomeListContext(all, versions, 2)).toEqual(expected);
   expect(buildOutcomeListContext(all, versions, 4)).toEqual(expected);
   expect(all).toEqual([old, second, first]);
-  expect(() => buildOutcomeListContext(all, versions, 0)).toThrow('版 0 以前にアウトカムの一覧がありません');
+  expect(buildOutcomeListContext(all, versions, 0)).toBeNull();
 });
 
 test.each([

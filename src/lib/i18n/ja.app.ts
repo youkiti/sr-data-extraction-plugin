@@ -1,5 +1,10 @@
 // UI 文言辞書（日本語・app 群）。
 export const jaApp = {
+  'verify.outcomeSchemaLink': 'アウトカムの一覧を直す（表のデザイン）',
+  'verify.outcomeSchemaHint': '抜けているアウトカムは、owner にスキーマへの追加を頼んでください（要相談で知らせられます）',
+  'verify.outcomeCandidates': '一覧外の候補',
+  'verify.outcomeCandidatesLead': '表のデザインに無いため検証のセルには出ていません',
+
   'schema.outcomeInvalidId': 'id は英小文字で始まる英小文字・数字・_ の 64 文字以内にしてください',
   'schema.outcomeDuplicateId': 'アウトカムの id が重複しています',
   'schema.outcomeEmptyLabel': 'アウトカムの表示名を入力してください',

@@ -16,6 +16,7 @@ import {
 import { cellKeyOf, deriveCellStates, emptyCellState, type CellState } from './cellState';
 import { robOverrideFieldNames } from './robEstimateFields';
 import { bundleEvidence, type EvidenceBundle } from './evidenceBundles';
+import { isEntityKeyInOutcomeList, outcomeIdOfEntityKey, type OutcomeListContext } from '../schema/outcomeListContext';
 
 export interface VerificationCell {
   cellKey: string;
@@ -40,6 +41,7 @@ export interface TabModel {
 }
 
 export interface TabModelOptions {
+  outcomeList?: OutcomeListContext | null;
   /** 人間が確定した arm 集合。AI Evidence がない arm / outcome の空セル生成に使う */
   armStructure?: ConfirmedArmStructure | null;
 }
@@ -143,6 +145,13 @@ export function entityInstances(
       keys.add(decision.entityKey);
     }
   }
+  if (options.outcomeList != null && (level === 'outcome_result' || level === 'rob_domain')) {
+    for (const key of keys) {
+      if (!isEntityKeyInOutcomeList(key, options.outcomeList)) {
+        keys.delete(key);
+      }
+    }
+  }
   if (level === 'arm') {
     for (const arm of options.armStructure?.arms ?? []) {
       if (parseEntityKey(arm.armKey)?.level === 'arm') {
@@ -150,6 +159,18 @@ export function entityInstances(
       }
     }
   } else if (level === 'outcome_result' && options.armStructure !== null) {
+    const present = new Set([...keys].map(outcomeIdOfEntityKey));
+    for (const outcome of options.outcomeList?.outcomes ?? []) {
+      if (present.has(outcome.outcomeId)) {
+        continue;
+      }
+      for (const arm of options.armStructure?.arms ?? []) {
+        const parsed = parseEntityKey(arm.armKey);
+        if (parsed?.level === 'arm') {
+          keys.add(makeOutcomeEntityKey({ outcome: outcome.outcomeId, arm: parsed.arm }));
+        }
+      }
+    }
     for (const entityKey of expandOutcomeInstances([...keys], options.armStructure ?? null)) {
       keys.add(entityKey);
     }

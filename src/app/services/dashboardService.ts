@@ -148,6 +148,7 @@ export async function loadDashboard(
         evidence: material.target.evidence,
         ownDecisions: material.ownDecisions,
         armStructure: material.armStructure,
+        outcomeList: material.target.outcomeList,
         ...(seesAllConsults && material.studyDecisions !== undefined
           ? { reviewerDecisions: material.studyDecisions, self: annotator ?? '' }
           : {}),

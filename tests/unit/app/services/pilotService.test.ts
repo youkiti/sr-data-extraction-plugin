@@ -1,3 +1,7 @@
+import { readAllSchemaOutcomes } from '../../../../src/features/schema/schemaOutcomeRepository';
+import type { SchemaOutcome } from '../../../../src/domain/schemaOutcome';
+import type { SchemaVersion } from '../../../../src/domain/schemaVersion';
+jest.mock('../../../../src/features/schema/schemaOutcomeRepository', () => ({ readAllSchemaOutcomes: jest.fn() }));
 import { providerModelMismatchMessage } from '../../../../src/lib/llm/modelCatalog';
 import {
   autoLoadLatestPilotRun,
@@ -42,7 +46,7 @@ import { readStudies } from '../../../../src/features/documents/studyRepository'
 import * as previewCheckModule from '../../../../src/features/documents/preparePreviewCheck';
 import { readEvidenceRows } from '../../../../src/features/extraction/evidenceRepository';
 import { readPilotRuns } from '../../../../src/features/extraction/runRepository';
-import { getSchemaFieldsByVersion } from '../../../../src/features/schema/schemaRepository';
+import { getSchemaFieldsByVersion, listSchemaVersions } from '../../../../src/features/schema/schemaRepository';
 import type { DisposablePdfDocument } from '../../../../src/features/documents/extractTextLayer';
 import {
   AnnotationConflictError,
@@ -96,6 +100,7 @@ jest.mock('../../../../src/features/extraction/runRepository', () => ({
 }));
 jest.mock('../../../../src/features/schema/schemaRepository', () => ({
   getSchemaFieldsByVersion: jest.fn(),
+  listSchemaVersions: jest.fn(),
 }));
 jest.mock('../../../../src/features/extraction/annotationRepository', () => ({
   ...jest.requireActual('../../../../src/features/extraction/annotationRepository'),
@@ -397,6 +402,8 @@ function toastTexts(): string[] {
 }
 
 beforeEach(() => {
+  jest.mocked(listSchemaVersions).mockResolvedValue([]);
+  jest.mocked(readAllSchemaOutcomes).mockResolvedValue([]);
   document.body.innerHTML = '';
   resolveProtocolMock.mockResolvedValue({
     protocol: { version: 1 } as never,
@@ -1207,6 +1214,17 @@ describe('loadPilotVerification', () => {
       },
     });
   }
+
+  test('埋め込み検証は現行一覧を共有し、study 切替で読み直さない', async () => {
+    jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ schemaVersion: 2, outcomeId: 'pain' } as SchemaOutcome]);
+    jest.mocked(listSchemaVersions).mockResolvedValue([{ schemaVersion: 2 } as SchemaVersion]);
+    const store = makeRanStore();
+    await loadPilotVerification(store, makeDeps(), 'study-doc-1');
+    await loadPilotVerification(store, makeDeps(), 'study-doc-2');
+    expect(store.getState().pilot.verification?.outcomeList?.currentIds).toEqual(new Set(['pain']));
+    expect(readAllSchemaOutcomes).toHaveBeenCalledTimes(1);
+    expect(listSchemaVersions).toHaveBeenCalledTimes(1);
+  });
 
   test('run 未実行・プロジェクト未選択のときは何もしない', async () => {
     await loadPilotVerification(makeStore({ withProject: false }), makeDeps(), 'study-doc-1');

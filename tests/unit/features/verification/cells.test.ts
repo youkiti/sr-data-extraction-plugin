@@ -10,6 +10,30 @@ import {
   splitDecidedCells,
 } from '../../../../src/features/verification/cells';
 import { cellKeyOf } from '../../../../src/features/verification/cellState';
+import type { OutcomeListContext } from '../../../../src/features/schema/outcomeListContext';
+import type { SchemaOutcome } from '../../../../src/domain/schemaOutcome';
+
+test('一覧のキーだけを群へ展開し、未抽出アウトカムの空セルと base RoB を残す', () => {
+  const outcomeList: OutcomeListContext = {
+    schemaVersion: 2,
+    outcomes: ['pain', 'mortality'].map((outcomeId) => ({ outcomeId } as SchemaOutcome)),
+    currentIds: new Set(['pain', 'mortality']),
+    everIds: new Set(['pain', 'mortality', 'removed']),
+  };
+  const armStructure = { version: 1, arms: [{ armKey: 'arm:1', armName: 'A' }, { armKey: 'arm:2', armName: 'B' }, { armKey: 'invalid', armName: '?' }] };
+  const evidence = ['outcome:pain|arm:1|time:30d', 'outcome:pain|arm:1|time:90d', 'outcome:removed|arm:1', 'outcome:new_id|arm:1', 'rob:d', 'rob:d|outcome:removed', 'rob:d|outcome:pain'].map((entityKey) => makeEvidence({ entityKey }));
+  const decisions = [makeDecision({ entityKey: 'outcome:removed', fieldId: '__entity_instance__' })];
+  const options = { armStructure, outcomeList };
+  expect(entityInstances('outcome_result', evidence, decisions, options)).toEqual([
+    'outcome:mortality|arm:1', 'outcome:mortality|arm:2',
+    'outcome:pain|arm:1|time:30d', 'outcome:pain|arm:1|time:90d',
+    'outcome:pain|arm:2|time:30d', 'outcome:pain|arm:2|time:90d',
+  ]);
+  expect(entityInstances('rob_domain', evidence, decisions, options)).toEqual(['rob:d', 'rob:d|outcome:pain']);
+  expect(entityInstances('outcome_result', [], [], { outcomeList, armStructure: null })).toEqual([]);
+  expect(entityInstances('outcome_result', [], [], { outcomeList })).toEqual([]);
+  expect(entityInstances('outcome_result', evidence, decisions, { armStructure, outcomeList: null })).toContain('outcome:removed');
+});
 
 test.each([2, null])('複数引用・断片は seq 昇順の一覧と先頭の代表でセルを作る: %j', (maxQuotes) => {
   const first = makeEvidence({ quoteSeq: 1 });

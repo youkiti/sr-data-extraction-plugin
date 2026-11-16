@@ -190,6 +190,7 @@ export function resultsCellKeyOf(entityKey: string, fieldId: string): string {
 }
 
 export interface VerificationBundleInput {
+  outcomeList?: import('../../features/schema/outcomeListContext').OutcomeListContext | null;
   spreadsheetId: string;
   /** 検証単位の study（Studies 由来） */
   study: StudyRecord;
@@ -350,6 +351,7 @@ export async function loadVerificationBundle(
     study,
     documents,
     fields: input.fields,
+    outcomeList: input.outcomeList,
     evidence: input.evidence,
     decisions,
     annotator,

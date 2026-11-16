@@ -1,6 +1,8 @@
 // アウトカムの一覧の版と、キーの所属・一覧外の候補の判定をまとめる。
 import type { SchemaOutcome } from '../../domain/schemaOutcome';
 import type { SchemaVersion } from '../../domain/schemaVersion';
+import type { Evidence } from '../../domain/evidence';
+import type { SchemaField } from '../../domain/schemaField';
 import { parseEntityKey } from '../../utils/entityKey';
 import { isOutcomeListMode, outcomesForVersion } from './schemaOutcomes';
 
@@ -11,14 +13,14 @@ export interface OutcomeListContext {
   everIds: ReadonlySet<string>;
 }
 
-/** 指定版の一覧と全版の id を解決し、論文単位モードなら null を返す。 */
+/** 指定版の一覧と全版の id を解決し、その版以前に一覧が無ければ null を返す。 */
 export function buildOutcomeListContext(all: readonly SchemaOutcome[], versionsDesc: readonly SchemaVersion[], version: number): OutcomeListContext | null {
   if (!isOutcomeListMode(all)) {
     return null;
   }
   const resolved = outcomesForVersion(all, versionsDesc, version);
   if (resolved.sourceVersion === null) {
-    throw new Error(`版 ${version} 以前にアウトカムの一覧がありません`);
+    return null;
   }
   return {
     schemaVersion: resolved.sourceVersion,
@@ -49,4 +51,37 @@ export function isEntityKeyInOutcomeList(entityKey: string, context: OutcomeList
 /** 過去のどの版の一覧にも無い id だけを一覧外の候補とする。 */
 export function isOutcomeListCandidateId(outcomeId: string, context: OutcomeListContext): boolean {
   return !context.everIds.has(outcomeId);
+}
+
+export interface OutcomeListCandidate {
+  id: string;
+  name: string | null;
+  evidence: Evidence[];
+}
+
+/** study の AI 根拠から、過去の一覧にも無いアウトカムを初出順に集める。 */
+export function outcomeListCandidates(
+  studyId: string,
+  evidence: readonly Evidence[],
+  fields: readonly SchemaField[],
+  context: OutcomeListContext,
+): OutcomeListCandidate[] {
+  const names = new Set(fields.filter((field) => field.fieldName === 'outcome_name').map((field) => field.fieldId));
+  const candidates = new Map<string, OutcomeListCandidate>();
+  for (const item of evidence) {
+    const parsed = parseEntityKey(item.entityKey);
+    if (item.studyId !== studyId || parsed?.level !== 'outcome_result' || !isOutcomeListCandidateId(parsed.outcome, context)) {
+      continue;
+    }
+    let candidate = candidates.get(parsed.outcome);
+    if (candidate === undefined) {
+      candidate = { id: parsed.outcome, name: null, evidence: [] };
+      candidates.set(parsed.outcome, candidate);
+    }
+    candidate.evidence.push(item);
+    if (candidate.name === null && names.has(item.fieldId) && item.value !== null) {
+      candidate.name = item.value;
+    }
+  }
+  return [...candidates.values()];
 }

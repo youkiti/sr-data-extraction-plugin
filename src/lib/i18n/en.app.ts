@@ -2,6 +2,11 @@
 import type { jaApp } from './ja.app';
 
 export const enApp: Record<keyof typeof jaApp, string> = {
+  'verify.outcomeSchemaLink': 'Edit the outcome list (table design)',
+  'verify.outcomeSchemaHint': 'Ask the owner to add missing outcomes to the schema (use Needs discussion to let them know).',
+  'verify.outcomeCandidates': 'Candidates outside the list',
+  'verify.outcomeCandidatesLead': 'These are absent from the table design and are not shown as verification cells.',
+
   'schema.outcomeInvalidId': 'Use up to 64 lowercase letters, digits, or underscores, starting with a letter',
   'schema.outcomeDuplicateId': 'Outcome ids must be unique',
   'schema.outcomeEmptyLabel': 'Enter a display name for the outcome',

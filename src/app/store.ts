@@ -385,6 +385,7 @@ export interface ConsultDocState {
 
 /** #/pilot（S6）の画面状態。run の結果と埋め込み検証 UI の素材はタブのセッション内で保持する */
 export interface PilotState {
+  outcomeList?: import('../features/schema/outcomeListContext').OutcomeListContext | null;
   checkingPreview: boolean;
   /** 実行前に確認したプレビュー版の疑いがあるファイル名。 */
   previewWarnings?: string[];
@@ -525,6 +526,7 @@ export interface ExtractState {
 
 /** #/verify（S8）の一覧 1 study ぶんの検証素材（Evidence がある study のみ。v0.10 フェーズ 3） */
 export interface VerifyTarget {
+  outcomeList?: import('../features/schema/outcomeListContext').OutcomeListContext | null;
   /** 引用の参照解決用に保持する、この study の全 run の根拠 */
   quoteEvidence: Evidence[];
   study: StudyRecord;
@@ -676,6 +678,7 @@ export interface AdjudicateStudyRow {
  * （features/verification/pdfViewCache の LRU キャッシュを内部に閉じ込める）
  */
 export interface AdjudicateWorking {
+  outcomeList?: import('../features/schema/outcomeListContext').OutcomeListContext | null;
   /** 項目ごとの最新の完了 run から合成した、未編集レビュアー用の AI 引用。 */
   quoteAiEvidence: Evidence[];
   quoteSetRows: QuoteSetRow[];
@@ -741,6 +744,7 @@ export interface AdjudicateWorking {
 
 /** `#/adjudicate`（S12）の画面状態 */
 export interface AdjudicateState {
+  outcomeList?: import('../features/schema/outcomeListContext').OutcomeListContext | null;
   agreementOutsideCount: number;
   calibrationAgreement: CalibrationPairAgreement[] | null;
   /** study 一覧（ゲート付き）。null = 未読込 */

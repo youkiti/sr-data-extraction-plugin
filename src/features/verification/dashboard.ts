@@ -86,6 +86,7 @@ export interface DashboardData {
 
 /** 1 study ぶんの集計素材（verifyService の検証対象と同じ束 + 自分の判定） */
 export interface DashboardStudyInput {
+  outcomeList?: import('../schema/outcomeListContext').OutcomeListContext | null;
   studyId: string;
   /** 表示ラベル（Studies 由来） */
   studyLabel: string;
@@ -148,6 +149,7 @@ function orderedCells(input: DashboardStudyInput): VerificationCell[] {
     (tab) =>
       buildTabModel(tab, input.fields, input.evidence, input.ownDecisions, {
         armStructure: input.armStructure ?? null,
+        outcomeList: input.outcomeList,
       }).cells,
   );
 }

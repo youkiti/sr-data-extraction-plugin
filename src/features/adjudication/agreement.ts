@@ -248,6 +248,7 @@ export interface CalibrationArmRemap {
 }
 
 export interface CalibrationAgreementInput {
+  outcomeList?: import('../schema/outcomeListContext').OutcomeListContext | null;
   sets: readonly ReviewSetRow[];
   /** 保存された群対応は、その対応を確定したペアにだけ適用する */
   armRemaps?: ReadonlyMap<string, CalibrationArmRemap>;
@@ -340,6 +341,7 @@ export function computeCalibrationAgreement(
             decisions.filter((row) => row.annotator === annotatorB),
             annotatorB,
           ),
+          input.outcomeList,
         );
         pair.studies.push({ studyId: study.studyId, studyLabel: study.studyLabel, cells,
           bothWithAi: isBothWithAi(studyRows, resultRows, annotatorA, annotatorB) });
