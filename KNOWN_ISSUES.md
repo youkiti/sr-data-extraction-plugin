@@ -31,6 +31,8 @@
 | KI-012 | 群の対応を直しても一致度に反映しない | v0.2.0（推定） | v0.3.0 |
 | KI-013 | 抄録の結果・方法の設計項目が未報告になりうる | v0.23.0〜v0.32.0 | v0.33.0 |
 | KI-014 | tiab-review の採用リストに重複除外の文献や使っていない AI 判定が混ざる | v0.2.0（推定）〜v0.34.0 | v0.35.0 |
+| KI-015 | R セットの ma.csv の見出しに同じ列名が 2 回出る | v0.2.0（推定）〜v0.36.0 | v0.36.1 |
+| KI-016 | 版を確定した直後のエクスポートが確定前の表のデザインで作られる | v0.1.0（推定）〜v0.36.0 | v0.36.1 |
 
 ## 項目ごとの確認と対処
 
@@ -147,6 +149,22 @@
 - 確かめ方: tiab-review のシートの `References.duplicate_of` が空でない文献が、本拡張の `Studies` / `Documents` に取り込まれていないかを確かめます。全文の候補は、tiab-review の `LLM_Runs` で採用中の実行と、その `LLM_Executions` の判定だけで決まるものと突き合わせます。取り込み時の件数を論文の PRISMA の図や Methods に使っている場合は、その数も対象です。
 - 直し方・回避策: v0.35.0 以降で採用リストを読み直し、候補と件数を比べます。余分に取り込んだ文書は取り込み画面で除外します（除外の記録は監査のために残ります）。件数を論文に使っていれば書き直します。
 - 関連: [PR #510](https://github.com/youkiti/sr-data-extraction-plugin/pull/510)、[issue #480](https://github.com/youkiti/sr-data-extraction-plugin/issues/480)、連携の導入 `c3fd3ec1`。
+
+### KI-015 ma.csv の見出しでキー列と項目名が重なる
+
+- 症状: 表のデザインに outcome_result の項目として `outcome_id`・`timepoint` などの ma.csv のキー列と同じ名前の項目があると、R セットの ma.csv と ma_status.csv の見出しに同じ列名が 2 回出ていました。R の `read.csv` では後の列が `outcome_id.1` のように改名され、Python の `csv.DictReader` では後の列（項目の値）が前の列（キー）を上書きします。AI ドラフトがこの名前の項目を作ることがありました。シートの値そのものは変わりません。
+- 影響する版: R セットの導入版 v0.2.0（推定）〜v0.36.0。修正版 v0.36.1。表のデザインにキー列と同じ名前の outcome_result の項目があるプロジェクトだけが対象です。
+- 確かめ方: `SchemaFields` で `entity_level=outcome_result` かつ `field_name` が `study_id`・`study_label`・`outcome_id`・`outcome_label`・`timepoint`・`timepoint_value`・`timepoint_unit`・`arm_id`・`arm_label`・`rob_tool`・`rob_overall_judgement`・`schema_version` のどれかに当たる行があるかを見ます。書き出した ma.csv の 1 行目に同じ列名が 2 回出ていないかも確かめます。その ma.csv を読み込んだ R・Python の解析は、キーの列を正しく読んでいたかを確認してください。
+- 直し方・回避策: v0.36.1 以降で R セットを出し直します。重なった項目は列名が `<名前>_field`（さらに重なれば連番）になるので、解析コードの列名を読み替えます。表のデザインは次に保存するときに改名を求められます。
+- 関連: [PR #551](https://github.com/youkiti/sr-data-extraction-plugin/pull/551)、[issue #549](https://github.com/youkiti/sr-data-extraction-plugin/issues/549)、R セットの導入 `d17b463a`。
+
+### KI-016 版を確定した直後のエクスポートが古い表のデザインのまま
+
+- 症状: エクスポート画面を一度開いた後、同じタブのまま表のデザインで新しい版を確定してエクスポート画面に戻ると、確定前の項目とアウトカムの一覧で組み立てたデータから CSV と R セットを作っていました。検証画面・ダッシュボード・裁定画面も確定前の内容のまま表示されていました。ページを読み直すか、エクスポート画面で読み直すと新しい版になります。シートの値そのものは変わりません。
+- 影響する版: v0.1.0（推定）〜v0.36.0。アウトカムの一覧（v0.36.0）では、外したアウトカムがエクスポートに残る形でも起こりました。修正版 v0.36.1。
+- 確かめ方: `SchemaVersions.created_at` と、書き出したファイルを作った時刻を比べます。版の確定の後、ページを読み直さずに同じタブで書き出したファイルが対象です。R セットなら、export_manifest の `schema_version`（一覧モードでは `outcome_list_schema_version` も）が、書き出した時点の最新の版と一致するかを確かめます。
+- 直し方・回避策: v0.36.1 以降で、該当するファイルを書き出し直します。
+- 関連: [PR #554](https://github.com/youkiti/sr-data-extraction-plugin/pull/554)、[issue #547](https://github.com/youkiti/sr-data-extraction-plugin/issues/547)。
 
 ## 版の根拠
 

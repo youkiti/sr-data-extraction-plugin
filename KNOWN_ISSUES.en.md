@@ -31,6 +31,8 @@ This list covers bugs affecting extracted values, decisions, persistence, agreem
 | KI-012 | Agreement ignores corrected arm mappings | v0.2.0 (estimated) | v0.3.0 |
 | KI-013 | Abstract findings or Methods design fields may be marked unreported | v0.23.0 to v0.32.0 | v0.33.0 |
 | KI-014 | The tiab-review included list contains duplicates or AI decisions not in use | v0.2.0 (estimated) to v0.34.0 | v0.35.0 |
+| KI-015 | The same column name appears twice in the R set ma.csv header | v0.2.0 (estimated) to v0.36.0 | v0.36.1 |
+| KI-016 | An export right after confirming a version uses the previous table design | v0.1.0 (estimated) to v0.36.0 | v0.36.1 |
 
 ## Checks and remedies
 
@@ -147,6 +149,22 @@ This list covers bugs affecting extracted values, decisions, persistence, agreem
 - Check: confirm that no reference with a non-blank `References.duplicate_of` in the tiab-review sheet was imported into this extension's `Studies` / `Documents`. Compare full-text candidates with those decided only by the run in use in tiab-review's `LLM_Runs` and its `LLM_Executions` decisions. If import counts were used in a PRISMA diagram or Methods, check those numbers too.
 - Remedy: reload the included list on v0.35.0 or later and compare candidates and counts. Exclude documents imported in error on the import screen (the exclusion remains recorded for audit). Correct any counts reported in the manuscript.
 - Related: [PR #510](https://github.com/youkiti/sr-data-extraction-plugin/pull/510), [issue #480](https://github.com/youkiti/sr-data-extraction-plugin/issues/480), hand-off introduced in `c3fd3ec1`.
+
+### KI-015 Key columns and field names collide in the ma.csv header
+
+- Symptom: when the table design had an outcome_result field with the same name as an ma.csv key column, such as `outcome_id` or `timepoint`, the same column name appeared twice in the header of the R set ma.csv and ma_status.csv. R's `read.csv` renames the later column (for example `outcome_id.1`), and Python's `csv.DictReader` lets the later column (the field value) overwrite the earlier one (the key). AI drafts sometimes created fields with these names. Values in the sheet are not changed.
+- Affected versions: v0.2.0 (estimated), which introduced the R set, to v0.36.0. Fixed in v0.36.1. Only projects whose table design has an outcome_result field with a key column name are affected.
+- Check: in `SchemaFields`, look for rows with `entity_level=outcome_result` whose `field_name` is one of `study_id`, `study_label`, `outcome_id`, `outcome_label`, `timepoint`, `timepoint_value`, `timepoint_unit`, `arm_id`, `arm_label`, `rob_tool`, `rob_overall_judgement` or `schema_version`. Also check that no column name appears twice in the first row of exported ma.csv files. For any R or Python analysis that read such a file, confirm that the key columns were read correctly.
+- Remedy: export the R set again on v0.36.1 or later. Colliding fields are renamed to `<name>_field` (with numbered suffixes for further collisions), so update column names in analysis code. The table design asks for a rename the next time it is saved.
+- Related: [PR #551](https://github.com/youkiti/sr-data-extraction-plugin/pull/551), [issue #549](https://github.com/youkiti/sr-data-extraction-plugin/issues/549), R set introduced in `d17b463a`.
+
+### KI-016 An export right after confirming a version keeps the previous table design
+
+- Symptom: after the export screen had been opened once, confirming a new version in the table design and returning to the export screen in the same tab built the CSV files and R set from data assembled with the previous fields and outcome list. The verification, dashboard and adjudication screens also kept showing the previous content. Reloading the page, or reloading on the export screen, used the new version. Values in the sheet are not changed.
+- Affected versions: v0.1.0 (estimated) to v0.36.0. With the outcome list (v0.36.0), it also left removed outcomes in exports. Fixed in v0.36.1.
+- Check: compare `SchemaVersions.created_at` with the time each exported file was made. Files exported in the same tab after confirming a version, without reloading the page, are affected. For an R set, check that `schema_version` in export_manifest (and `outcome_list_schema_version` in list mode) matches the latest version at the time of export.
+- Remedy: export the affected files again on v0.36.1 or later.
+- Related: [PR #554](https://github.com/youkiti/sr-data-extraction-plugin/pull/554), [issue #547](https://github.com/youkiti/sr-data-extraction-plugin/issues/547).
 
 ## Version evidence
 
