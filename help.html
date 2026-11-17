@@ -3,7 +3,7 @@
      正典はこのファイル（master の hosted/）。デプロイ手順は hosted/README.md を参照。
      内容はワークフローレベルに留める（画面細部はアプリ内のリード文が担う。issue #214 §3）。
      文言は ja / en を両方持ち、表示は lang.js + CSS が片方だけに絞る（併記しない）。
-     version: 2026-11-13 -->
+     version: 2026-11-17 -->
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
@@ -53,8 +53,8 @@
           <span class="en" lang="en">User guide</span>
         </h1>
         <p class="last-updated">
-          <span class="ja" lang="ja">最終更新: 2026-11-13 / 対象バージョン: v0.34.0</span>
-          <span class="en" lang="en">Last updated: 2026-11-13 / Covers v0.34.0</span>
+          <span class="ja" lang="ja">最終更新: 2026-11-17 / 対象バージョン: v0.36.0</span>
+          <span class="en" lang="en">Last updated: 2026-11-17 / Covers v0.36.0</span>
         </p>
 
         <nav class="toc" aria-label="目次" data-en-aria-label="Table of contents">
@@ -974,8 +974,8 @@
             <span class="en" lang="en">Suspected preview PDFs are listed by filename after import and before extraction. Warnings use the selected display language. If you change the selected studies while document text is being checked, processing stops; press Run again. Detection looks for repeated PREVIEW, SAMPLE, or EXCERPT lines at page endings, so it cannot identify every incomplete PDF. AI cannot extract values if the results chapter is missing. Replace the file with a full-text PDF. If a warning appears before a pilot run, press Run again after checking it to continue.</span>
           </p>
           <p>
-            <span class="ja" lang="ja">tiab-review の採用リストは、フルテキストの最新の裁定を優先します（裁定がなければ通常票の OR 合議）。裁定が maybe の文献は取り込みません。プレビューに「裁定を反映した採用件数（取り込む件数）」と「OR 合議なら採用になる件数」を表示します。裁定で採用対象外になった文献があれば、警告とタイトル一覧が出ます。フルテキスト相では、tiab-review のフルテキスト候補に入らない文献は取り込みません。候補外のため取り込み対象から外した文献は、別の警告で件数とタイトル一覧をプレビューに表示します。取り込みは続行できます。TiAb 相の採用判定は変わりません。再取り込みでも既存 study は自動除外されません。必要に応じて「study の除外」を行ってください。</span>
-            <span class="en" lang="en">The tiab-review included list uses the latest full-text adjudication, falling back to OR consensus of regular votes when there is no adjudication. A maybe adjudication is not included. The preview shows the count after adjudication (to import) and the OR consensus count. A warning lists any titles no longer included after adjudication. In the full-text phase, references outside tiab-review’s project full-text candidates are not imported. A separate preview warning shows the count and titles excluded for this reason. You can continue importing. Title/abstract phase inclusion is unchanged. Re-importing does not automatically exclude existing studies. Use “Exclude study” as needed.</span>
+            <span class="ja" lang="ja">tiab-review のキーが開封されるまでは採用リストと件数を表示しません。Config・LLM_Runs・LLM_Executions の読み込みに失敗した場合も、エラーを表示して中断し、採用リストと件数は表示しません。古いシートでタブが無い場合（HTTP 400）だけ、設定や有効な AI 実行が無いものとして扱います。tiab-review で重複として除外した文献は取り込みません。tiab-review の採用リストは、フルテキストの最新の裁定を優先します（裁定がなければ通常票の OR 合議）。裁定が maybe の文献は取り込みません。プレビューに「裁定を反映した採用件数（取り込む件数）」と「OR 合議なら採用になる件数」を表示します。裁定で採用対象外になった文献があれば、警告とタイトル一覧が出ます。フルテキスト相では、tiab-review のフルテキスト候補に入らない文献は取り込みません。候補外のため取り込み対象から外した文献は、別の警告で件数とタイトル一覧をプレビューに表示します。取り込みは続行できます。TiAb 相の採用判定は変わりません。再取り込みでも既存 study は自動除外されません。必要に応じて「study の除外」を行ってください。</span>
+            <span class="en" lang="en">The included list and counts are not shown until the tiab-review key is opened. If Config, LLM_Runs, or LLM_Executions cannot be read, an error is shown and loading stops without displaying the included list or counts. Only missing tabs in older sheets (HTTP 400) are treated as absent settings or active AI executions. References removed as duplicates in tiab-review are not imported. The tiab-review included list uses the latest full-text adjudication, falling back to OR consensus of regular votes when there is no adjudication. A maybe adjudication is not included. The preview shows the count after adjudication (to import) and the OR consensus count. A warning lists any titles no longer included after adjudication. In the full-text phase, references outside tiab-review’s project full-text candidates are not imported. A separate preview warning shows the count and titles excluded for this reason. You can continue importing. Title/abstract phase inclusion is unchanged. Re-importing does not automatically exclude existing studies. Use “Exclude study” as needed.</span>
           </p>
           <figure class="shot shot--screen">
             <a href="screenshots/help-03-documents.png" target="_blank" rel="noopener noreferrer">
@@ -1291,6 +1291,47 @@
               >
             </p>
           </div>
+          <h3 id="schema-outcomes">
+            <span class="ja" lang="ja">アウトカムの一覧</span>
+            <span class="en" lang="en">Outcome list</span>
+          </h3>
+          <div class="help-when">
+            <p class="help-when-label">
+              <span class="ja" lang="ja">こんなとき</span>
+              <span class="en" lang="en">When to read this</span>
+            </p>
+            <ul>
+              <li>
+                <span class="ja" lang="ja">プロジェクト全体でアウトカムの名前をそろえたい</span>
+                <span class="en" lang="en">I want a consistent outcome list across the project</span>
+              </li>
+              <li>
+                <span class="ja" lang="ja">アウトカムを一覧から外したり、戻したりしたい</span>
+                <span class="en" lang="en">I want to remove or restore an outcome in the list</span>
+              </li>
+            </ul>
+          </div>
+          <p>
+            <span class="ja" lang="ja">既存の論文単位のアウトカムがある場合は、「アウトカムの一覧を作る」カードで取り込む id と表示名を確かめます。同じアウトカムに異なる id が付いているときは「別名としてまとめる先」で統合できます。両方にあるセルの件数を表示し、人が判定した方、両方が判定済みならまとめ先の値を使います。一覧に入れない id に判定済みのセルがある場合は、確定前に確認します。移行後の判定・取り消しと、人が編集した引用も再読み込み時に引き継ぎます。保存済みの監査履歴は残ります。</span>
+            <span class="en" lang="en">For existing paper-level outcomes, use “Create an outcome list” to select ids and check their display names. Use “Merge as an alias of” to combine different ids for the same outcome. The card shows overlapping cells: judged human values take precedence, with the target winning if both are judged. Excluding ids with judged cells requires confirmation. Subsequent decisions and undo operations, along with human-edited quotes, are preserved on reload. Saved audit history is retained.</span>
+          </p>
+          <p>
+            <span class="ja" lang="ja">初回の AI ドラフトは、プロトコルから決められるときにアウトカムの一覧の案も出します。版として確定する前に、一覧を確かめて直せます。</span>
+            <span class="en" lang="en">The initial AI draft also proposes an outcome list when it can be determined from the protocol. Check and edit the list before confirming it as a version.</span>
+          </p>
+          <p>
+            <span class="ja" lang="ja">編集中の「アウトカムの一覧」で、プロジェクト全体のアウトカムをそろえます。表示名・説明・主な時点を入力し、上下のボタンで順番を変え、「版として確定」で保存します。id は確定後に変えられませんが、表示名は後の版で変更できます。主な時点は | 区切りの参考値で、時点を一覧で固定するものではありません。</span>
+            <span class="en" lang="en">Use the “Outcome list” while editing to align outcomes across the project. Enter a display name, description, and typical timepoints, use the up and down buttons to reorder, then save with “Confirm as a version”. Once confirmed, an id cannot be changed; its display name can be changed in a later version. Typical timepoints are reference values separated by | and do not fix timepoints in the list.</span>
+          </p>
+          <p>
+            <span class="ja" lang="ja">判定済みのセルがあるアウトカムを外すときは、セル数と論文数を示す確認が出ます。判定の記録は消えません。「外したアウトカムを戻す」で過去の id を選ぶと、最後に載っていた版の名称・説明・主な時点で戻せます。一覧モードでは最後のアウトカムは外せません。JSON のスキーマファイルには一覧も含まれ、CSV には含まれません。</span>
+            <span class="en" lang="en">Removing an outcome with judged cells asks for confirmation and shows the numbers of cells and papers. Decision records are retained. Select a past id under “Restore a removed outcome” to restore its name, description, and typical timepoints from the last version that included it. In list mode, the last outcome cannot be removed. JSON schema files include the list; CSV files do not.</span>
+          </p>
+
+          <p>
+            <span class="ja" lang="ja">一覧のアウトカムは AI が見つけなくても、確定済みの群ごとの空セルとして出ます。人が not_reported などで判定してください。AI が一覧に無いアウトカムを見つけると、欄外に「一覧外の候補」として出ます。パイロットでは候補から表のデザインに追加でき、本番の検証と裁定では owner がスキーマ編集画面から追加します。</span>
+            <span class="en" lang="en">Listed outcomes appear as empty cells for confirmed arms even when AI finds no result. A person must judge them, for example as not_reported. Outcomes found by AI outside the list appear separately as “Candidates outside the list”. During the pilot, candidates can be added to the schema directly; during verification and adjudication, the owner adds them from the schema editor.</span>
+          </p>
         </section>
 
         <section id="pilot">
@@ -1937,6 +1978,11 @@
               >Verification, pilot and “Resolve conflicts” screens show the number of pending saves, for example “Saving (1)”. Keep the tab open until the indicator disappears. If you try to close, reload or otherwise leave the page while saves are pending, the browser asks for confirmation.</span
             >
           </p>
+
+          <p>
+            <span class="ja" lang="ja">一覧のアウトカムは AI が見つけなくても、確定済みの群ごとの空セルとして出ます。人が not_reported などで判定してください。AI が一覧に無いアウトカムを見つけると、欄外に「一覧外の候補」として出ます。パイロットでは候補から表のデザインに追加でき、本番の検証と裁定では owner がスキーマ編集画面から追加します。</span>
+            <span class="en" lang="en">Listed outcomes appear as empty cells for confirmed arms even when AI finds no result. A person must judge them, for example as not_reported. Outcomes found by AI outside the list appear separately as “Candidates outside the list”. During the pilot, candidates can be added to the schema directly; during verification and adjudication, the owner adds them from the schema editor.</span>
+          </p>
         </section>
 
         <section id="dashboard">
@@ -2309,6 +2355,12 @@
             </table>
           </div>
           <p>
+            <span class="ja" lang="ja"><code>audit.csv</code> の末尾の <code>app_version</code> は判定をシートへ追記したときのアプリの版（オフライン再送も追記時の版）、<code>run_app_version</code> は添付した AI 根拠の抽出実行時のアプリの版です。
+              古い行や取得不能で版が未記録なら空欄、対応する判定がない未検証行の <code>app_version</code> や、添付した AI 根拠または対応する実行がない行の <code>run_app_version</code> は <code>.</code>（構造的欠損）になります。</span>
+            <span class="en" lang="en">The final columns of <code>audit.csv</code> are <code>app_version</code>, the app version when the decision was appended to the sheet (including when an offline decision is resent), and <code>run_app_version</code>, the app version used for the extraction run of the attached AI evidence.
+              A version is blank if it was not recorded in an older row or could not be obtained; <code>app_version</code> is <code>.</code> (structural missingness) for an unverified row with no decision, as is <code>run_app_version</code> when there is no attached AI evidence or corresponding run.</span>
+          </p>
+          <p>
             <span class="ja" lang="ja">確認途中で考察やミーティングの準備に使うときは、「未確認分を AI の値で補う（仮エクスポート）」をオンにします（既定はオフ）。study_wide / results_long のみ、未確認の文献・セルを AI の値で補います。最終データではありません。人が確認していない AI の値を含みます。wide の各項目の <code>{field}__source</code> 列、long の <code>source</code> 列で <code>human</code>（人の確認済み）/ <code>consensus</code>（裁定済み）/ <code>ai_unverified</code>（未確認）を区別し、ファイル名に <code>_draft</code> が付きます。audit・R セット・Methods 文案・根拠の表には影響しません。最終データを出すときはオフに戻してください。</span>
             <span class="en" lang="en">For discussion or meeting preparation while verification is ongoing, enable “Fill unverified cells with AI values (draft export)” (off by default). Only study_wide and results_long fill unverified studies and cells with AI values. This is not final data: it includes AI values that have not been verified by a human. Each wide field has a <code>{field}__source</code> column; long has a <code>source</code> column: <code>human</code> (verified), <code>consensus</code> (adjudicated), or <code>ai_unverified</code> (unverified). Filenames include <code>_draft</code>. Audit, R sets, Methods text and evidence quotes remain unchanged. Turn this option off when exporting final data.</span>
           </p>
@@ -2411,6 +2463,11 @@
             <span class="en" lang="en"
               >On the export screen, the owner presses “Generate usage CSV” under “Cost and usage CSV”. This writes calls, tokens and estimated costs for all purposes, as totals and by run and month, to <code>usage.csv</code> in Drive. After generation, “Save locally” is also available. This is separate from exporting extracted data and does not require confirmation about unverified cells.</span
             >
+          </p>
+
+          <p>
+            <span class="ja" lang="ja">一覧に無いアウトカムと、それを参照する RoB の評価は、audit.csv を除くエクスポートに出ません。追加したアウトカムの空セルも未検証の警告に含みます。ma.csv の outcome_label は一覧の表示名になり、論文ごとの表記は outcome_name 列にだけ残ります。</span>
+            <span class="en" lang="en">Outcomes outside the list and RoB assessments referring to them are excluded from exports except audit.csv. Empty cells for added outcomes also count toward unverified warnings. In ma.csv, outcome_label uses the list display name; paper-specific wording remains only in outcome_name.</span>
           </p>
         </section>
 
@@ -2923,6 +2980,10 @@
                 when you use a free tier.</span
               >
             </p>
+            <p>
+              <span class="ja" lang="ja">Gemini 3.6 / 3.7 / 3.8 Flash の概算単価は、2027-01-01 0:00 UTC に入力 $0.75 / 出力 $3.75 から入力 $1.50 / 出力 $7.50（100 万トークンあたり）へ切り替わります。キャッシュ入力は入力単価 × 0.10 の導出値です。送信前の見積もりは現在時刻、実績は API 呼び出しの開始時刻で単価を選びます。保存済みの費用は再計算しません。</span>
+              <span class="en" lang="en">Estimated rates for Gemini 3.6 / 3.7 / 3.8 Flash switch from $0.75 input / $3.75 output to $1.50 input / $7.50 output per million tokens at 00:00 UTC on January 1, 2027. Cached input is derived as input × 0.10. Estimates use the current time; actual costs use the API call start time. Stored costs are not recalculated.</span>
+            </p>
           </details>
 
           <details class="faq" id="faq-model">
@@ -2966,13 +3027,13 @@
                 >既定モデル・プロンプトの版数・推論の強さの既定・集計方法など、AI の結果に影響する変更は、版ごとに公開の<a
                   href="https://github.com/youkiti/sr-data-extraction-plugin/blob/master/CHANGELOG.md"
                   >変更履歴（CHANGELOG）</a
-                >に載せています。更新のあとに結果の傾向が変わったと感じたら、まずここを確かめてください。</span
+                >に載せています。更新のあとに結果の傾向が変わったと感じたら、まずここを確かめてください。値・判定・集計・エクスポート・Methods に影響した不具合の版の範囲と、シートでの確認・対処は<a href="https://github.com/youkiti/sr-data-extraction-plugin/blob/master/KNOWN_ISSUES.md">既知の不具合</a>にまとめています。</span
               >
               <span class="en" lang="en"
                 >Every change that affects AI output, such as the default model, prompt versions, the default reasoning effort or counting methods, is listed version by version in the public <a
                   href="https://github.com/youkiti/sr-data-extraction-plugin/blob/master/CHANGELOG.md"
                   >CHANGELOG</a
-                >. If results seem to shift after an update, check it first.</span
+                >. If results seem to shift after an update, check it first. For bugs affecting values, decisions, aggregates, exports or Methods, see <a href="https://github.com/youkiti/sr-data-extraction-plugin/blob/master/KNOWN_ISSUES.en.md">Known issues</a> for affected versions, sheet checks and remedies.</span
               >
             </p>
           </details>
@@ -3073,6 +3134,42 @@
                 >Delete the project files in your Google Drive / Sheets and uninstall the extension; Chrome removes the
                 in-browser settings (API keys and so on) with it.</span
               >
+            </p>
+          </details>
+
+          <details class="faq" id="faq-citation">
+            <summary>
+              <span class="ja" lang="ja">引用方法</span>
+              <span class="en" lang="en">How to cite</span>
+            </summary>
+            <div class="help-when">
+              <p class="help-when-label">
+                <span class="ja" lang="ja">こんなとき</span>
+                <span class="en" lang="en">When to read this</span>
+              </p>
+              <ul>
+                <li>
+                  <span class="ja" lang="ja">論文で本ツールを引用したい</span>
+                  <span class="en" lang="en">I want to cite this tool in a paper</span>
+                </li>
+                <li>
+                  <span class="ja" lang="ja">利用した版の引用情報を確認したい</span>
+                  <span class="en" lang="en">I want to find citation metadata for the version I used</span>
+                </li>
+              </ul>
+            </div>
+            <p>
+              <span class="ja" lang="ja"><a href="https://github.com/youkiti/sr-data-extraction-plugin/blob/master/CITATION.cff">CITATION.cff</a>
+                の著者・版の情報で引用してください。GitHub のリポジトリ画面の「Cite this repository」から引用形式をコピーできます。
+                利用した版は <code>chrome://extensions</code> で確認できます。</span>
+              <span class="en" lang="en">Use the authors and version in
+                <a href="https://github.com/youkiti/sr-data-extraction-plugin/blob/master/CITATION.cff">CITATION.cff</a>.
+                Select “Cite this repository” on GitHub to copy a formatted citation.
+                Check the version you used at <code>chrome://extensions</code>.</span>
+            </p>
+            <p>
+              <span class="ja" lang="ja">TODO: 初回の Zenodo リリース後に DOI のバッジとリンクを追加します。特定の版の引用には、その版の DOI を使用してください。</span>
+              <span class="en" lang="en">TODO: add the DOI badge and link after the first Zenodo release. To cite a specific version, use that version's DOI.</span>
             </p>
           </details>
 
