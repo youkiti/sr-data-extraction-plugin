@@ -2140,6 +2140,7 @@ function migrationLink(): HTMLElement {
 function renderOutcomeMigration(schema: SchemaState, ctx: ViewContext): HTMLElement {
   const migration = schema.outcomeMigration!;
   const children: HTMLElement[] = [headingWithHelp('h3', t('schema.migrationTitle'), 'schema-outcome-migration')];
+  let outcomeIndex = 0;
   for (const row of migration.rows) {
     const selected = el('input', { attributes: { type: 'checkbox', 'aria-label': row.id } });
     selected.checked = row.selected;
@@ -2152,14 +2153,27 @@ function renderOutcomeMigration(schema: SchemaState, ctx: ViewContext): HTMLElem
     const target = el('select', { attributes: { 'aria-label': `${t('schema.migrationTarget')} ${row.id}` } }, [
       el('option', { text: t('schema.migrationNone'), attributes: { value: '' } }),
       ...migration.rows.filter((other) => other.id !== row.id && other.selected && other.target === null).map((other) =>
-        el('option', { text: other.id, attributes: { value: other.id } })),
+        el('option', { text: other.newId ?? other.id, attributes: { value: other.id } })),
     ]);
     target.value = row.target ?? '';
     target.disabled = schema.confirming || migration.rows.some((other) => other.target === row.id);
     target.addEventListener('change', () => ctx.schema.onEditOutcomeMigration?.(row.id, { target: target.value || null }));
-    children.push(el('div', {}, [selected, el('span', { text: row.id }), label,
+    const line = el('div', {}, [selected, el('span', { text: row.id }), label,
       el('span', { text: t('schema.migrationStudies', { n: row.studies }) }),
-      el('span', { text: t('schema.migrationJudged', { n: row.judgedCells }) }), target]));
+      el('span', { text: t('schema.migrationJudged', { n: row.judgedCells }) }), target]);
+    if (row.selected && row.target === null && row.newId !== null) {
+      const input = el('input', { attributes: { type: 'text', 'aria-label': `${t('schema.migrationNewId')} ${row.id}` } });
+      input.value = row.newId;
+      input.disabled = schema.confirming;
+      input.addEventListener('change', () => ctx.schema.onEditOutcomeMigration?.(row.id, { newId: input.value }));
+      line.append(input, el('p', { text: t('schema.migrationNewIdHint') }));
+    }
+    children.push(line);
+    if (row.selected && row.target === null) {
+      children.push(...schema.editorOutcomeErrors.filter((error) => error.index === outcomeIndex)
+        .map((error) => el('p', { className: 'schema__error', text: error.message })));
+      outcomeIndex += 1;
+    }
   }
   const { collisionCount } = applyOutcomeAliases(migration, migrationContext(migration.rows));
   children.push(el('p', { attributes: { role: 'status' }, text: t('schema.migrationCollision', { n: collisionCount }) }));
@@ -2170,7 +2184,16 @@ function renderOutcomeMigration(schema: SchemaState, ctx: ViewContext): HTMLElem
       countJudgedCellsForOutcome(migration.decisions.filter((decision) => decision.studyId === id), row.id).cells > 0)).length;
     children.push(el('p', { attributes: { role: 'alert' }, text: t('schema.migrationExcluded', { n: cells, m: studies }) }));
   }
-  children.push(...schema.editorOutcomeErrors.map((error) => el('p', { className: 'schema__error', text: error.message })));
-  children.push(outcomeButton(t('schema.migrationConfirm'), () => ctx.schema.onConfirmOutcomeMigration?.(migration.confirmingExclusions), schema.confirming));
-  return el('section', { id: 'schema-outcome-migration' }, children);
+  children.push(...schema.editorOutcomeErrors.filter((error) => error.index < 0).map((error) => el('p', { className: 'schema__error', text: error.message })));
+  const confirm = outcomeButton(t('schema.migrationConfirm'), () => {
+    const focused = document.activeElement;
+    if (focused instanceof HTMLInputElement && card.contains(focused)) {
+      focused.blur();
+    }
+    ctx.schema.onConfirmOutcomeMigration?.(migration.confirmingExclusions);
+  }, schema.confirming);
+  confirm.addEventListener('mousedown', (event) => event.preventDefault());
+  children.push(confirm);
+  const card = el('section', { id: 'schema-outcome-migration' }, children);
+  return card;
 }

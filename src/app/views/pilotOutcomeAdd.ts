@@ -1,5 +1,5 @@
 import type { OutcomeListContext } from '../../features/schema/outcomeListContext';
-import { slugifyOutcomeLabel, validateOutcomeRows } from '../../features/schema/schemaOutcomes';
+import { isValidOutcomeId, slugifyOutcomeLabel, suggestOutcomeId, validateOutcomeRows } from '../../features/schema/schemaOutcomes';
 import type { SchemaOutcomeEditorRow } from '../../features/schema/types';
 import { t } from '../../lib/i18n';
 import { el } from '../ui/dom';
@@ -46,6 +46,10 @@ export function createPilotOutcomeAdd(context: OutcomeListContext, onAdd: (row: 
       outcomeId: id.trim(), outcomeLabel: name.trim(), description: addedVia === 'pilot_verify' ? description.value.trim() || null : null,
       typicalTimepoints: null, addedVia, note: null, idLocked: false, idEdited: edited, aliases: [],
     };
+    if (addedVia === 'pilot_candidate' && !isValidOutcomeId(id.trim())) {
+      row.outcomeId = suggestOutcomeId(id, [...context.everIds, ...context.aliasToId.keys()]);
+      row.aliases = [id.trim()];
+    }
     const errors = validateOutcomeRows([...context.outcomes, row], { listModeBefore: true });
     error.textContent = errors.map((item) => item.message).join(' ');
     if (errors.length > 0) {

@@ -19,6 +19,8 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'schema.outcomeLastRequired': 'The outcome list needs at least one outcome (it cannot be emptied once created).',
   'schema.outcomeTitle': 'Outcome list',
   'schema.migrationTitle': 'Create an outcome list',
+  'schema.migrationNewId': 'New id',
+  'schema.migrationNewIdHint': 'This id cannot be used in the list, so it gets a new id. The original id stays as an alias and keeps its judgments and AI values.',
   'schema.migrationLink': 'Use the migration card to create a list from existing outcomes',
   'schema.migrationTarget': 'Merge as an alias of',
   'schema.migrationNone': 'Do not merge',

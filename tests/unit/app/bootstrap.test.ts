@@ -5771,7 +5771,7 @@ test('移行のカードの編集と確定をサービスへ配線する', async
   state.documents.records = [];
   state.schema.versions = [];
   state.schema.currentFields = [matrixField()];
-  state.schema.outcomeMigration = { rows: [{ id: 'pain', label: '痛み', selected: true, target: null, studies: 1, judgedCells: 0 }], evidence: [], decisions: [], confirmingExclusions: false };
+  state.schema.outcomeMigration = { rows: [{ id: 'pain', newId: null, label: '痛み', selected: true, target: null, studies: 1, judgedCells: 0 }], evidence: [], decisions: [], confirmingExclusions: false };
   const stub = createWindowStub(state);
   const { deps } = createFakeDeps([]);
   const edit = jest.spyOn(schemaServices, 'updateOutcomeMigration').mockImplementation(() => undefined);

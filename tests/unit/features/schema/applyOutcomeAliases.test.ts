@@ -27,8 +27,8 @@ test('アウトカムと estimate 別 RoB だけを読み替え、別名を一�
   expect(canonicalOutcomeEntityKey('rob:d', context)).toBe('rob:d');
   expect(canonicalOutcomeEntityKey('-', context)).toBe('-');
   expect(canonicalOutcomeEntityKey(key, null)).toBe(key);
-  const rows = migrationContext([{ id: 'pain', label: '痛み', selected: true, target: null, studies: 1, judgedCells: 0 },
-    { id: 'old', label: '旧名', selected: true, target: 'pain', studies: 1, judgedCells: 0 }]).outcomes;
+  const rows = migrationContext([{ id: 'pain', newId: null, label: '痛み', selected: true, target: null, studies: 1, judgedCells: 0 },
+    { id: 'old', newId: null, label: '旧名', selected: true, target: 'pain', studies: 1, judgedCells: 0 }]).outcomes;
   const built = buildOutcomeListContext(rows, [], 0)!;
   expect(isEntityKeyInOutcomeList(alias, built)).toBe(true);
   expect(isOutcomeListCandidateId('old', built)).toBe(false);
@@ -173,8 +173,8 @@ test('引用だけを移行後に一覧側で編集しても、判定の勝者�
 });
 
 test('別名を初めて持つ版の確定時刻を、並び順や移行後の改訂によらず使う', () => {
-  const rows = migrationContext([{ id: 'pain', label: '痛み', selected: true, target: null, studies: 1, judgedCells: 0 },
-    { id: 'old', label: '旧名', selected: true, target: 'pain', studies: 1, judgedCells: 0 }]).outcomes;
+  const rows = migrationContext([{ id: 'pain', newId: null, label: '痛み', selected: true, target: null, studies: 1, judgedCells: 0 },
+    { id: 'old', newId: null, label: '旧名', selected: true, target: 'pain', studies: 1, judgedCells: 0 }]).outcomes;
   const all = [{ ...rows[0]!, schemaVersion: 3 }, { ...rows[0]!, schemaVersion: 2 }, { ...rows[0]!, schemaVersion: 1, aliases: [] }];
   const versions = [3, 2, 1].map((schemaVersion) => ({ schemaVersion, createdAt: `t${schemaVersion}` } as SchemaVersion));
   expect(buildOutcomeListContext(all, versions, 3)?.aliasMigratedAt).toEqual(new Map([['old', 't2']]));

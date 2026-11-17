@@ -4,7 +4,7 @@ import { serializeSchemaExport } from '../../../../src/features/schema/schemaTra
 import { addEditorOutcome, updateEditorOutcome, moveEditorOutcome, restoreEditorOutcome, requestRemoveEditorOutcome, confirmRemoveEditorOutcome, cancelRemoveEditorOutcome, importedOutcomeRows } from '../../../../src/app/services/schemaService';
 import { readAllDecisions } from '../../../../src/features/verification/decisionRepository';
 import { readEvidenceRows } from '../../../../src/features/extraction/evidenceRepository';
-import { buildOutcomeMigrationRows } from '../../../../src/features/schema/outcomeMigration';
+import { buildOutcomeMigrationRows, migrationOutcomes, migrationContext } from '../../../../src/features/schema/outcomeMigration';
 import { confirmOutcomeMigration, updateOutcomeMigration } from '../../../../src/app/services/schemaService';
 import { makeEvidence as migrationEvidence } from '../../features/export/rset/testHelpers';
 jest.mock('../../../../src/features/extraction/evidenceRepository');
@@ -1875,6 +1875,51 @@ function seedMigration(store: Store): void {
   verify: { ...store.getState().verify, targets: [] },
   protocol: { ...store.getState().protocol, records: [makeProtocol()] } });
 }
+
+test('規則外の元 id と先行する案を避け、新しい id と元の別名を一覧へ引き継ぐ', () => {
+  const evidence = ['6mwt_change', 'outcome_6mwt_change', '6MWT_change', 'pain'].map((id) => migrationEvidence({ entityKey: `outcome:${id}|arm:1` }));
+  const rows = buildOutcomeMigrationRows(evidence, [], []);
+  expect(rows.map((row) => row.newId)).toEqual(['outcome_6mwt_change_2', null, 'outcome_6mwt_change_3', null]);
+  rows[3]!.target = '6mwt_change';
+  expect(migrationOutcomes(rows)[0]).toMatchObject({ outcomeId: 'outcome_6mwt_change_2', aliases: ['6mwt_change', 'pain'] });
+  expect(migrationContext(rows).aliasToId.get('6mwt_change')).toBe('outcome_6mwt_change_2');
+});
+
+test('新しい id の編集だけを規則外の行に受け付け、更新でエラーを消す', () => {
+  const store = makeStore();
+  seedMigration(store);
+  const migration = store.getState().schema.outcomeMigration!;
+  migration.rows[1] = { ...migration.rows[1]!, id: '6mwt_change', newId: 'outcome_6mwt_change' };
+  updateOutcomeMigration(store, 'pain', { newId: 'ignored' });
+  expect(store.getState().schema.outcomeMigration!.rows[0]!.newId).toBeNull();
+  for (const patch of [{ newId: 'walking' }, { label: '歩行' }, { selected: false }, { selected: true }, { target: 'pain' }]) {
+    store.setState({ schema: { ...store.getState().schema, editorOutcomeErrors: [{ index: 0, message: '古いエラー' }] } });
+    updateOutcomeMigration(store, '6mwt_change', patch);
+    expect(store.getState().schema.editorOutcomeErrors).toEqual([]);
+  }
+  expect(store.getState().schema.outcomeMigration!.rows[1]!.newId).toBe('walking');
+});
+
+test('規則外・重複の新しい id は保存を止め、修正後は元の id を別名にして版を保存する', async () => {
+  const store = makeStore();
+  const { deps } = makeDeps();
+  seedMigration(store);
+  const migration = store.getState().schema.outcomeMigration!;
+  migration.rows[1] = { ...migration.rows[1]!, id: '6mwt_change', newId: 'outcome_6mwt_change' };
+  for (const newId of ['6x', 'pain']) {
+    updateOutcomeMigration(store, '6mwt_change', { newId });
+    await confirmOutcomeMigration(store, deps);
+    expect(store.getState().schema.editorOutcomeErrors).toEqual([expect.objectContaining({ index: 1 })]);
+    expect(saveVersionMock).not.toHaveBeenCalled();
+  }
+  updateOutcomeMigration(store, '6mwt_change', { newId: 'outcome_6mwt_change' });
+  saveVersionMock.mockResolvedValue({ version: makeVersion(2), fields: [makeField()], outcomes: [schemaOutcome({ outcomeId: 'outcome_6mwt_change', aliases: ['6mwt_change'] })] });
+  await confirmOutcomeMigration(store, deps);
+  expect(saveVersionMock).toHaveBeenCalledWith(expect.objectContaining({ outcomes: [
+    expect.objectContaining({ outcomeId: 'pain', aliases: [] }),
+    expect.objectContaining({ outcomeId: 'outcome_6mwt_change', aliases: ['6mwt_change'] }),
+  ] }), expect.anything());
+});
 
 test('移行候補の連鎖・自分への統合・未選択のまとめ先を防ぎ、選択解除で別名をほどく', () => {
   const store = makeStore();

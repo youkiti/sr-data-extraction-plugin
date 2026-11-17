@@ -9,6 +9,17 @@ const context: OutcomeListContext = {
   aliasToId: new Map(), everIds: new Set(['pain', 'removed']),
 };
 
+test('規則外の候補には新しい id を付け、元の id を別名に残す', async () => {
+  const form = setup();
+  form.addCandidate('6mwt_change', '歩行距離');
+  expect(form.onAdd).toHaveBeenCalledWith(expect.objectContaining({
+    outcomeId: 'outcome_6mwt_change', aliases: ['6mwt_change'], addedVia: 'pilot_candidate',
+  }));
+  await Promise.resolve();
+  form.addCandidate('sleep', '睡眠');
+  expect(form.onAdd).toHaveBeenLastCalledWith(expect.objectContaining({ outcomeId: 'sleep', aliases: [] }));
+});
+
 function setup(onAdd = jest.fn().mockResolvedValue(undefined)) {
   const form = createPilotOutcomeAdd(context, onAdd);
   const host = document.createElement('div');
