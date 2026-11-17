@@ -92,7 +92,7 @@ resolveRSetValue(rawValue, status):
 - **1 行の単位**: outcome_result レベルの entity インスタンス（entity_key `outcome:<slug>|arm:<slug>|time:<token>` をパース）。**arm セグメントの無い項目は `arm_id` / `arm_label` 空欄の行**として同表に出す（比較レベル報告の HR 等）
 - **インスタンス列挙**: 検証画面と同じ `verification/cells.ts` の `entityInstances()`（Evidence / Decisions からの集合 + `ArmStructures` 確定済み arm への展開）を再利用しつつ、**確定 annotator の `ResultsData` に実在する entity_key を必ず合流**させる（§7.2 の防御的完全性）
 - **キー列**: `study_id`, `study_label`, `outcome_id`（entity_key の `outcome:<slug>`）, `outcome_label`（§4.2.1）, `timepoint`（`time:` トークン原文）, `timepoint_value` / `timepoint_unit`（§6 の best-effort パース）, `arm_id`（arm slug）, `arm_label`（**ArmStructures の確定名**。未確定・未登録 arm は空）, `rob_tool` / `rob_overall_judgement`（study 単位で 1 回だけ解決し全 outcome 行へ複製。§4.2.2）, `schema_version`（そのインスタンスに実在する `ResultsData` 行の `schema_version` 最大値。データが無ければ空）
-- **値列**: outcome_result レベルの全 `field_name` を列で横持ち（`fieldIndex` 順）
+- **値列**: outcome_result レベルの全項目を列で横持ち（`fieldIndex` 順）。通常の列名は `field_name` と同じ。キー列と重なる既存項目だけ `<field_name>_field`（例: `outcome_id_field`）にする。その候補が他の項目名・キー列・先に改名した見出しとも重なるなら `_field_2`, `_field_3`… と連番で一意にする。ma.csv / ma_status.csv は同じ見出しを使い、値や内部の項目名による判定は変えない。新規の outcome_result 項目にはキー列名を使えないが、既存スキーマの出力はこの規則で保護する。
 - **ソート**: study（入力順）→ `outcome_id`（文字列昇順）→ `timepoint`（文字列昇順。空は先頭）→ `arm_id`（`ArmStructures` の確定順、無ければ文字列昇順でタイブレーク）
 
 #### 4.2.1 `outcome_label` の解決規約（v1 で新設）
@@ -119,6 +119,8 @@ outcome の slug（例 `mortality`）自体は人間可読な短い識別子で�
 - `judgement` / `support` が現行スキーマに存在しない（`support` を消したスキーマ等）ときは、その列を常に空にする
 
 ### 4.4 `data_dictionary.csv`
+
+`field_name` は `SchemaFields` の名前のまま出し、列構成は変えない。その項目の ma.csv / ma_status.csv の列名は通常同名だが、キー列と重なる既存項目では §4.2 の `<field_name>_field`（さらに重なれば連番）の規則で決まる。R コードで列を参照するときはこの読み替えが必要になる。
 
 エクスポートに使う最新確定版 `SchemaFields` の全項目: `field_id`, `field_name`, `field_label`, `section`, `entity_level`, `data_type`, `unit`, `allowed_values`, `required`, `extraction_instruction`, `example`, `schema_version`（`field_label` は issue 本文の候補になかったが、可読性のため追加した）。`fieldIndex` 順。
 

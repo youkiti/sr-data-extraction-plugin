@@ -25,6 +25,26 @@ function makeRow(overrides: Partial<SchemaEditorRow> = {}): SchemaEditorRow {
 }
 
 describe('validateEditorRows', () => {
+  test.each(['outcome_id', 'timepoint'])('outcome_result の %s は ma.csv キー列のエラー', (fieldName) => {
+    expect(validateEditorRows([makeRow({ fieldName, entityLevel: 'outcome_result' })])).toEqual([
+      { index: 0, column: 'fieldName', message:
+        `"${fieldName}" は R セットの ma.csv のキー列名のため、アウトカムの結果の項目名に使えません。` +
+        `別名（例: "${fieldName}_reported"）へ変更してください` },
+    ]);
+  });
+
+  test.each(['study', 'arm', 'rob_domain'] as const)('%s の timepoint は予約名にしない', (entityLevel) => {
+    expect(validateEditorRows([makeRow({ fieldName: 'timepoint', entityLevel })])).toEqual([]);
+  });
+
+  test.each(['study_id', 'schema_version'])('outcome_result の %s は従来の固定列エラーを優先する', (fieldName) => {
+    expect(validateEditorRows([makeRow({ fieldName, entityLevel: 'outcome_result' })])).toEqual([
+      { index: 0, column: 'fieldName', message:
+        `"${fieldName}" はシステムが使う StudyData の固定列名のため項目名に使えません。` +
+        `別名（例: "${fieldName}_reported"）へ変更してください` },
+    ]);
+  });
+
   test('妥当な行はエラーなし', () => {
     expect(validateEditorRows([makeRow()])).toEqual([]);
   });

@@ -145,6 +145,19 @@ describe('parseDraftSchemaResponse', () => {
     expect(rows[0]?.fieldName).toBe('sample_size_total');
   });
 
+  test('ma.csv キー列の改名は outcome_result に限り、既存名と改名結果の両方を避ける', () => {
+    const items = [
+      { ...DRAFTED_ITEM, field_name: 'timepoint' },
+      ...['outcome_id', 'outcome_id', 'outcome_id_reported', 'outcome_id_reported_2', 'timepoint']
+        .map((field_name) => ({ ...DRAFTED_ITEM, entity_level: 'outcome_result', field_name })),
+    ];
+    const { rows } = parseDraftSchemaResponse(JSON.stringify(items));
+    expect(rows.map((row) => row.fieldName)).toEqual([
+      'timepoint', 'outcome_id_reported_3', 'outcome_id_reported_4',
+      'outcome_id_reported', 'outcome_id_reported_2', 'timepoint_reported',
+    ]);
+  });
+
   test('StudyData 固定列名（study_id）と衝突する field_name は "_reported" を付けて自動リネームする', () => {
     const items = [{ ...DRAFTED_ITEM, field_name: 'study_id' }];
     const { rows } = parseDraftSchemaResponse(JSON.stringify(items));

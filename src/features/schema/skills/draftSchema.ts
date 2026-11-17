@@ -5,7 +5,7 @@
 // - 抽出対象論文は英語を主想定のため、プロンプト本文は英語（requirements.md §6）
 import { z } from 'zod';
 import type { EntityLevel, FieldDataType } from '../../../domain/schemaField';
-import { STUDY_DATA_FIXED_HEADERS } from '../../../domain/sheetsSchema';
+import { reservedFieldNameReason } from '../validateField';
 import type { SchemaEditorRow, SchemaOutcomeEditorRow } from '../types';
 
 /** LLMApiLog.purpose（draft_schema）と対応づける skill 識別子 */
@@ -214,22 +214,15 @@ function stripJsonFence(text: string): string {
 }
 
 /**
- * StudyData の固定列（domain/sheetsSchema.ts。validateField.ts の RESERVED_FIELD_NAMES と
- * 同一リストを共有）。AI が "study_id" のような固定列名をそのまま field_name として
- * 提案してしまい、保存時のバリデーションで手戻りが発生する事象（issue #48）を防ぐため、
- * ドラフトのパース段階で衝突しない名前へ自動リネームする
- */
-const RESERVED_FIELD_NAMES = new Set<string>(STUDY_DATA_FIXED_HEADERS);
-
-/**
- * field_name が StudyData の固定列名と衝突する行を自動リネームする。
+ * StudyData の固定列名、および outcome_result 行の ma.csv キー列名との衝突を
+ * 共通の予約名判定で検出し、保存時の手戻りを防ぐためパース段階で自動リネームする。
  * 命名規則: "<name>_reported" を第一候補とし、既存の field_name（他の衝突リネーム結果を
  * 含む）とさらに重複する場合は "<name>_reported_2"、"_3" ... と連番で一意になるまで試す
  */
 function resolveReservedFieldNameCollisions(rows: SchemaEditorRow[]): SchemaEditorRow[] {
   const usedNames = new Set(rows.map((row) => row.fieldName));
   return rows.map((row) => {
-    if (!RESERVED_FIELD_NAMES.has(row.fieldName)) {
+    if (reservedFieldNameReason(row.fieldName, row.entityLevel) === null) {
       return row;
     }
     let candidate = `${row.fieldName}_reported`;

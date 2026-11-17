@@ -13,7 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
-（まだありません / Nothing yet）
+### その他の変更 / Other changes
+
+- アウトカムの結果の項目名に ma.csv のキー列名（outcome_id・timepoint など）を使えなくし、AI ドラフトは `_reported` を付けて自動改名します。既にその名前の項目がある場合、R セットの ma.csv / ma_status.csv では列名が `<名前>_field`（さらに重なれば連番）に変わるため、R コードの列名を読み替えてください。既存スキーマは次に表のデザインを保存するときに改名を求められます（2026-11-17、issue #549）。
+  Outcome result fields can no longer use ma.csv key column names (such as outcome_id and timepoint); AI drafts automatically append `_reported`. For existing fields with these names, R set ma.csv / ma_status.csv columns become `<name>_field` (with numbered suffixes for further collisions), so update column references in R code. Existing schemas require renaming these fields the next time the table design is saved (2026-11-17, issue #549).
 
 ## v0.36.0（2026-11-17）
 
