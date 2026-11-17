@@ -27,6 +27,32 @@ function row(overrides: Parameters<typeof makeResultsDataRow>[0]) {
 }
 
 describe('buildMaCsv', () => {
+  test.each([0, 1, 2])('キー列と衝突する項目の見出しだけ改名する（既存の改名候補: %s 件）', (existingCount) => {
+    const existingNames = ['outcome_id_field', 'outcome_id_field_2'].slice(0, existingCount);
+    const names = ['outcome_id', 'timepoint', ...existingNames];
+    const fields = names.map((fieldName, fieldIndex) => makeField({
+      fieldId: `f-${fieldIndex}`, fieldName, fieldIndex, entityLevel: 'outcome_result',
+    }));
+    const resultsRows = fields.map((field, index) => row({
+      resultId: `r-${index}`, fieldId: field.fieldId,
+      entityKey: 'outcome:pain|time:30d', value: `value-${index}`,
+    }));
+    const result = buildMaCsv([makeStudy()], resultsRows, [], [], [], fields);
+    const values = parseCsv(result.csv);
+    const statuses = parseCsv(result.statusCsv);
+    expect(values[0]).toEqual(result.header);
+    expect(statuses[0]).toEqual(result.header);
+    expect(new Set(result.header).size).toBe(result.header.length);
+    expect(result.header.slice(12)).toEqual([
+      existingCount === 0 ? 'outcome_id_field' : `outcome_id_field_${existingCount + 1}`, 'timepoint_field',
+      ...existingNames,
+    ]);
+    expect(values[1]?.slice(12)).toEqual(names.map((_, index) => `value-${index}`));
+    expect(statuses[1]?.slice(12)).toEqual(names.map(() => 'verified'));
+    expect(values[1]?.[2]).toBe('pain');
+    expect(values[1]?.[4]).toBe('30d');
+  });
+
   const outcomeList = buildOutcomeListContext([{
     schemaVersion: 1, aliases: [], outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
     description: null, typicalTimepoints: null, addedVia: 'schema_editor', note: null,
