@@ -67,6 +67,46 @@ test('最新の項目と一覧から版を作り、全パイロットの文脈�
   expect(loadPilotVerification).toHaveBeenCalledWith(store, deps, 'study');
 });
 
+test('追加成功後は依存キャッシュを破棄し、パイロットの PDF を保って検証を読み直す', async () => {
+  const { store, deps } = setup();
+  type State = ReturnType<typeof store.getState>;
+  const state = store.getState();
+  const pilotDispose = jest.fn();
+  const verifyDispose = jest.fn();
+  const adjudicateDispose = jest.fn();
+  const verification = { disposePdf: pilotDispose } as unknown as State['pilot']['verification'];
+  store.setState({
+    pilot: { ...state.pilot, verification },
+    verify: { ...state.verify, targets: [], selectedStudyId: 'study',
+      verification: { disposePdf: verifyDispose } as unknown as State['verify']['verification'] },
+    dashboard: { ...state.dashboard, data: {} as NonNullable<State['dashboard']['data']> },
+    export: { ...state.export, built: {} as NonNullable<State['export']['built']> },
+    adjudicate: { ...state.adjudicate, rows: [], outcomeList: null,
+      working: { disposePdf: adjudicateDispose } as unknown as State['adjudicate']['working'] },
+    home: { ...state.home, assignedProgress: {} as NonNullable<State['home']['assignedProgress']> },
+  });
+  const reloaded = { ...verification, reloaded: true } as unknown as State['pilot']['verification'];
+  jest.mocked(loadPilotVerification).mockImplementationOnce(async () => {
+    expect(store.getState().pilot.verification).toBe(verification);
+    expect(store.getState().pilot.verifyStudyId).toBe('study');
+    expect(store.getState().pilot.outcomeList?.currentIds.has('sleep')).toBe(true);
+    expect(store.getState().verify.verification).toBeNull();
+    store.setState({ pilot: { ...store.getState().pilot, verification: reloaded, verifyLoading: false } });
+  });
+  await addPilotOutcome(store, deps, row);
+  expect(store.getState().verify).toMatchObject({ verification: null, targets: null, selectedStudyId: null });
+  expect(store.getState().dashboard.data).toBeNull();
+  expect(store.getState().export.built).toBeNull();
+  expect(store.getState().adjudicate.rows).toBeNull();
+  expect(store.getState().adjudicate.outcomeList).toBeUndefined();
+  expect(store.getState().home.assignedProgress).toBeNull();
+  expect(verifyDispose).toHaveBeenCalledTimes(1);
+  expect(adjudicateDispose).toHaveBeenCalledTimes(1);
+  expect(pilotDispose).not.toHaveBeenCalled();
+  expect(store.getState().pilot.verification).toBe(reloaded);
+  expect(store.getState().pilot.verifyLoading).toBe(false);
+});
+
 test('外した id は初出の経路と最後の時点を引き継ぐ', async () => {
   const { store, deps } = setup();
   jest.mocked(readAllSchemaOutcomes).mockResolvedValue([

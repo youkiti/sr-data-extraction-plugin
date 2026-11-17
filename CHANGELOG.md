@@ -13,7 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
-（まだありません / Nothing yet）
+### その他の変更 / Other changes
+
+- 表のデザインで版を確定した後や、パイロットの検証から一覧へアウトカムを追加した後、同じタブの検証画面・パイロット・裁定・ダッシュボード・エクスポートが確定前の一覧のまま表示される問題を修正しました。確定の後は新しい版で読み直します（2026-11-17、issue #547）。
+  Fixed the verification, pilot, adjudication, dashboard, and export screens in the same tab still showing the previous outcome list after confirming a schema version or adding an outcome from pilot verification. They now reload with the new version (2026-11-17, issue #547).
 
 ## v0.36.0（2026-11-17）
 

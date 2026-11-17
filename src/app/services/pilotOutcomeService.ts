@@ -9,7 +9,7 @@ import { getCurrentUserEmail } from '../../lib/google/identity';
 import { t } from '../../lib/i18n';
 import type { Store } from '../store';
 import { showToast } from '../ui/toast';
-import { outcomeEditorRows, resolveProtocol } from './schemaService';
+import { discardSchemaDependentCaches, outcomeEditorRows, resolveProtocol } from './schemaService';
 import { loadPilotVerification, type PilotServiceDeps } from './pilotService';
 import { withSpreadsheetWriteLock } from './verificationService';
 
@@ -76,6 +76,7 @@ export async function addPilotOutcome(store: Store, deps: PilotServiceDeps, row:
       counts: { ...after.counts, schemaVersions: nextVersions.length },
       pilot: { ...after.pilot, outcomeList },
     });
+    discardSchemaDependentCaches(store, { keepPilot: true });
     showToast(t('verify.outcomeAddedToSchema', { version: saved.version.schemaVersion, label: added.outcomeLabel.trim() }));
   }).catch((error: unknown) => {
     store.setState({ pilot: { ...store.getState().pilot, verifyLoading: false } });

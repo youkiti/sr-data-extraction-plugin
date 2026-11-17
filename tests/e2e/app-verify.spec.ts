@@ -31,6 +31,47 @@ test('一覧モードの検証はスキーマ編集への案内を出し、一�
   await expect(page.locator('.focus-card__heading')).toContainText('pain');
 });
 
+test('同じタブで一覧からアウトカムを外して版を確定すると検証セルを読み直す', async ({ page }) => {
+  // 群の下書きを出すため、一覧の pain に当たる AI の抽出結果を 1 行置く
+  const evidence = [...EVIDENCE_ROW_1];
+  evidence[3] = OUTCOME_FIELD_ROW[1]!;
+  evidence[5] = 'outcome:pain|arm:1';
+  await setupRoutes(page, {
+    schemaRows: [OUTCOME_FIELD_ROW], evidenceRows: [evidence], persistSchemaWrites: true,
+    outcomeRows: [
+      ['1', '1', 'pain', '痛み', '', '', 'schema_editor', ''],
+      ['1', '2', 'sleep', '睡眠', '', '', 'schema_editor', ''],
+    ],
+  });
+  await initApp(page, '#/verify?study=study-1');
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+  await page.locator('.verify__arm-name').first().fill('介入群');
+  await page.locator('#verify-arm-confirm').click();
+  await expect(page.locator('#verify-arm-revise')).toBeVisible();
+  await page.locator('.verify__tab', { hasText: 'アウトカム' }).click();
+  // フォーカス表示はセルを 1 つずつ描くので、外す前後の差は進捗の分母（pain と sleep の 2 セル）で見る
+  await expect(page.locator('#verify-study option:checked')).toContainText('判定済み 0 / 2');
+
+  await page.evaluate(() => { location.hash = '#/schema'; });
+  await expect(page.locator('#schema-confirmed')).toBeVisible();
+  await page.locator('#schema-new-version').click();
+  const sleepRow = page.locator('tr').filter({ has: page.locator('.schema__outcome-id') }).nth(1);
+  await expect(sleepRow.locator('.schema__outcome-id')).toHaveValue('sleep');
+  await sleepRow.locator('.schema__outcome-remove').click();
+  // 判定済みのセルが無いので、確認なしで一覧から外れる（requestRemoveEditorOutcome）
+  await expect(page.locator('.schema__outcome-id')).toHaveCount(1);
+  await page.locator('#schema-confirm').click();
+  await expect(page.locator('#schema-confirmed')).toBeVisible();
+  await expect(page.locator('#schema-current-meta')).toContainText('v2');
+
+  await page.evaluate(() => { location.hash = '#/verify?study=study-1'; });
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+  await page.locator('.verify__tab', { hasText: 'アウトカム' }).click();
+  await expect(page.locator('#verify-study option:checked')).toContainText('判定済み 0 / 1');
+  await expect(page.locator('.focus-card__heading')).toContainText('pain');
+  await expect(page.locator('[data-cell-key*="sleep"]')).toHaveCount(0);
+});
+
 test('オーナーの検証画面に自分の判定だけを表示する注記が出る', async ({ page }) => {
   await setupRoutes(page, { schemaRows: [STUDY_FIELD_ROW], evidenceRows: [EVIDENCE_ROW_1] });
   await initApp(page, '#/verify?study=study-1');
@@ -358,6 +399,8 @@ async function setupRoutes(
   options: {
     schemaRows: string[][];
     outcomeRows?: string[][];
+    /** スキーマ改訂後の再読込を再現する場合だけ追記を保持する。 */
+    persistSchemaWrites?: boolean;
     schemaHeaders?: string[];
     evidenceRows: string[][];
     rotatedPdf?: boolean;
@@ -390,6 +433,18 @@ async function setupRoutes(
     titles.push('SchemaOutcomes');
   }
   const quoteValues: string[][] = [];
+  const schemaTables: Record<string, string[][]> = {
+    SchemaVersions: [[...SHEET_HEADERS.SchemaVersions], SHEET_HEADERS.SchemaVersions.map((header) => ({
+      schema_version: '1', parent_version: '', protocol_version: '1', created_by_type: 'user_edit',
+      created_at: '2026-11-16', created_by: 'owner', note: '',
+    } as Record<string, string>)[header] ?? '')],
+    SchemaFields: [options.schemaHeaders ?? SCHEMA_FIELDS_HEADERS, ...options.schemaRows],
+    SchemaOutcomes: [[...SHEET_HEADERS.SchemaOutcomes], ...(options.outcomeRows ?? [])],
+    ArmStructures: [],
+  };
+  if (options.persistSchemaWrites) {
+    titles.push('SchemaVersions', 'Protocol');
+  }
 
   // 保存の競合検出 E2E の回帰対応（issue #248 回帰 2 / issue #252）: StudyData / ResultsData を
   // 共有ヘルパ（sheetsStore）でステートフルにする。実 Sheets は append した行がそのまま次の
@@ -407,6 +462,30 @@ async function setupRoutes(
     const req = route.request();
     const url = decodeURIComponent(req.url());
     const method = req.method();
+    const schemaTable = Object.keys(schemaTables).find((title) => url.includes(`/values/${title}`));
+    if (options.persistSchemaWrites && method === 'GET' && url.includes('values:batchGet')) {
+      // 追記の前の見出しの確認（例: appendSchemaFields の SchemaFields!1:1）には見出し行を返す
+      const headerTable = Object.keys(schemaTables).find((title) => url.includes(`${title}!1:1`));
+      if (headerTable !== undefined) {
+        await route.fulfill({ json: { valueRanges: [{ values: schemaTables[headerTable]!.slice(0, 1) }] } });
+        return;
+      }
+    }
+    if (options.persistSchemaWrites && schemaTable !== undefined) {
+      if (method === 'GET') {
+        await route.fulfill({ json: { values: schemaTables[schemaTable] } });
+        return;
+      }
+      // 実 Sheets と同じく、次の GET では値を文字列（真偽は TRUE / FALSE、null は空）で返す
+      const body = req.postDataJSON() as { values: unknown[][] };
+      const rows = body.values.map((row) => row.map((value) =>
+        value === null || value === undefined ? '' : typeof value === 'boolean' ? (value ? 'TRUE' : 'FALSE') : String(value)));
+      if (url.includes(':append')) {
+        schemaTables[schemaTable]!.push(...rows);
+      } else if (method === 'PUT') {
+        schemaTables[schemaTable] = rows;
+      }
+    }
     if (method === 'GET') {
       if (url.includes('fields=sheets.properties.title')) {
         // ArmStructures タブなし（v0.7 より前の既存プロジェクト）→ 書き込み時にタブを作る
@@ -422,6 +501,17 @@ async function setupRoutes(
         await route.fulfill({
           json: { valueRanges: [{ values: [[...SHEET_HEADERS.Evidence]] }] },
         });
+      } else if (options.persistSchemaWrites && url.includes('/values/Protocol')) {
+        const protocol: Record<string, string> = {
+          version: '1', block_count: '0', source_type: 'manual', raw_text_inline: 'Review protocol',
+          created_at: '2026-11-16', created_by: 'owner',
+        };
+        const headers = [
+          'version', 'framework_type', 'research_question', 'inclusion_criteria', 'exclusion_criteria',
+          'study_design', 'block_count', 'combination_expression', 'source_type', 'source_filename',
+          'raw_text_ref', 'raw_text_preview', 'raw_text_inline', 'created_at', 'created_by',
+        ];
+        await route.fulfill({ json: { values: [headers, headers.map((header) => protocol[header] ?? '')] } });
       } else if (url.includes('/values/QuoteSets')) {
         await route.fulfill({ json: { values: quoteValues } });
       } else if (url.includes('/values/Evidence')) {

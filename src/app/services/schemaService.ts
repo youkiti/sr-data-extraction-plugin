@@ -988,9 +988,8 @@ export async function confirmSchema(
         presetDialog: null,
       },
       counts: { ...after.counts, schemaVersions: versions.length },
-      pilot: { ...after.pilot, outcomeList: undefined },
-      adjudicate: { ...after.adjudicate, outcomeList: undefined },
     });
+    discardSchemaDependentCaches(store);
     showToast(t('schema.toastConfirmed', { version: version.schemaVersion, n: fields.length }));
   } catch (err) {
     patchSchema(store, { confirming: false, draftError: toMessage(err) });
@@ -1049,20 +1048,24 @@ export async function confirmOutcomeMigration(store: Store, deps: SchemaServiceD
     editorOrigin: 'user_edit', editorParentVersion: schema.versions?.[0]?.schemaVersion ?? null,
   });
   await confirmSchema(store, deps, 'アウトカムの一覧を作成（移行）');
+}
+
+/** 確定した版に依存するキャッシュを破棄し、次に開くときに読み直す。
+ * パイロット内の追加では、開いている PDF と読み直しに必要な状態を保つ。 */
+export function discardSchemaDependentCaches(store: Store, options: { keepPilot?: boolean } = {}): void {
   const after = store.getState();
-  if (after.schema.outcomeMigration !== null) {
-    return;
+  if (options.keepPilot !== true) {
+    void after.pilot.verification?.disposePdf?.();
   }
-  void after.pilot.verification?.disposePdf?.();
   void after.verify.verification?.disposePdf?.();
   void after.adjudicate.working?.disposePdf();
   store.setState({
     verify: { ...after.verify, targets: null, selectedStudyId: null, verification: null, studyValues: null, studyRowUpdatedAt: null, resultsRowUpdatedAt: {} },
-    pilot: { ...after.pilot, verification: null, verifyStudyId: null, matrix: undefined, outcomeList: undefined,
+    pilot: options.keepPilot === true ? after.pilot : { ...after.pilot, verification: null, verifyStudyId: null, matrix: undefined, outcomeList: undefined,
       run: null, runFields: null, evidence: null, historyInitialized: false, studyValues: null, studyRowUpdatedAt: null, resultsRowUpdatedAt: {} },
     home: { ...after.home, assignedProgress: null, assignedProgressError: null },
     dashboard: { ...after.dashboard, data: null, reviewSetProgress: null, comparison: { loading: false, error: null, data: null } },
-    adjudicate: { ...after.adjudicate, rows: null, selectedStudyId: null, working: null, agreement: null, calibrationAgreement: null },
+    adjudicate: { ...after.adjudicate, rows: null, selectedStudyId: null, working: null, agreement: null, calibrationAgreement: null, outcomeList: undefined },
     export: { ...after.export, built: null, materials: null, rSetMaterials: null, rSet: null, methodsFacts: null },
   });
 }

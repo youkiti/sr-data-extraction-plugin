@@ -1501,7 +1501,8 @@ describe('confirmSchema', () => {
 
     expect(store.getState().pilot.outcomeList).toBeUndefined();
     expect(store.getState().adjudicate.outcomeList).toBeUndefined();
-    expect(store.getState().pilot.verifyStudyId).toBe('study-1');
+    // 確定の後はパイロットも最新の結果から開き直す（移行の経路と同じ。issue #547）
+    expect(store.getState().pilot.verifyStudyId).toBeNull();
     expect(saveVersionMock).toHaveBeenCalledWith(
       expect.objectContaining({
         spreadsheetId: 'sheet-1',
@@ -2440,6 +2441,59 @@ test('二重の確定操作は保存を一度だけ実行する', async () => {
   expect(saveVersionMock).toHaveBeenCalledTimes(1);
 });
 
+
+test.each([false, true])('版の確定成功時だけ依存キャッシュと PDF を破棄する（一覧の削除: %s）', async (removeOutcome) => {
+  const store = makeStore();
+  store.setState({
+    protocol: { ...store.getState().protocol, records: [makeProtocol()] },
+    schema: { ...store.getState().schema, versions: [makeVersion(1)], editorRows: [makeEditorRow()] },
+  });
+  if (removeOutcome) {
+    seedOutcomeEditor(store);
+    store.setState({ schema: { ...store.getState().schema,
+      editorOutcomes: store.getState().schema.editorOutcomes.map((row) => ({ ...row, outcomeId: 'pain' })),
+      acknowledgedRemovedOutcomeIds: ['mortality'],
+    } });
+  }
+  type State = ReturnType<typeof store.getState>;
+  const state = store.getState();
+  const verifyDispose = jest.fn();
+  const pilotDispose = jest.fn();
+  const adjudicateDispose = jest.fn();
+  store.setState({
+    verify: { ...state.verify, targets: [], selectedStudyId: 'study-1',
+      verification: { disposePdf: verifyDispose } as unknown as State['verify']['verification'] },
+    pilot: { ...state.pilot, verification: { disposePdf: pilotDispose } as unknown as State['pilot']['verification'] },
+    dashboard: { ...state.dashboard, data: {} as NonNullable<State['dashboard']['data']> },
+    export: { ...state.export, built: {} as NonNullable<State['export']['built']> },
+    adjudicate: { ...state.adjudicate, rows: [], outcomeList: null,
+      working: { disposePdf: adjudicateDispose } as unknown as State['adjudicate']['working'] },
+    home: { ...state.home, assignedProgress: {} as NonNullable<State['home']['assignedProgress']> },
+  });
+  const cached = store.getState();
+  saveVersionMock.mockRejectedValueOnce(new Error('保存失敗'));
+  await confirmSchema(store, makeDeps().deps, '');
+  for (const key of ['verify', 'pilot', 'dashboard', 'export', 'adjudicate', 'home'] as const) {
+    expect(store.getState()[key]).toBe(cached[key]);
+  }
+  for (const dispose of [verifyDispose, pilotDispose, adjudicateDispose]) {
+    expect(dispose).not.toHaveBeenCalled();
+  }
+  saveVersionMock.mockResolvedValue({ version: makeVersion(3), fields: [makeField()],
+    outcomes: removeOutcome ? [schemaOutcome({ outcomeId: 'pain' })] : [] });
+  await confirmSchema(store, makeDeps().deps, '');
+  expect(store.getState().schema.editorRows).toBeNull();
+  expect(store.getState().verify).toMatchObject({ verification: null, targets: null, selectedStudyId: null });
+  expect(store.getState().pilot.verification).toBeNull();
+  expect(store.getState().dashboard.data).toBeNull();
+  expect(store.getState().export.built).toBeNull();
+  expect(store.getState().adjudicate.rows).toBeNull();
+  expect(store.getState().adjudicate.outcomeList).toBeUndefined();
+  expect(store.getState().home.assignedProgress).toBeNull();
+  for (const dispose of [verifyDispose, pilotDispose, adjudicateDispose]) {
+    expect(dispose).toHaveBeenCalledTimes(1);
+  }
+});
 
 test('移行成功時だけパイロットの検証・一覧・マトリクスを破棄する', async () => {
   const store = makeStore();
