@@ -15,6 +15,8 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ### その他の変更 / Other changes
 
+- 表のデザインで版を確定した後や、パイロットの検証から一覧へアウトカムを追加した後、同じタブの検証画面・パイロット・裁定・ダッシュボード・エクスポートが確定前の一覧のまま表示される問題を修正しました。確定の後は新しい版で読み直します（2026-11-17、PR #554、issue #547）。
+  Fixed the verification, pilot, adjudication, dashboard, and export screens in the same tab still showing the previous outcome list after confirming a schema version or adding an outcome from pilot verification. They now reload with the new version (2026-11-17, PR #554, issue #547).
 - アウトカムの一覧を作る移行のカードで、AI が `6mwt_change` のように一覧の id の規則に合わないキーを返していると確定できなかった問題を修正しました。その行に新しい id の入力（既定は `outcome_6mwt_change` のような規則に合う案）を出し、元のキーを別名として残して判定と AI の値を引き継ぎます。入力の誤りはその行の下に出し、入力の直後の 1 回目の押下が効かなかった問題も直しました。パイロットの一覧外の候補の「表のデザインに追加」も同じ扱いにしました（2026-11-17、issue #548）。
   Fixed the outcome list migration card failing to confirm when AI keys such as `6mwt_change` did not match the outcome id rule. Such rows now get a new id input (defaulting to a valid suggestion such as `outcome_6mwt_change`), and the original key is kept as an alias so judgments and AI values carry over. Input errors now appear under the affected row, and the first click right after typing now takes effect. “Add to table design” for pilot candidates outside the list handles such keys the same way (2026-11-17, issue #548).
 - アウトカムの結果の項目名に ma.csv のキー列名（outcome_id・timepoint など）を使えなくし、AI ドラフトは `_reported` を付けて自動改名します。既にその名前の項目がある場合、R セットの ma.csv / ma_status.csv では列名が `<名前>_field`（さらに重なれば連番）に変わるため、R コードの列名を読み替えてください。既存スキーマは次に表のデザインを保存するときに改名を求められます（2026-11-17、issue #549）。
