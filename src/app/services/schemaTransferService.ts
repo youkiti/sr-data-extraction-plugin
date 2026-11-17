@@ -164,7 +164,10 @@ export async function importSchemaFile(
     if (file.size > SCHEMA_IMPORT_MAX_BYTES) {
       throw new SchemaImportError('schema.importTooLarge');
     }
-    const { source, rows, outcomes } = await parseImportFile(file, makeDecoder);
+    const parsed = await parseImportFile(file, makeDecoder);
+    const { source, rows } = parsed;
+    const blockedOutcomes = store.getState().schema.outcomeMigration && (parsed.outcomes?.length ?? 0) > 0;
+    const outcomes = blockedOutcomes ? null : parsed.outcomes;
     // 読み込み中に別の操作（エディタを開く・AI 再ドラフト・確定・プロジェクト切替）が始まっていたら捨てる
     const after = store.getState();
     if (
@@ -204,6 +207,9 @@ export async function importSchemaFile(
       });
     }
     showToast(t('schema.toastImported', { n: rows.length }));
+    if (blockedOutcomes) {
+      showToast(t('schema.migrationImport'));
+    }
   } catch (err) {
     patchTransfer(store, { importing: false, importError: toMessage(err) });
   }

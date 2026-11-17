@@ -28,7 +28,7 @@ function row(overrides: Parameters<typeof makeResultsDataRow>[0]) {
 
 describe('buildMaCsv', () => {
   const outcomeList = buildOutcomeListContext([{
-    schemaVersion: 1, outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
+    schemaVersion: 1, aliases: [], outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
     description: null, typicalTimepoints: null, addedVia: 'schema_editor', note: null,
   }], [], 1);
 

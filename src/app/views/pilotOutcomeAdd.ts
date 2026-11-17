@@ -44,7 +44,7 @@ export function createPilotOutcomeAdd(context: OutcomeListContext, onAdd: (row: 
     const row: SchemaOutcomeEditorRow = {
       // 説明欄はフォームの入力なので、候補から足すときは使わない
       outcomeId: id.trim(), outcomeLabel: name.trim(), description: addedVia === 'pilot_verify' ? description.value.trim() || null : null,
-      typicalTimepoints: null, addedVia, note: null, idLocked: false, idEdited: edited,
+      typicalTimepoints: null, addedVia, note: null, idLocked: false, idEdited: edited, aliases: [],
     };
     const errors = validateOutcomeRows([...context.outcomes, row], { listModeBefore: true });
     error.textContent = errors.map((item) => item.message).join(' ');

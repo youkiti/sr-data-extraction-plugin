@@ -1,3 +1,4 @@
+import { buildQuoteSetRows } from '../../../../src/features/verification/cellQuotes';
 import type { Decision } from '../../../../src/domain/decision';
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { SchemaField } from '../../../../src/domain/schemaField';
@@ -906,4 +907,21 @@ test.each(['flag_consult', 'unflag_consult'] as const)('要相談イベント %s
   expect(upsertResultsMock).not.toHaveBeenCalled();
   expect(foldDecisionWriteTokens([write], { studyRowUpdatedAt: 't0', resultsRowUpdatedAt: {} }))
     .toEqual({ studyRowUpdatedAt: 't0', resultsRowUpdatedAt: {} });
+});
+
+
+test('検証の引用の採用元を人の判定とそろえて別名から読み替える', async () => {
+  const entityKey = 'outcome:old|arm:1';
+  const decision = makeDecision({ entityKey });
+  readAllDecisionsMock.mockResolvedValue([decision]);
+  const quoteSetRows = buildQuoteSetRows({ setId: 'q1', savedAt: 't', savedBy: decision.annotator,
+    annotator: decision.annotator, annotatorType: decision.annotatorType, studyId: decision.studyId,
+    fieldId: decision.fieldId, entityKey, schemaVersion: 1, baseRunId: null, quotes: [] });
+  const { verification } = await loadVerificationBundle(makeBundleInput({
+    quoteSetRows, outcomeList: { schemaVersion: 1, outcomes: [], currentIds: new Set(['mortality']),
+      everIds: new Set(['mortality', 'old']), aliasToId: new Map([['old', 'mortality']]) },
+  }), makeDeps());
+  expect(verification.decisions[0]!.entityKey).toBe('outcome:mortality|arm:1');
+  expect(verification.quoteSetRows).toEqual([{ ...quoteSetRows[0], entityKey: 'outcome:mortality|arm:1' }]);
+  expect(quoteSetRows[0]!.entityKey).toBe(entityKey);
 });

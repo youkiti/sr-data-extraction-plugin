@@ -149,6 +149,10 @@ export interface SchemaViewCallbacks {
   onApplyEnumSuggestion(): void;
   onCancelEnumSuggestion(): void;
   onAddOutcome(): void;
+  /** 既存アウトカムの移行の選択・表示名・まとめ先を変更する。 */
+  onEditOutcomeMigration?(id: string, patch: { selected?: boolean; label?: string; target?: string | null }): void;
+  /** 既存アウトカムから最初の一覧を確定する。 */
+  onConfirmOutcomeMigration?(acknowledge?: boolean): void;
   onEditOutcome(index: number, patch: Partial<SchemaOutcomeEditorRow>): void;
   onMoveOutcome(from: number, to: number): void;
   onRestoreOutcome(id: string): void;

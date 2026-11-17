@@ -121,6 +121,7 @@ export async function saveSchemaVersion(
     schemaVersion,
     outcomeIndex: index + 1,
     outcomeId: row.outcomeId.trim(),
+    aliases: row.aliases.map((alias) => alias.trim()),
     outcomeLabel: row.outcomeLabel.trim(),
     description: row.description?.trim() || null,
     typicalTimepoints: row.typicalTimepoints?.trim() || null,

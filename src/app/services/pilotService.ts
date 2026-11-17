@@ -2,6 +2,7 @@
 // - パイロット実行: extractionService.runExtraction（runType = 'pilot'）を配線する
 // - 検証データ束の組み立て / 判定・群構成の永続化は S8 と共有の verificationService へ委譲する
 import { readCurrentOutcomeList } from './outcomeListService';
+import { parseEntityKey } from '../../utils/entityKey';
 import { isConsultAction, type Decision } from '../../domain/decision';
 import { resolveFetchedPricing } from '../fetchedPricing';
 import type { DocumentRecord } from '../../domain/document';
@@ -369,6 +370,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         evidenceRows: after.counts.evidenceRows + outcome.result.evidence.length,
         dataRows: after.counts.dataRows + outcome.transferredRowCount,
       },
+      schema: { ...after.schema, migrationStale: true },
       pilot: {
         ...after.pilot,
         running: false,
@@ -599,6 +601,15 @@ export async function loadPilotVerification(
     await loadPilotMatrix(store, deps, {
       decisions: bundle.allDecisions, annotator: bundle.verification.annotator, evidence: allEvidence,
     });
+    const hasOutcomeKeys = (rows: readonly { entityKey: string }[]): boolean =>
+      rows.some((row) => parseEntityKey(row.entityKey)?.level === 'outcome_result');
+    // プロジェクト全体の Evidence で判定する。論文を切り替えるたびに Evidence タブを読み直さないよう、
+    // 全件を渡されていない読み込みでは、前に開いた論文での判定結果を使い回す
+    const previousRequired = state.pilot.verification?.outcomeMigrationRequired;
+    bundle.verification.outcomeMigrationRequired = outcomeList === null
+      && (hasOutcomeKeys(bundle.allDecisions) || (allEvidence !== undefined
+        ? hasOutcomeKeys(allEvidence)
+        : previousRequired ?? hasOutcomeKeys(await readEvidenceRows(project.spreadsheetId, deps.google))));
     patchPilot(store, {
       verifyLoading: false,
       verification: bundle.verification,
@@ -756,6 +767,7 @@ export async function persistPilotInstanceDeclarations(
     return;
   }
   await persistInstanceDeclarations(project.spreadsheetId, decisions, deps);
+  store.setState({ schema: { ...store.getState().schema, migrationStale: true } });
 }
 
 /**

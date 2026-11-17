@@ -1,7 +1,11 @@
 import { readAllSchemaOutcomes } from '../../../../src/features/schema/schemaOutcomeRepository';
+import { addPilotOutcome } from '../../../../src/app/services/pilotOutcomeService';
+import { saveSchemaVersion } from '../../../../src/features/schema/saveSchemaVersion';
+import { buildTabModel } from '../../../../src/features/verification/cells';
 import type { SchemaOutcome } from '../../../../src/domain/schemaOutcome';
 import type { SchemaVersion } from '../../../../src/domain/schemaVersion';
 jest.mock('../../../../src/features/schema/schemaOutcomeRepository', () => ({ readAllSchemaOutcomes: jest.fn() }));
+jest.mock('../../../../src/features/schema/saveSchemaVersion');
 import { providerModelMismatchMessage } from '../../../../src/lib/llm/modelCatalog';
 import {
   autoLoadLatestPilotRun,
@@ -33,7 +37,7 @@ import { persistVerifyDecision } from '../../../../src/app/services/verifyServic
 import { runExtraction } from '../../../../src/app/services/extractionService';
 import { installChromeMock } from '../../../setup/chrome-mock';
 import { relocateQuote } from '../../../../src/app/services/relocateQuoteService';
-import { resolveProtocol } from '../../../../src/app/services/schemaService';
+import { loadSchema, resolveProtocol } from '../../../../src/app/services/schemaService';
 import { createInitialState, createStore, type Store } from '../../../../src/app/store';
 import type { Decision } from '../../../../src/domain/decision';
 import type { DocumentRecord } from '../../../../src/domain/document';
@@ -79,6 +83,7 @@ jest.mock('../../../../src/app/services/extractionService', () => ({
   runExtraction: jest.fn(),
 }));
 jest.mock('../../../../src/app/services/schemaService', () => ({
+  ...jest.requireActual('../../../../src/app/services/schemaService'),
   resolveProtocol: jest.fn(),
 }));
 jest.mock('../../../../src/app/services/relocateQuoteService', () => ({
@@ -414,6 +419,7 @@ beforeEach(() => {
     webViewLink: `https://drive.example/${name}`,
   }));
   readAllDecisionsMock.mockResolvedValue([]);
+  readEvidenceRowsMock.mockResolvedValue([]);
   readStudiesMock.mockResolvedValue([]);
   readStudyDataSheetMock.mockResolvedValue({ fieldNames: [], rows: [] });
   readResultsDataRowsMock.mockResolvedValue([]);
@@ -862,6 +868,19 @@ describe('runPilot: 実行', () => {
     delete chromeMock.storage.local.data['settings.defaultReasoningEffort'];
   });
 
+  test('パイロット完了後に S5 を開くとキャッシュした版の移行候補を更新する', async () => {
+    const store = makeReadyStore();
+    const deps = makeDeps();
+    store.setState({ schema: { ...store.getState().schema, versions: [{ schemaVersion: 1 } as SchemaVersion] } });
+    runExtractionMock.mockResolvedValue(makeOutcome());
+    await runPilot(store, deps);
+    expect(store.getState().schema.migrationStale).toBe(true);
+    readEvidenceRowsMock.mockResolvedValue([makeEvidence({ entityKey: 'outcome:pain' })]);
+    await loadSchema(store, deps);
+    expect(store.getState().schema.outcomeMigration?.rows).toEqual([expect.objectContaining({ id: 'pain' })]);
+    expect(store.getState().schema.migrationStale).toBe(false);
+  });
+
   test('ページ画像の明示選択を runExtraction へ渡す', async () => {
     const store = makeReadyStore();
     setPilotPageImages(store, true);
@@ -1215,8 +1234,55 @@ describe('loadPilotVerification', () => {
     });
   }
 
+  test('一覧への追加の保存中から読み込み状態を保ち、別の論文にも空セルを出す', async () => {
+    const store = makeRanStore();
+    const field = makeField({ entityLevel: 'outcome_result', fieldName: 'outcome_name' });
+    const outcome: SchemaOutcome = { schemaVersion: 1, outcomeIndex: 1, outcomeId: 'pain', outcomeLabel: '痛み',
+      aliases: [], description: null, typicalTimepoints: null, addedVia: 'schema_editor', note: null };
+    jest.mocked(readAllSchemaOutcomes).mockResolvedValue([outcome]);
+    jest.mocked(listSchemaVersions).mockResolvedValue([{ schemaVersion: 1 } as SchemaVersion]);
+    jest.mocked(getSchemaFieldsByVersion).mockResolvedValue([field]);
+    readArmStructuresMock.mockImplementation(async (_spreadsheetId, studyId) => [{ studyId, version: 1,
+      armKey: 'arm:1', armName: '全体', annotator: ME, annotatorType: 'human_with_ai', confirmedAt: 't1', note: null }]);
+    store.setState({ role: { ...store.getState().role, role: 'owner' },
+      pilot: { ...store.getState().pilot, runFields: [field], evidence: [] } });
+    const deps = makeDeps();
+    await loadPilotVerification(store, deps, 'study-doc-1');
+    jest.mocked(saveSchemaVersion).mockImplementation(async (params) => {
+      expect(store.getState().pilot.verifyLoading).toBe(true);
+      return { version: { schemaVersion: 2 } as SchemaVersion, fields: [field],
+        outcomes: params.outcomes.map((row, index) => ({ ...outcome, ...row, schemaVersion: 2, outcomeIndex: index + 1 })) };
+    });
+    await addPilotOutcome(store, deps, { outcomeId: 'sleep_quality', outcomeLabel: '睡眠', aliases: [],
+      description: null, typicalTimepoints: null, addedVia: 'pilot_verify', note: null, idLocked: false, idEdited: false });
+    await loadPilotVerification(store, deps, 'study-doc-2');
+    const data = store.getState().pilot.verification!;
+    const model = buildTabModel('outcome_result', data.fields, data.evidence, data.decisions,
+      { outcomeList: data.outcomeList, armStructure: data.armStructure });
+    expect(model.cells.find((cell) => cell.entityKey === 'outcome:sleep_quality|arm:1'))
+      .toMatchObject({ state: { status: 'unverified', value: null }, evidence: null });
+    expect(store.getState().pilot.verifyLoading).toBe(false);
+  });
+
+  test('ほかの研究だけに既存のキーがあっても移行が必要になる', async () => {
+    readEvidenceRowsMock.mockResolvedValue([makeEvidence({ studyId: 'outside', entityKey: 'outcome:old' })]);
+    const store = makeRanStore();
+    await loadPilotVerification(store, makeDeps(), 'study-doc-1');
+    expect(store.getState().pilot.verification?.outcomeMigrationRequired).toBe(true);
+  });
+
+  test('論文を切り替えても移行の判定のために Evidence タブを読み直さない', async () => {
+    readEvidenceRowsMock.mockResolvedValue([makeEvidence({ studyId: 'outside', entityKey: 'outcome:old' })]);
+    const store = makeRanStore();
+    await loadPilotVerification(store, makeDeps(), 'study-doc-1');
+    const reads = readEvidenceRowsMock.mock.calls.length;
+    await loadPilotVerification(store, makeDeps(), 'study-doc-2');
+    expect(readEvidenceRowsMock.mock.calls.length).toBe(reads);
+    expect(store.getState().pilot.verification?.outcomeMigrationRequired).toBe(true);
+  });
+
   test('埋め込み検証は現行一覧を共有し、study 切替で読み直さない', async () => {
-    jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ schemaVersion: 2, outcomeId: 'pain' } as SchemaOutcome]);
+    jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ aliases: [] as string[], schemaVersion: 2, outcomeId: 'pain' } as SchemaOutcome]);
     jest.mocked(listSchemaVersions).mockResolvedValue([{ schemaVersion: 2 } as SchemaVersion]);
     const store = makeRanStore();
     await loadPilotVerification(store, makeDeps(), 'study-doc-1');
@@ -1227,7 +1293,7 @@ describe('loadPilotVerification', () => {
   });
 
   test('一覧キャッシュを無効化した後は検証中の同じ論文でも現行一覧を読み直す', async () => {
-    jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ schemaVersion: 2, outcomeId: 'pain' } as SchemaOutcome]);
+    jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ aliases: [] as string[], schemaVersion: 2, outcomeId: 'pain' } as SchemaOutcome]);
     jest.mocked(listSchemaVersions).mockResolvedValue([{ schemaVersion: 2 } as SchemaVersion]);
     const store = makeRanStore();
     const deps = makeDeps();
@@ -1236,7 +1302,7 @@ describe('loadPilotVerification', () => {
     expect(store.getState().pilot.verification?.outcomeList?.currentIds).toEqual(new Set(['pain']));
 
     store.setState({ pilot: { ...store.getState().pilot, outcomeList: undefined } });
-    jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ schemaVersion: 3, outcomeId: 'sleep' } as SchemaOutcome]);
+    jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ aliases: [] as string[], schemaVersion: 3, outcomeId: 'sleep' } as SchemaOutcome]);
     jest.mocked(listSchemaVersions).mockResolvedValue([{ schemaVersion: 3 } as SchemaVersion]);
     await loadPilotVerification(store, deps, 'study-doc-1');
 
@@ -1910,7 +1976,9 @@ describe('persistPilotInstanceDeclarations', () => {
       value: 'outcome:mortality|arm:1',
       note: 'outcome_instance_declared',
     });
-    await persistPilotInstanceDeclarations(makeStore({}), makeDeps(), [decision]);
+    const store = makeStore({});
+    await persistPilotInstanceDeclarations(store, makeDeps(), [decision]);
+    expect(store.getState().schema.migrationStale).toBe(true);
     expect(appendDecisionsMock).toHaveBeenCalledWith('sheet-1', [decision], expect.anything());
     expect(upsertResultsMock).not.toHaveBeenCalled();
   });

@@ -5,6 +5,8 @@ export interface SchemaOutcome {
   schemaVersion: number;
   outcomeIndex: number;
   outcomeId: string;
+  /** 同じアウトカムとして扱う既存の id。 */
+  aliases: string[];
   outcomeLabel: string;
   description: string | null;
   typicalTimepoints: string | null;

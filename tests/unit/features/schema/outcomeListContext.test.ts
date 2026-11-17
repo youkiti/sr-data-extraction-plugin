@@ -25,7 +25,7 @@ test('候補は study の outcome_result だけで、過去の一覧にも無い
 });
 
 const outcome = (patch: Partial<SchemaOutcome> = {}): SchemaOutcome => ({
-  schemaVersion: 1, outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
+  schemaVersion: 1, aliases: [], outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
   description: null, typicalTimepoints: null, addedVia: 'schema_editor', note: null, ...patch,
 });
 const versions = [4, 3, 2, 1].map((schemaVersion) => ({ schemaVersion } as SchemaVersion));
@@ -33,12 +33,13 @@ const versions = [4, 3, 2, 1].map((schemaVersion) => ({ schemaVersion } as Schem
 test('論文単位モードは null、一覧モードは指定版と直近の前版を解決する', () => {
   expect(buildOutcomeListContext([], versions, 4)).toBeNull();
   const old = outcome({ outcomeId: 'removed' });
-  const second = outcome({ schemaVersion: 2, outcomeIndex: 2 });
+  const second = outcome({ schemaVersion: 2, aliases: [], outcomeIndex: 2 });
   const first = outcome({ schemaVersion: 2, outcomeId: 'pain' });
   const all = [old, second, first];
   const expected = {
     schemaVersion: 2, outcomes: [first, second],
-    currentIds: new Set(['pain', 'mortality']), everIds: new Set(['removed', 'mortality', 'pain']),
+    aliasMigratedAt: new Map(),
+    currentIds: new Set(['pain', 'mortality']), aliasToId: new Map(), everIds: new Set(['removed', 'mortality', 'pain']),
   };
   expect(buildOutcomeListContext(all, versions, 2)).toEqual(expected);
   expect(buildOutcomeListContext(all, versions, 4)).toEqual(expected);

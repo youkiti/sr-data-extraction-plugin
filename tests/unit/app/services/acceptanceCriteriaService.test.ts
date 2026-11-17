@@ -14,6 +14,8 @@ import { listSchemaVersions, getSchemaFieldsByVersion } from '../../../../src/fe
 import { makeRun } from '../../features/verification/pilotMatrixFixtures';
 import { setUiLanguage } from '../../../../src/lib/i18n';
 import { readAllSchemaOutcomes } from '../../../../src/features/schema/schemaOutcomeRepository';
+import { readAllDecisions } from '../../../../src/features/verification/decisionRepository';
+jest.mock('../../../../src/features/verification/decisionRepository');
 
 jest.mock('../../../../src/features/schema/schemaOutcomeRepository');
 
@@ -30,6 +32,15 @@ jest.mock('../../../../src/features/schema/schemaRepository');
 const deps = { google: {}, profile: {}, now: () => '2026-11-07T00:00:00Z' } as VerificationDeps;
 const draft = { ...emptyCriteriaDraft(), min_accuracy: '90' };
 const criteria = confirmCriteria(draft, [], 'me@example.com', deps.now!(), 0);
+
+test.each([{ aliases: [] }, { aliases: ['old'] }])('一覧の合格基準の計算は必要な場合だけ別名の判定履歴を読む: %j', async ({ aliases }) => {
+  jest.mocked(listSchemaVersions).mockResolvedValue([{ schemaVersion: 1 } as Awaited<ReturnType<typeof listSchemaVersions>>[number]]);
+  jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ schemaVersion: 1, outcomeIndex: 1, outcomeId: 'pain', aliases, outcomeLabel: '痛み', description: null, typicalTimepoints: null, addedVia: 'migration', note: null }]);
+  jest.mocked(readAllDecisions).mockResolvedValue([]);
+  const store = storeOf();
+  await calculateCriteria(store, deps);
+  expect(criteriaState(store).error).toBeNull();
+});
 function storeOf() {
   const state = createInitialState();
   state.currentProject = { projectId: 'p', spreadsheetId: 's', driveFolderId: 'd', name: 'SR' };

@@ -20,11 +20,19 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 - 一覧モードの検証・進捗・ダッシュボード・裁定は現行のアウトカム一覧を使い、一覧外のキーを集計から除きます。AI と人の比較と一致度（κ）も一覧に無いキーを数えません。未抽出の一覧項目は確定済みの群ごとの空セルとして進捗に含め、AI の一覧外の候補は欄外に表示します（2026-11-16、issue #539）。
   Verification, progress, dashboards, and adjudication in list mode now use the current outcome list and exclude keys outside it. AI-human comparisons and agreement (κ) also exclude keys outside the list. Listed outcomes without extracted instances contribute empty cells for confirmed arms; AI candidates outside the list appear separately (2026-11-16, issue #539).
+  別名のキーを一覧の id に読み替え、重複セルの片方を採用するため、AI と人の比較・一致度の数え方が変わることがあります。
+  Alias keys are mapped to list ids and overlapping cells are resolved, which can change AI-human comparison and agreement counts.
 
 - 表のデザインにアウトカムの一覧があるとき、extract-data のプロンプトに一覧を載せ、一覧の id で結果を返すよう指示するようにしました（プロンプト版数 17）。一覧が無いプロジェクトのプロンプトは変わりません（2026-11-16、issue #539）。
   When the schema has an outcome list, the extract-data prompt now includes the list and instructs the model to return results using its ids (prompt version 17). Prompts for projects without an outcome list are unchanged (2026-11-16, issue #539).
 
 ### その他の変更 / Other changes
+
+- 別名でまとめたアウトカムで、移行後に取り消した判定が再読み込みで復活する問題、人が編集した引用が引き継がれない問題、パイロットに移行前の検証が残る問題を修正しました（2026-11-16、PR #544 の追補、issue #539）。
+  Fixed restored decisions after undo and reload, missing human-edited quotes, and stale pilot verification after outcome alias migration (2026-11-16, follow-up to PR #544, issue #539).
+
+- 既存の論文単位のアウトカムから一覧を作る移行カードを追加しました。同じアウトカムの異なる id は別名としてまとめられます（2026-11-16、issue #539）。
+  Added a migration card to create an outcome list from existing paper-level outcomes and merge different ids as aliases (2026-11-16, issue #539).
 
 - 一覧モードのエクスポート（results_long・evidence_quotes・R セット）から一覧に無いキーを除き、追加したアウトカムの空セルを未検証警告に含めます。ma.csv の outcome_label は一覧の表示名でそろえます（2026-11-16、issue #539）。
   Exports in list mode (results_long, evidence_quotes, and R sets) exclude keys outside the list and include empty cells for added outcomes in unverified warnings. ma.csv uses the list display name for outcome_label (2026-11-16, issue #539).

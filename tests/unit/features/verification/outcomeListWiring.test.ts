@@ -17,7 +17,7 @@ const outcomeList: OutcomeListContext = {
   schemaVersion: 2,
   outcomes: ['pain', 'new_outcome'].map((outcomeId) => ({ outcomeId } as SchemaOutcome)),
   currentIds: new Set(['pain', 'new_outcome']),
-  everIds: new Set(['pain', 'new_outcome', 'removed']),
+  aliasToId: new Map(), everIds: new Set(['pain', 'new_outcome', 'removed']),
 };
 const armStructure = { version: 1, arms: [{ armKey: 'arm:1', armName: 'A' }] };
 const ai = ['pain', 'removed', 'candidate'].map((id) => evidence({ entityKey: `outcome:${id}|arm:1` }));

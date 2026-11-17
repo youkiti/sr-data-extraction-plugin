@@ -448,7 +448,7 @@ beforeEach(() => {
 describe('loadAdjudicateTargets', () => {
   test('一覧の文脈を一覧読込から裁定へ引き継ぎ、開き直しても再取得しない', async () => {
     setupTwoAnnotatorsReady();
-    jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ schemaVersion: 1, outcomeId: 'pain' } as SchemaOutcome]);
+    jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ aliases: [] as string[], schemaVersion: 1, outcomeId: 'pain' } as SchemaOutcome]);
     const store = seedStore();
     await loadAdjudicateTargets(store, makeDeps());
     await openAdjudicateStudy(store, makeDeps(), 'study-1');
@@ -2372,4 +2372,29 @@ test('表示中の完了 run の未判定インスタンスはゲートと完了
   const row = store.getState().adjudicate.rows!.find((item) => item.study.studyId === 'study-1')!;
   expect(row.gate?.ready).toBe(false);
   expect(row.annotatorProgress.find((entry) => entry.annotator === A)).toMatchObject({ decided: 1, total: 2, complete: false });
+});
+
+
+test('裁定で A・B・consensus の引用を同じ人の別名セルの採用元から読み替える', async () => {
+  setupTwoAnnotatorsReady();
+  const entityKey = 'outcome:old|arm:1';
+  const canonical = 'outcome:pain|arm:1';
+  const decisions = [A, B, 'consensus'].map((annotator) => makeDecision({ entityKey, annotator,
+    annotatorType: annotator === 'consensus' ? 'consensus' : 'human_with_ai' }));
+  readAllDecisionsMock.mockResolvedValue([...completeDecisionsFor(A), ...completeDecisionsFor(B), ...decisions]);
+  const quotes = decisions.flatMap((row) => buildQuoteSetRows({ setId: row.annotator, savedAt: 't',
+    savedBy: row.annotator, annotator: row.annotator, annotatorType: row.annotatorType,
+    studyId: row.studyId, fieldId: row.fieldId, entityKey, schemaVersion: 1, baseRunId: null, quotes: [] }));
+  jest.mocked(readQuoteSetRows).mockResolvedValue(quotes);
+  jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ schemaVersion: 1, outcomeId: 'pain', aliases: ['old'] } as SchemaOutcome]);
+  const store = seedStore();
+  store.setState({ adjudicate: { ...store.getState().adjudicate, outcomeList: {
+    schemaVersion: 1, outcomes: [], currentIds: new Set(['pain']), everIds: new Set(['pain', 'old']),
+    aliasToId: new Map([['old', 'pain']]),
+  } } });
+  await loadAdjudicateTargets(store, makeDeps());
+  await openAdjudicateStudy(store, makeDeps(), 'study-1');
+  expect(store.getState().adjudicate.working?.quoteSetRows)
+    .toEqual(quotes.map((row) => ({ ...row, entityKey: canonical })));
+  expect(quotes[0]!.entityKey).toBe(entityKey);
 });

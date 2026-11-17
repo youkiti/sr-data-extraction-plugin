@@ -8,7 +8,7 @@ jest.mock('../../../../src/features/schema/schemaOutcomeRepository');
 jest.mock('../../../../src/features/schema/schemaRepository');
 
 test('最新確定版の一覧を一度だけ読み、run の版を使わない', async () => {
-  jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ schemaVersion: 2, outcomeId: 'pain' } as SchemaOutcome]);
+  jest.mocked(readAllSchemaOutcomes).mockResolvedValue([{ aliases: [] as string[], schemaVersion: 2, outcomeId: 'pain' } as SchemaOutcome]);
   jest.mocked(listSchemaVersions).mockResolvedValue([3, 2, 1].map((schemaVersion) => ({ schemaVersion } as SchemaVersion)));
   const google = { fetch: jest.fn(), getAccessToken: jest.fn() };
   expect((await readCurrentOutcomeList('sheet', google))?.currentIds).toEqual(new Set(['pain']));

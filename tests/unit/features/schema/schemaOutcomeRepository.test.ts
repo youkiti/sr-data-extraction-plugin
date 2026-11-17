@@ -9,7 +9,7 @@ const deps = {} as GoogleApiDeps;
 const header = [...SHEET_HEADERS.SchemaOutcomes];
 const row = ['1', '1', 'mortality', '全死亡', '定義', '30d|90d', 'migration', '注記'];
 const outcome = {
-  schemaVersion: 1, outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
+  schemaVersion: 1, aliases: [], outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',
   description: '定義', typicalTimepoints: '30d|90d', addedVia: 'migration' as const, note: '注記',
 };
 
@@ -28,6 +28,21 @@ test('タブの無い旧プロジェクトは空で読む', async () => {
   jest.mocked(getSheetTitles).mockResolvedValue([]);
   await expect(readAllSchemaOutcomes('s', deps)).resolves.toEqual([]);
   expect(getSheetValues).not.toHaveBeenCalled();
+});
+
+test('旧ヘッダーは別名なしで読み、別名を初めて書く版で末尾の列を追加する', async () => {
+  jest.mocked(getSheetTitles).mockResolvedValue(['SchemaOutcomes']);
+  jest.mocked(getSheetValues).mockResolvedValue([header.slice(0, 8), [...row, 'ignored']]);
+  expect((await readAllSchemaOutcomes('s', deps))[0]!.aliases).toEqual([]);
+  await appendSchemaOutcomes('s', [outcome], deps);
+  expect(writeHeaderRow).not.toHaveBeenCalled();
+  await appendSchemaOutcomes('s', [{ ...outcome, aliases: ['old', 'older'] }], deps);
+  expect(writeHeaderRow).toHaveBeenCalledWith('s', 'SchemaOutcomes', header, deps);
+  expect(appendRows).toHaveBeenLastCalledWith('s', 'SchemaOutcomes', [[1, 1, ...row.slice(2), 'old|older']], deps);
+  jest.mocked(getSheetValues).mockResolvedValue([header, [...row, 'old|older']]);
+  expect((await readAllSchemaOutcomes('s', deps))[0]!.aliases).toEqual(['old', 'older']);
+  jest.mocked(getSheetValues).mockResolvedValue([[...header.slice(0, 8), 'wrong']]);
+  await expect(readAllSchemaOutcomes('s', deps)).rejects.toThrow('ヘッダー');
 });
 
 test('ヘッダーを検証し、壊れた行を捨て、未知の追加経路を既定値で読む', async () => {

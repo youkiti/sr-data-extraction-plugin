@@ -27,6 +27,7 @@ import {
 import { getSchemaFieldsByVersion, listSchemaVersions } from '../../features/schema/schemaRepository';
 import { readAllSchemaOutcomes } from '../../features/schema/schemaOutcomeRepository';
 import { buildOutcomeListContext } from '../../features/schema/outcomeListContext';
+import { applyOutcomeAliases } from '../../features/schema/applyOutcomeAliases';
 import {
   latestArmStructure,
   readAllArmStructures,
@@ -181,7 +182,7 @@ async function readIndependentVerifyTargetMaterials(
   }
   const outcomeList = buildOutcomeListContext(await readAllSchemaOutcomes(spreadsheetId, deps.google), versions, latest.schemaVersion);
   const fields = await getSchemaFieldsByVersion(spreadsheetId, latest.schemaVersion, deps.google);
-  const allDecisions = await readAllDecisions(spreadsheetId, deps.google);
+  const { decisions: allDecisions } = applyOutcomeAliases({ decisions: await readAllDecisions(spreadsheetId, deps.google) }, outcomeList);
   const allArmRows = await readAllArmStructures(spreadsheetId, deps.google);
   const annotator = (await getCurrentUserEmail(deps.profile)) ?? '';
 
@@ -255,13 +256,13 @@ export async function readVerifyTargetMaterials(
   const outcomeList = buildOutcomeListContext(outcomes, versions, versions[0]?.schemaVersion ?? 0);
   const allEvidence = await readEvidenceRows(spreadsheetId, deps.google);
   const completedRuns = await readCompletedRunMetas(spreadsheetId, deps.google);
-  const allDecisions = await readAllDecisions(spreadsheetId, deps.google);
+  const { decisions: allDecisions } = applyOutcomeAliases({ decisions: await readAllDecisions(spreadsheetId, deps.google) }, outcomeList);
   const allArmRows = await readAllArmStructures(spreadsheetId, deps.google);
   const annotator = (await getCurrentUserEmail(deps.profile)) ?? '';
 
   // field_id 単位で「表示する run」を選び Evidence を合成する（issue #80。サブセット run が
   // 最新でも、対象外の field は過去 run の Evidence が透けて見え続ける）
-  const byStudy = composeEvidenceByStudy(allEvidence, completedRuns);
+  const byStudy = composeEvidenceByStudy(allEvidence, completedRuns, outcomeList);
   // study_id ごとの「その study を含む最新の完了 run」（S7 バッジ注記と同じ関数・同じ並び規約を
   // 再利用する。CompletedRunMeta は CompletedRunStudySummary のスーパーセットのためそのまま渡せる）。
   // Evidence が 1 行も無い study が「そもそも完了 run の対象外（未抽出）」なのか「対象だったが
@@ -643,6 +644,7 @@ export async function persistVerifyInstanceDeclarations(
     return;
   }
   await persistInstanceDeclarations(project.spreadsheetId, decisions, deps);
+  store.setState({ schema: { ...store.getState().schema, migrationStale: true } });
 }
 
 /**

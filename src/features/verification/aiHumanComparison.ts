@@ -2,6 +2,8 @@
 // 定義の正典は docs/requirements.md §8「AI と人の比較（issue #383）」。
 import { NOT_REPORTED_TOKEN, type AnnotatorType, type StudyDataRow, type ResultsDataRow } from '../../domain/annotation';
 import type { Evidence } from '../../domain/evidence';
+import type { Decision } from '../../domain/decision';
+import { applyOutcomeAliases } from '../schema/applyOutcomeAliases';
 import { canonicalizeMultiSelectValue } from '../../domain/multiSelect';
 import type { EntityLevel, SchemaField } from '../../domain/schemaField';
 import type { CompletedRunMeta } from '../extraction/runRepository';
@@ -36,6 +38,8 @@ export interface ComparisonCell {
 }
 
 export interface ComparisonInput {
+  /** 別名の人のセルの勝者を決める判定履歴。 */
+  decisions?: readonly Decision[];
   studies: readonly { studyId: string; studyLabel: string }[];
   fields: readonly SchemaField[];
   /** 比較対象を絞るアウトカム一覧。未指定なら論文単位モード */
@@ -91,10 +95,12 @@ export function classifyComparisonCell(
 
 /** Evidence と基準者の ResultsData の項目別和集合を比較する。群番号は対応付けない。 */
 export function buildComparisonCells(input: ComparisonInput): ComparisonReport {
+  const aliased = applyOutcomeAliases({ resultsRows: input.resultRows, decisions: input.decisions }, input.outcomeList ?? null);
+  input = { ...input, resultRows: aliased.resultsRows };
   const cells: ComparisonCell[] = [];
   const unextractedStudyIds: string[] = [];
   const noFinalStudyIds: string[] = [];
-  const composed = composeEvidenceByStudy(input.evidence, input.runs);
+  const composed = composeEvidenceByStudy(input.evidence, input.runs, input.outcomeList ?? null);
   for (const { studyId, studyLabel } of input.studies) {
     const runs = input.runs.filter((run) => run.studyIds.includes(studyId));
     if (runs.length === 0) {

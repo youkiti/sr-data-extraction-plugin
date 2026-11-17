@@ -22,11 +22,11 @@ jest.mock('../../../../src/app/services/schemaService', () => ({
 }));
 
 const outcome = (schemaVersion: number, outcomeId = 'pain', patch: Partial<SchemaOutcome> = {}): SchemaOutcome => ({
-  schemaVersion, outcomeId, outcomeIndex: 1, outcomeLabel: outcomeId, description: null,
+  schemaVersion, outcomeId, aliases: [], outcomeIndex: 1, outcomeLabel: outcomeId, description: null,
   typicalTimepoints: null, addedVia: 'schema_editor', note: null, ...patch,
 });
 const row: SchemaOutcomeEditorRow = {
-  outcomeId: 'sleep', outcomeLabel: '睡眠', description: null, typicalTimepoints: null,
+  aliases: [], outcomeId: 'sleep', outcomeLabel: '睡眠', description: null, typicalTimepoints: null,
   addedVia: 'pilot_verify', note: null, idLocked: false, idEdited: false,
 };
 
@@ -35,7 +35,7 @@ function setup() {
   const store = createStore({ ...state,
     currentProject: { spreadsheetId: 'sheet' } as NonNullable<typeof state.currentProject>,
     role: { ...state.role, role: 'owner' },
-    pilot: { ...state.pilot, verifyStudyId: 'study', outcomeList: { schemaVersion: 1, outcomes: [outcome(1)], currentIds: new Set(['pain']), everIds: new Set(['pain']) } },
+    pilot: { ...state.pilot, verifyStudyId: 'study', outcomeList: { schemaVersion: 1, outcomes: [outcome(1)], currentIds: new Set(['pain']), aliasToId: new Map(), everIds: new Set(['pain']) } },
   });
   const fields = [{ schemaVersion: 3, fieldId: 'f', fieldName: 'value', fieldLabel: '値', section: '結果', entityLevel: 'outcome_result', dataType: 'text', extractionInstruction: '', multiSelect: null } as SchemaField];
   jest.mocked(listSchemaVersions).mockResolvedValue([{ schemaVersion: 3 } as SchemaVersion]);
@@ -70,12 +70,12 @@ test('最新の項目と一覧から版を作り、全パイロットの文脈�
 test('外した id は初出の経路と最後の時点を引き継ぐ', async () => {
   const { store, deps } = setup();
   jest.mocked(readAllSchemaOutcomes).mockResolvedValue([
-    outcome(2, 'sleep', { addedVia: 'pilot_candidate', typicalTimepoints: '12 weeks' }),
-    outcome(1, 'sleep', { addedVia: 'migration', typicalTimepoints: '4 weeks' }), outcome(3),
+    outcome(2, 'sleep', { addedVia: 'pilot_candidate', typicalTimepoints: '12 weeks', aliases: ['legacy_sleep'] }),
+    outcome(1, 'sleep', { addedVia: 'migration', typicalTimepoints: '4 weeks', aliases: ['old_sleep'] }), outcome(3),
   ]);
   await addPilotOutcome(store, deps, row);
   expect(saveSchemaVersion).toHaveBeenCalledWith(expect.objectContaining({ outcomes: expect.arrayContaining([
-    expect.objectContaining({ outcomeId: 'sleep', addedVia: 'migration', typicalTimepoints: '12 weeks' }),
+    expect.objectContaining({ outcomeId: 'sleep', addedVia: 'migration', typicalTimepoints: '12 weeks', aliases: ['legacy_sleep'] }),
   ]) }), deps);
 });
 
