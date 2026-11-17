@@ -11,13 +11,21 @@ const context: OutcomeListContext = {
 
 test('規則外の候補には新しい id を付け、元の id を別名に残す', async () => {
   const form = setup();
-  form.addCandidate('6mwt_change', '歩行距離');
+  form.addCandidate('6mwt_change', '歩行距離', []);
   expect(form.onAdd).toHaveBeenCalledWith(expect.objectContaining({
     outcomeId: 'outcome_6mwt_change', aliases: ['6mwt_change'], addedVia: 'pilot_candidate',
   }));
   await Promise.resolve();
-  form.addCandidate('sleep', '睡眠');
+  form.addCandidate('sleep', '睡眠', []);
   expect(form.onAdd).toHaveBeenLastCalledWith(expect.objectContaining({ outcomeId: 'sleep', aliases: [] }));
+});
+
+test('規則外の候補の新しい id は同じ論文のほかの一覧外の候補と重ねない', () => {
+  const form = setup();
+  form.addCandidate('6mwt_change', '歩行距離', ['6mwt_change', 'outcome_6mwt_change']);
+  expect(form.onAdd).toHaveBeenCalledWith(expect.objectContaining({
+    outcomeId: 'outcome_6mwt_change_2', aliases: ['6mwt_change'],
+  }));
 });
 
 function setup(onAdd = jest.fn().mockResolvedValue(undefined)) {
@@ -72,8 +80,8 @@ test.each([new Error('保存失敗'), '保存失敗'])('保存中は候補も無
   const candidate = document.createElement('button');
   candidate.className = 'verify__outcome-candidate-add';
   form.host.append(candidate);
-  form.addCandidate('sleep', '睡眠');
-  form.addCandidate('other', '別');
+  form.addCandidate('sleep', '睡眠', []);
+  form.addCandidate('other', '別', []);
   expect(onAdd).toHaveBeenCalledTimes(1);
   expect(onAdd).toHaveBeenCalledWith(expect.objectContaining({ addedVia: 'pilot_candidate', description: null }));
   expect(candidate.disabled).toBe(true);
@@ -86,7 +94,7 @@ test.each([new Error('保存失敗'), '保存失敗'])('保存中は候補も無
 test('親要素が無いフォームでも保存できる', async () => {
   const onAdd = jest.fn().mockResolvedValue(undefined);
   const form = createPilotOutcomeAdd(context, onAdd);
-  form.addCandidate('sleep', '睡眠');
+  form.addCandidate('sleep', '睡眠', []);
   expect(onAdd).toHaveBeenCalledTimes(1);
   await Promise.resolve();
 });

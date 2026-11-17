@@ -7,7 +7,8 @@ import { el } from '../ui/dom';
 /** パイロットの一覧への追加を、フォームと候補で共有する。 */
 export function createPilotOutcomeAdd(context: OutcomeListContext, onAdd: (row: SchemaOutcomeEditorRow) => Promise<void>): {
   root: HTMLElement;
-  addCandidate(id: string, label: string): void;
+  /** reserved は同じ論文のほかの一覧外の候補の id。新しい id がそれらと重ならないようにする。 */
+  addCandidate(id: string, label: string, reserved: readonly string[]): void;
 } {
   const root = el('section', { id: 'verify-outcome-add', className: 'verify__outcome-add' });
   const label = el('input', { id: 'verify-outcome-label', attributes: { required: '' } });
@@ -37,7 +38,7 @@ export function createPilotOutcomeAdd(context: OutcomeListContext, onAdd: (row: 
     root.append(el('label', { text, attributes: { for: input.id } }), input);
   }
   root.append(warning, button, error);
-  const add = async (id: string, name: string, addedVia: 'pilot_verify' | 'pilot_candidate'): Promise<void> => {
+  const add = async (id: string, name: string, addedVia: 'pilot_verify' | 'pilot_candidate', reserved: readonly string[] = []): Promise<void> => {
     if (saving) {
       return;
     }
@@ -47,7 +48,7 @@ export function createPilotOutcomeAdd(context: OutcomeListContext, onAdd: (row: 
       typicalTimepoints: null, addedVia, note: null, idLocked: false, idEdited: edited, aliases: [],
     };
     if (addedVia === 'pilot_candidate' && !isValidOutcomeId(id.trim())) {
-      row.outcomeId = suggestOutcomeId(id, [...context.everIds, ...context.aliasToId.keys()]);
+      row.outcomeId = suggestOutcomeId(id, [...context.everIds, ...context.aliasToId.keys(), ...reserved]);
       row.aliases = [id.trim()];
     }
     const errors = validateOutcomeRows([...context.outcomes, row], { listModeBefore: true });
@@ -68,5 +69,5 @@ export function createPilotOutcomeAdd(context: OutcomeListContext, onAdd: (row: 
     }
   };
   button.addEventListener('click', () => { void add(key.value, label.value, 'pilot_verify'); });
-  return { root, addCandidate: (id, name) => { void add(id, name, 'pilot_candidate'); } };
+  return { root, addCandidate: (id, name, reserved) => { void add(id, name, 'pilot_candidate', reserved); } };
 }
