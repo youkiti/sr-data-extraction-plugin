@@ -109,10 +109,10 @@ export function toStudyLabels(
 
 export function buildExport(format: ClassicExportFormat, materials: ExportMaterials, draft = false): BuiltExport {
   if (format !== 'audit') {
-    const aliased = applyOutcomeAliases({ evidence: materials.evidences, decisions: materials.decisions, resultsRows: materials.resultsRows }, materials.outcomeList ?? null);
+    const aliased = applyOutcomeAliases({ evidence: materials.evidences, decisions: materials.decisions, resultsRows: materials.resultsRows, quoteSetRows: materials.quoteSetRows }, materials.outcomeList ?? null);
     const bundlesByStudy = new Map([...materials.bundlesByStudy].map(([studyId, bundles]) => [studyId,
       bundleEvidence(applyOutcomeAliases({ evidence: [...bundles.values()].flatMap((bundle) => [bundle.evidence, ...bundle.quotes]) }, materials.outcomeList ?? null).evidence)]));
-    materials = { ...materials, bundlesByStudy, evidences: aliased.evidence, decisions: aliased.decisions, resultsRows: aliased.resultsRows };
+    materials = { ...materials, bundlesByStudy, evidences: aliased.evidence, decisions: aliased.decisions, resultsRows: aliased.resultsRows, quoteSetRows: aliased.quoteSetRows };
   }
   const { studies, fields } = materials;
   const included = (row: { entityKey: string }): boolean => isEntityKeyInOutcomeList(row.entityKey, materials.outcomeList ?? null);

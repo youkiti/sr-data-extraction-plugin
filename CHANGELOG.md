@@ -31,7 +31,6 @@ This is the public changelog of this extension. Any change that can alter AI out
 - 別名でまとめたアウトカムで、移行後に取り消した判定が再読み込みで復活する問題、人が編集した引用が引き継がれない問題、パイロットに移行前の検証が残る問題を修正しました（2026-11-16、PR #544 の追補、issue #539）。
   Fixed restored decisions after undo and reload, missing human-edited quotes, and stale pilot verification after outcome alias migration (2026-11-16, follow-up to PR #544, issue #539).
 
-
 - 既存の論文単位のアウトカムから一覧を作る移行カードを追加しました。同じアウトカムの異なる id は別名としてまとめられます（2026-11-16、issue #539）。
   Added a migration card to create an outcome list from existing paper-level outcomes and merge different ids as aliases (2026-11-16, issue #539).
 

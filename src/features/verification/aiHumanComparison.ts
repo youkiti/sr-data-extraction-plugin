@@ -95,12 +95,12 @@ export function classifyComparisonCell(
 
 /** Evidence と基準者の ResultsData の項目別和集合を比較する。群番号は対応付けない。 */
 export function buildComparisonCells(input: ComparisonInput): ComparisonReport {
-  const aliased = applyOutcomeAliases({ evidence: input.evidence, resultsRows: input.resultRows, decisions: input.decisions }, input.outcomeList ?? null);
-  input = { ...input, evidence: aliased.evidence, resultRows: aliased.resultsRows };
+  const aliased = applyOutcomeAliases({ resultsRows: input.resultRows, decisions: input.decisions }, input.outcomeList ?? null);
+  input = { ...input, resultRows: aliased.resultsRows };
   const cells: ComparisonCell[] = [];
   const unextractedStudyIds: string[] = [];
   const noFinalStudyIds: string[] = [];
-  const composed = composeEvidenceByStudy(input.evidence, input.runs);
+  const composed = composeEvidenceByStudy(input.evidence, input.runs, input.outcomeList ?? null);
   for (const { studyId, studyLabel } of input.studies) {
     const runs = input.runs.filter((run) => run.studyIds.includes(studyId));
     if (runs.length === 0) {

@@ -24,7 +24,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'schema.migrationNone': 'Do not merge',
   'schema.migrationStudies': '{n} studies',
   'schema.migrationJudged': '{n} judged cells',
-  'schema.migrationCollision': '{n} cells exist on both sides. The judged value wins; if both are judged, the target value wins.',
+  'schema.migrationCollision': '{n} cells exist on both sides. The value judged at migration wins; if both are judged or unverified, the target value wins.',
   'schema.migrationExcluded': 'Excluded ids have {n} judged cells across {m} studies',
   'schema.migrationConfirm': 'Create this outcome list',
   'schema.migrationImport': 'Please create the outcome list using the migration card',

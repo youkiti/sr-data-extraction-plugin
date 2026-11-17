@@ -154,7 +154,7 @@ export async function loadExportData(
     const outcomeList = buildOutcomeListContext(outcomes, versions, latest.schemaVersion);
     // エクスポートはアクティブ study（Documents から参照される study）のみ・作成順（§4.5）
     const studies = resolveActiveStudies(allStudies, documents);
-    const bundlesByStudy = new Map([...composeEvidenceByStudy(evidences, completedRuns)]
+    const bundlesByStudy = new Map([...composeEvidenceByStudy(evidences, completedRuns, outcomeList)]
       .map(([studyId, entry]) => [studyId, bundleEvidence(entry.evidence)]));
     const materials: ExportMaterials = {
       outcomeList,

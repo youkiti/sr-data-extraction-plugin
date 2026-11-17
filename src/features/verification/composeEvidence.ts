@@ -1,6 +1,8 @@
 import type { Evidence } from '../../domain/evidence';
 import type { ArmCompletenessRunWarning } from '../../domain/extractionRun';
 import type { CompletedRunMeta } from '../extraction/runRepository';
+import type { OutcomeListContext } from '../schema/outcomeListContext';
+import { applyOutcomeAliases } from '../schema/applyOutcomeAliases';
 
 /** study × field_id 単位で選定した「表示する run」の集約結果（composeEvidenceByStudy の戻り値） */
 export interface ComposedEvidenceByStudy {
@@ -71,6 +73,7 @@ function pickLatestRunId(
 export function composeEvidenceByStudy(
   evidence: readonly Evidence[],
   completedRuns: readonly CompletedRunMeta[],
+  outcomeList: OutcomeListContext | null = null,
 ): Map<string, ComposedEvidenceByStudy> {
   const sorted = [...completedRuns].sort((a, b) => {
     const ak = a.startedAt ?? '';
@@ -126,7 +129,7 @@ export function composeEvidenceByStudy(
     result.set(studyId, {
       schemaVersion: latestMeta.schemaVersion,
       runId: latestRunId,
-      evidence: items.filter((item) => item.runId === resolveWinner(item.fieldId)),
+      evidence: applyOutcomeAliases({ evidence: items.filter((item) => item.runId === resolveWinner(item.fieldId)) }, outcomeList).evidence,
       // 最新完了 run の arm completeness 警告から当該 study ぶんを抜き出す（issue #106）。
       // warnings は union（issue #247 で evidence_row_count を追加）のため、
       // kind で絞ってから studyId を持つ arm_completeness のみを対象にする

@@ -6,9 +6,12 @@ import { applyOutcomeAliases } from '../../../../src/features/schema/applyOutcom
 import { buildOutcomeMigrationRows, migrationContext, migrationOutcomes } from '../../../../src/features/schema/outcomeMigration';
 import { validateOutcomeRows } from '../../../../src/features/schema/schemaOutcomes';
 import { buildTabModel } from '../../../../src/features/verification/cells';
+import { composeEvidenceByStudy } from '../../../../src/features/verification/composeEvidence';
+import type { SchemaVersion } from '../../../../src/domain/schemaVersion';
 import { makeDecision, makeEvidence, makeField, makeResultsDataRow } from '../export/rset/testHelpers';
 
 const context: OutcomeListContext = { schemaVersion: 1, outcomes: [], currentIds: new Set(['pain', 'old']), everIds: new Set(['pain', 'old']), aliasToId: new Map([['old', 'pain'], ['other', 'pain']]) };
+const migrated = { ...context, aliasMigratedAt: new Map([['old', '2026-11-15T12:00:00Z'], ['other', '2026-11-15T12:00:00Z']]) };
 const key = 'outcome:pain|arm:1';
 const alias = 'outcome:old|arm:1';
 
@@ -101,8 +104,8 @@ test.each(['undo', 'edit'] as const)('移行後の %s は別名の古い判定�
   const rows = [makeResultsDataRow({ entityKey: alias, value: '旧値' }),
     makeResultsDataRow({ entityKey: key, value: operation.value })];
   for (const decisions of [[old, operation], [operation, old]]) {
-    const loaded = applyOutcomeAliases({ decisions, resultsRows: rows }, context);
-    expect(loaded.decisions).toEqual([operation]);
+    const loaded = applyOutcomeAliases({ decisions, resultsRows: rows }, migrated);
+    expect(loaded.decisions).toEqual(decisions.map((row) => ({ ...row, entityKey: key })));
     expect(loaded.resultsRows).toEqual([rows[1]]);
     expect(deriveCellStates(loaded.decisions).get(cellKeyOf(operation.fieldId, key)))
       .toMatchObject({ status: action === 'undo' ? 'unverified' : 'edit', value: operation.value });
@@ -143,4 +146,45 @@ test('別名の履歴が逆順でも最後の操作を比較し、古い一覧�
     makeDecision({ entityKey: key, decidedAt: 't2', action: 'undo' })];
   const loaded = applyOutcomeAliases({ decisions }, context);
   expect(loaded.decisions).toEqual(decisions.slice(0, 2).map((row) => ({ ...row, entityKey: key })));
+});
+
+test('移行前の一覧側の取り消しは、別名の判定より新しくても優先しない', () => {
+  const old = makeDecision({ entityKey: alias, decidedAt: '2026-11-14T00:00:00Z', value: '旧値' });
+  const undo = makeDecision({ entityKey: key, decidedAt: '2026-11-15T00:00:00Z', action: 'undo' });
+  expect(applyOutcomeAliases({ decisions: [old, undo] }, migrated).decisions).toEqual([{ ...old, entityKey: key }]);
+});
+
+test('別名から採用した判定への編集を再読込しても、取り消しで移行前の値に戻れる', () => {
+  const old = makeDecision({ entityKey: alias, decidedAt: '2026-11-14T00:00:00Z', value: '旧値' });
+  const edit = makeDecision({ entityKey: key, decidedAt: '2026-11-16T00:00:00Z', value: '新値' });
+  const undo = makeDecision({ entityKey: key, decidedAt: '2026-11-17T00:00:00Z', action: 'undo', value: '旧値' });
+  const before = [...applyOutcomeAliases({ decisions: [old] }, migrated).decisions, edit, undo];
+  const after = applyOutcomeAliases({ decisions: [old, edit, undo] }, migrated).decisions;
+  expect(deriveCellStates(after)).toEqual(deriveCellStates(before));
+  expect(deriveCellStates(after).get(cellKeyOf(edit.fieldId, key))?.value).toBe('旧値');
+});
+
+test('引用だけを移行後に一覧側で編集しても、判定の勝者によらず保持する', () => {
+  const quoteSetRows = [alias, key].flatMap((entityKey) => buildQuoteSetRows({ setId: entityKey,
+    savedAt: '2026-11-16T00:00:00Z', savedBy: 'A', annotator: 'A', annotatorType: 'human_with_ai',
+    studyId: 'study-1', fieldId: 'f-1', entityKey, schemaVersion: 1, baseRunId: null, quotes: [] }));
+  const decisions = [makeDecision({ entityKey: alias, annotator: 'A', decidedAt: '2026-11-14T00:00:00Z' })];
+  expect(applyOutcomeAliases({ decisions, quoteSetRows }, migrated).quoteSetRows).toEqual([quoteSetRows[1]]);
+});
+
+test('別名を初めて持つ版の確定時刻を、並び順や移行後の改訂によらず使う', () => {
+  const rows = migrationContext([{ id: 'pain', label: '痛み', selected: true, target: null, studies: 1, judgedCells: 0 },
+    { id: 'old', label: '旧名', selected: true, target: 'pain', studies: 1, judgedCells: 0 }]).outcomes;
+  const all = [{ ...rows[0]!, schemaVersion: 3 }, { ...rows[0]!, schemaVersion: 2 }, { ...rows[0]!, schemaVersion: 1, aliases: [] }];
+  const versions = [3, 2, 1].map((schemaVersion) => ({ schemaVersion, createdAt: `t${schemaVersion}` } as SchemaVersion));
+  expect(buildOutcomeListContext(all, versions, 3)?.aliasMigratedAt).toEqual(new Map([['old', 't2']]));
+});
+
+test('古い run と中断 run の一覧側の根拠が、最新完了 run の別名側を消さない', () => {
+  const evidence = [makeEvidence({ runId: 'old', entityKey: key }), makeEvidence({ runId: 'running', entityKey: key }),
+    makeEvidence({ runId: 'done', entityKey: alias, value: '最新' })];
+  const runs = ['old', 'done'].map((runId, index) => ({ runId, schemaVersion: 1,
+    studyIds: ['study-1'], fieldIds: null, startedAt: `t${index}`, warnings: [] }));
+  expect(composeEvidenceByStudy(evidence, runs, context).get('study-1')?.evidence)
+    .toEqual([{ ...evidence[2], entityKey: key }]);
 });

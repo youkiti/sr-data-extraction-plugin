@@ -186,15 +186,15 @@ export async function loadAdjudicateTargets(
     let resultsRows = await readResultsDataRows(spreadsheetId, deps.google);
     let decisions = await readAllDecisions(spreadsheetId, deps.google);
     const armRows = await readAllArmStructures(spreadsheetId, deps.google);
-    let allEvidence = await readEvidenceRows(spreadsheetId, deps.google);
+    const allEvidence = await readEvidenceRows(spreadsheetId, deps.google);
     const completedRuns = await readCompletedRunMetas(spreadsheetId, deps.google);
     const versions = await listSchemaVersions(spreadsheetId, deps.google);
     const latest = versions[0];
     const outcomeList = buildOutcomeListContext(
       await readAllSchemaOutcomes(spreadsheetId, deps.google), versions, latest?.schemaVersion ?? 0,
     );
-    ({ resultsRows, decisions, evidence: allEvidence } = applyOutcomeAliases({ resultsRows, decisions, evidence: allEvidence }, outcomeList));
-    const byStudy = composeEvidenceByStudy(allEvidence, completedRuns);
+    ({ resultsRows, decisions } = applyOutcomeAliases({ resultsRows, decisions }, outcomeList));
+    const byStudy = composeEvidenceByStudy(allEvidence, completedRuns, outcomeList);
     const fields = latest === undefined ? [] : await getSchemaFieldsByVersion(spreadsheetId, latest.schemaVersion, deps.google);
 
     const selection = buildStudySelection(studies, documents);
@@ -373,14 +373,14 @@ export async function openAdjudicateStudy(
     // （サブセット run が最新のとき対象外 field のハイライトが出ない・中断 run の Evidence が
     // こちらでは出るのに S8/S9 では出ない、という食い違いを許容する割り切り。
     // 必要になったら合成へ揃える）
-    const { evidence: allEvidence } = applyOutcomeAliases({ evidence: await readEvidenceRows(spreadsheetId, deps.google) }, outcomeList ?? null);
+    const allEvidence = await readEvidenceRows(spreadsheetId, deps.google);
     const quoteSetRows = aliased.quoteSetRows.filter((quote) =>
       quote.studyId === studyId && [annotatorA, annotatorB, 'consensus'].includes(quote.annotator));
     const runVersions = await readRunSchemaVersions(spreadsheetId, deps.google);
     const completedRuns = await readCompletedRunMetas(spreadsheetId, deps.google);
-    const quoteAiEvidence = composeEvidenceByStudy(allEvidence, completedRuns).get(studyId)?.evidence ?? [];
+    const quoteAiEvidence = composeEvidenceByStudy(allEvidence, completedRuns, outcomeList ?? null).get(studyId)?.evidence ?? [];
     const evidenceByStudy = latestRunEvidenceByStudy(allEvidence, new Set(runVersions.keys()));
-    const studyEvidence = evidenceByStudy.get(studyId)?.evidence ?? [];
+    const studyEvidence = applyOutcomeAliases({ evidence: evidenceByStudy.get(studyId)?.evidence ?? [] }, outcomeList ?? null).evidence;
 
     const studyDataRowA = studySheet.rows.find((r) => r.studyId === studyId && r.annotator === annotatorA) ?? null;
     const studyDataRowB = studySheet.rows.find((r) => r.studyId === studyId && r.annotator === annotatorB) ?? null;
@@ -881,9 +881,9 @@ async function collectReadyStudyInputs(
   const armRows = await readAllArmStructures(spreadsheetId, deps.google);
   // 2 名とも検証を終えた組だけを数えるため、裁定一覧と同じゲート（computeStudyGate）で判定する
   // （issue #381。見出しの「2 名が検証した研究」と揃える）
-  const { evidence: allEvidence } = applyOutcomeAliases({ evidence: await readEvidenceRows(spreadsheetId, deps.google) }, outcomeList);
+  const allEvidence = await readEvidenceRows(spreadsheetId, deps.google);
   const completedRuns = await readCompletedRunMetas(spreadsheetId, deps.google);
-  const evidenceByStudy = composeEvidenceByStudy(allEvidence, completedRuns);
+  const evidenceByStudy = composeEvidenceByStudy(allEvidence, completedRuns, outcomeList);
   const pairComplete = (studyId: string, annotatorA: string, annotatorB: string): boolean => {
     const studyArmRows = armRows.filter((row) => row.studyId === studyId);
     return computeStudyGate(

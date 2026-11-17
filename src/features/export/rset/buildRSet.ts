@@ -99,7 +99,8 @@ export function buildRSet(materials: RSetMaterials, meta: RSetManifestMeta): Bui
   const files: RSetFile[] = [
     { name: 'acceptance_criteria.csv', rowCount: materials.acceptanceCriteria?.length ?? 0,
       content: buildAcceptanceCriteriaCsv(materials.acceptanceCriteria ?? [], buildComparisonCells({ studies, fields, studyRows,
-        resultRows: resultsRows, evidence: evidences, decisions, runs: materials.comparisonRuns ?? [], outcomeList }).cells,
+        resultRows: materials.resultsRows, evidence: materials.evidences, decisions: materials.decisions,
+        runs: materials.comparisonRuns ?? [], outcomeList }).cells,
       materials.pilotRuns ?? [], new Set(studies.map((study) => study.studyId))) },
     { name: 'tab1.csv', content: tab1.csv, rowCount: tab1.rowCount },
     { name: 'tab1_status.csv', content: tab1.statusCsv, rowCount: tab1.rowCount },

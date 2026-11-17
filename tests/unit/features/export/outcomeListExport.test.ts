@@ -1,5 +1,7 @@
 import type { OutcomeListContext } from '../../../../src/features/schema/outcomeListContext';
 import type { DocumentRecord } from '../../../../src/domain/document';
+import { buildQuoteSetRows } from '../../../../src/features/verification/cellQuotes';
+import { confirmCriteria, emptyCriteriaDraft } from '../../../../src/features/verification/acceptanceCriteria';
 import { buildAllExports } from '../../../../src/features/export/buildExport';
 import { buildRSet, countRSetUnverifiedCells } from '../../../../src/features/export/rset/buildRSet';
 import { buildMaCsv } from '../../../../src/features/export/rset/buildMaCsv';
@@ -43,6 +45,44 @@ test('別名を一覧のキーへ合流させ、通常の出力では勝った�
   const ma = buildRSet(mapped, meta).files.find((file) => file.name === 'ma.csv')!;
   expect(ma.content).toContain('別名の判定値');
   expect(ma.content).not.toContain('outcome:old');
+});
+
+test('引用の出力は別名を読み替え、同じ人のセルの引用を二重に出さない', () => {
+  const canonical = 'outcome:mortality|arm:1';
+  const alias = 'outcome:old|arm:1';
+  const quoteSetRows = [alias, canonical].flatMap((entityKey) => buildQuoteSetRows({
+    setId: entityKey, savedAt: entityKey === alias ? 't1' : 't3', savedBy: 'person', annotator: 'person',
+    annotatorType: 'human_with_ai', studyId: 'study-1', fieldId: 'f-1', entityKey, schemaVersion: 3, baseRunId: null,
+    quotes: [{ quoteId: entityKey, studyId: 'study-1', fieldId: 'f-1', entityKey, source: 'human', evidenceId: null,
+      originAnnotator: null, documentId: null, quote: entityKey === alias ? '旧引用' : '新引用', page: null, section: null,
+      theme: null, anchorStatus: null, bboxPage: null, bbox: null, confidence: null }],
+  }));
+  const built = buildAllExports({ ...materials, quoteSetRows, evidences: [], bundlesByStudy: new Map(),
+    outcomeList: { ...outcomeList, aliasToId: new Map([['old', 'mortality']]), aliasMigratedAt: new Map([['old', 't2']]) },
+    decisions: [makeDecision({ entityKey: alias, annotator: 'person', decidedAt: 't1' })] });
+  expect(built.evidence_quotes.csv).not.toContain('outcome:old');
+  expect(built.evidence_quotes.csv).not.toContain('旧引用');
+  expect(built.evidence_quotes.rowCount).toBe(1);
+  expect(built.evidence_quotes.csv).toContain('新引用');
+});
+
+test('R セットの比較も完了 run の選択後に別名をまとめる', () => {
+  const canonical = 'outcome:mortality|arm:1';
+  const alias = 'outcome:old|arm:1';
+  const criteria = confirmCriteria({ ...emptyCriteriaDraft(), comparator: 'human_with_ai', min_accuracy: '90' },
+    [], 'owner@example.com', '2026-11-17T00:00:00Z', 0);
+  const comparisonRuns = ['old', 'done'].map((runId, index) => ({ runId, schemaVersion: 3,
+    studyIds: ['study-1'], fieldIds: null, startedAt: `t${index}`, warnings: [] }));
+  const built = buildRSet({ ...materials, acceptanceCriteria: [criteria], comparisonRuns,
+    pilotRuns: [{ runType: 'pilot', studyIds: ['study-1'] }],
+    outcomeList: { ...outcomeList, aliasToId: new Map([['old', 'mortality']]) },
+    evidences: [makeEvidence({ runId: 'old', entityKey: canonical, value: '古い値' }),
+      makeEvidence({ runId: 'done', entityKey: alias, value: '12' })],
+    resultsRows: [makeResultsDataRow({ entityKey: canonical })], decisions: [],
+  }, meta);
+  const records = parseCsv(built.files.find((file) => file.name === 'acceptance_criteria.csv')!.content);
+  expect(records[1]![records[0]!.indexOf('result')]).toBe('met');
+  expect(records[1]![records[0]!.indexOf('accuracy')]).toBe('100');
 });
 
 test('一覧外のキーを除き、共通表示名と時点と追加した空セルを出す', () => {

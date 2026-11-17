@@ -22,7 +22,7 @@ export const jaApp = {
   'schema.migrationNone': 'まとめない',
   'schema.migrationStudies': '{n} 本の論文',
   'schema.migrationJudged': '判定済みのセル {n} 個',
-  'schema.migrationCollision': '両方にあるセルが {n} 個。人が判定した方を使い、両方判定済みならまとめ先の値を使います',
+  'schema.migrationCollision': '両方にあるセルが {n} 個。移行時に人が判定した方を使い、両方判定済みまたは未検証ならまとめ先の値を使います',
   'schema.migrationExcluded': '一覧に入れない id の判定済みのセルが {n} 個（{m} 本の論文）あります',
   'schema.migrationConfirm': 'この内容で一覧を作る',
   'schema.migrationImport': 'アウトカムの一覧は移行のカードから作ってください',

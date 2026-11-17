@@ -38,6 +38,7 @@ test('論文単位モードは null、一覧モードは指定版と直近の前
   const all = [old, second, first];
   const expected = {
     schemaVersion: 2, outcomes: [first, second],
+    aliasMigratedAt: new Map(),
     currentIds: new Set(['pain', 'mortality']), aliasToId: new Map(), everIds: new Set(['removed', 'mortality', 'pain']),
   };
   expect(buildOutcomeListContext(all, versions, 2)).toEqual(expected);

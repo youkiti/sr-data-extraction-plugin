@@ -47,6 +47,7 @@ export async function addPilotOutcome(store: Store, deps: PilotServiceDeps, row:
     }
     const { protocol } = await resolveProtocol(store, deps, project.spreadsheetId);
     const createdBy = (await getCurrentUserEmail(deps.profile)) ?? '';
+    store.setState({ pilot: { ...store.getState().pilot, verifyLoading: true } });
     const saved = await saveSchemaVersion({
       spreadsheetId: project.spreadsheetId,
       rows: fields.map(schemaFieldToEditorRow),
@@ -75,9 +76,14 @@ export async function addPilotOutcome(store: Store, deps: PilotServiceDeps, row:
       pilot: { ...after.pilot, outcomeList },
     });
     showToast(t('verify.outcomeAddedToSchema', { version: saved.version.schemaVersion, label: added.outcomeLabel.trim() }));
+  }).catch((error: unknown) => {
+    store.setState({ pilot: { ...store.getState().pilot, verifyLoading: false } });
+    throw error;
   });
   const studyId = store.getState().pilot.verifyStudyId;
   if (studyId !== null) {
     await loadPilotVerification(store, deps, studyId);
+  } else {
+    store.setState({ pilot: { ...store.getState().pilot, verifyLoading: false } });
   }
 }
