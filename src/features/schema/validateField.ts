@@ -4,6 +4,7 @@ import { splitPipeList } from '../../domain/multiSelect';
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
 import { t } from '../../lib/i18n';
 import { STUDY_DATA_FIXED_HEADERS } from '../../domain/sheetsSchema';
+import { MA_KEY_HEADER } from '../../domain/rsetColumns';
 import type { SchemaEditorRow } from './types';
 
 /** 1 件のバリデーションエラー。column はエディタの該当セル強調に使う */
@@ -19,6 +20,18 @@ const FIELD_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
 
 /** StudyData の固定列（衝突すると buildStudyDataHeader が落ちる。domain/sheetsSchema.ts） */
 const RESERVED_FIELD_NAMES = new Set<string>(STUDY_DATA_FIXED_HEADERS);
+const MA_KEY_NAMES = new Set<string>(MA_KEY_HEADER);
+
+/** ma.csv の値列は outcome_result の項目だけなので、追加の予約名もその行に限る。 */
+export function reservedFieldNameReason(
+  name: string,
+  entityLevel: SchemaEditorRow['entityLevel'],
+): 'study_data' | 'ma_key' | null {
+  if (RESERVED_FIELD_NAMES.has(name)) {
+    return 'study_data';
+  }
+  return entityLevel === 'outcome_result' && MA_KEY_NAMES.has(name) ? 'ma_key' : null;
+}
 
 /**
  * エディタ全行を検証してエラー一覧を返す（空配列 = 確定可能）。
@@ -37,6 +50,7 @@ export function validateEditorRows(rows: readonly SchemaEditorRow[]): FieldValid
 
   rows.forEach((row, index) => {
     const name = row.fieldName.trim();
+    const reservedReason = reservedFieldNameReason(name, row.entityLevel);
     if (name === '') {
       errors.push({ index, column: 'fieldName', message: 'field_name は必須です' });
     } else if (!FIELD_NAME_PATTERN.test(name)) {
@@ -45,12 +59,14 @@ export function validateEditorRows(rows: readonly SchemaEditorRow[]): FieldValid
         column: 'fieldName',
         message: 'field_name は snake_case（英小文字始まり・英数と _ のみ）にしてください',
       });
-    } else if (RESERVED_FIELD_NAMES.has(name)) {
+    } else if (reservedReason !== null) {
       errors.push({
         index,
         column: 'fieldName',
         message:
-          `"${name}" はシステムが使う StudyData の固定列名のため項目名に使えません。` +
+          (reservedReason === 'study_data'
+            ? `"${name}" はシステムが使う StudyData の固定列名のため項目名に使えません。`
+            : `"${name}" は R セットの ma.csv のキー列名のため、アウトカムの結果の項目名に使えません。`) +
           `別名（例: "${name}_reported"）へ変更してください`,
       });
       // 空でない name は直前のループで必ずカウント済み

@@ -2,7 +2,37 @@
 import type { Decision } from '../../../../src/domain/decision';
 import type { SchemaOutcome } from '../../../../src/domain/schemaOutcome';
 import type { SchemaVersion } from '../../../../src/domain/schemaVersion';
-import { countJudgedCellsForOutcome, isOutcomeListMode, outcomesForVersion, restorableOutcomes, slugifyOutcomeLabel, validateOutcomeRows } from '../../../../src/features/schema/schemaOutcomes';
+import { countJudgedCellsForOutcome, isOutcomeListMode, isValidOutcomeId, isValidOutcomeAlias, suggestOutcomeId, outcomesForVersion, restorableOutcomes, slugifyOutcomeLabel, validateOutcomeRows } from '../../../../src/features/schema/schemaOutcomes';
+
+test('一覧の id と別名は別々の規則で検証する', () => {
+  for (const id of ['pain', 'a'.repeat(64)]) {
+    expect(isValidOutcomeId(id)).toBe(true);
+  }
+  for (const id of ['', '6mwt_change', 'a'.repeat(65), 'a-b']) {
+    expect(isValidOutcomeId(id)).toBe(false);
+  }
+  for (const alias of ['6mwt_change', 'A-b', 'a'.repeat(256)]) {
+    expect(isValidOutcomeAlias(alias)).toBe(true);
+  }
+  for (const alias of ['', 'a|b', 'a:b', 'a b', 'a\tb', 'a'.repeat(257)]) {
+    expect(isValidOutcomeAlias(alias)).toBe(false);
+    expect(validateOutcomeRows([outcome({ aliases: [alias] })], { listModeBefore: false })).toHaveLength(1);
+  }
+  expect(validateOutcomeRows([outcome({ aliases: ['6mwt_change'] })], { listModeBefore: false })).toEqual([]);
+  expect(validateOutcomeRows([outcome({ aliases: ['mortality'] })], { listModeBefore: false })).toHaveLength(1);
+});
+
+test('元のキーを正規化し、長さと衝突を考慮した id を提案する', () => {
+  expect(suggestOutcomeId('6mwt_change', [])).toBe('outcome_6mwt_change');
+  expect(suggestOutcomeId(' 6MWT change! ', [])).toBe('outcome_6mwt_change');
+  expect(suggestOutcomeId('a___b', [])).toBe('a_b');
+  expect(suggestOutcomeId('_', [])).toBe('outcome');
+  expect(suggestOutcomeId('', [])).toBe('outcome');
+  expect(suggestOutcomeId('pain', ['pain', 'pain_2'])).toBe('pain_3');
+  expect(suggestOutcomeId('6mwt_change', ['outcome_6mwt_change'])).toBe('outcome_6mwt_change_2');
+  expect(suggestOutcomeId('a'.repeat(70), [])).toBe('a'.repeat(64));
+  expect(suggestOutcomeId('a'.repeat(70), ['a'.repeat(64)])).toBe('a'.repeat(62) + '_2');
+});
 
 const outcome = (patch: Partial<SchemaOutcome> = {}): SchemaOutcome => ({
   schemaVersion: 1, aliases: [], outcomeIndex: 1, outcomeId: 'mortality', outcomeLabel: '全死亡',

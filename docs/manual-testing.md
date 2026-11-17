@@ -503,3 +503,34 @@ Gemini API キーを保存しておく（S5 以降で使用。**キーはスク�
 5. owner の判定 34 件を 2.2 秒間隔で押し、5 秒後に窓を閉じたら、最後の 6 件が `Decisions` に入っていなかった（1 件は `ResultsData` だけ入っていた）。画面にエラーや保留の表示は出ていなかった。開き直すと 28/34 で、3 秒間隔で押し直すと入った。 **修正済み**（issue #322。原因はコードの読み取りによる推定で、実機での裏取りは未実施。1 判定 = データ行の読み取り → 更新または追記 → `Decisions` 追記の 3 回の通信を、判定ごとに 1 件ずつ直列に送るため、操作が保存より速いと待ちが溜まる。待ちはメモリ上にしか無く、画面に出ていなかった。`ResultsData` だけ入った 1 件は、データ行と `Decisions` の 2 つの書き込みの間で閉じたものと推定する。保存中の表示と離脱確認を足した。保存の経路は変えていない。確認を無視して閉じた場合・ブラウザが落ちた場合は今までどおり失われる）。**実機での確認（2026-10-07。master `b448ded` の dev ビルド・同じプロファイルとプロジェクト・`verify-all`）**: (a) `rct-frontiers.pdf` の 66 件を同じ 2.2 秒間隔で押した。押した 2.2 秒後の「保存中」の件数は 66 回とも 0 で、66 件とも `Decisions` に入った。**取りこぼしは再現しなかった**。(b) `rotated.pdf` の 34 件を 0.3 秒間隔で押した。「保存中」の件数は最大 19 件まで増え、最後の判定から 19.0 秒で表示が消え、34 件とも `Decisions` に入った（保存は 1 件あたり約 1 秒）。`ApiErrorLog` にこの時間帯の行は無い。**分かったこと**: 保存が 1 件約 1 秒なら、2.2 秒間隔では待ちは溜まらない。10-06 に 6 件が残ったのは、その回だけ保存が遅かったことになる（その日は直前までハーネスを続けて動かしており、下の 6 のとおり 429 も出ていた。429 の再試行待ちで直列の保存が止まっていた可能性があるが、再試行して通った 429 は `ApiErrorLog` に残らないので確かめられない）。何が保存を遅らせたにせよ、待ちの分は「保存中」の表示と離脱確認で見えるようになった
 6. 検証画面の読み込みが `Google API failed: HTTP 429` で止まることが 1 回あった（ハーネスを 3 回続けて起動した直後。時間を置いて開き直すと読めた）
 7. テキストあり 3 本の一括抽出の run が `partial_failure` で記録された。3 本とも `Evidence` はあり、`LLMApiLog` にエラーは無い。画面は「一括抽出が完了しました」を表示していた。原因は未調査
+
+## 10. アウトカムの一覧の接続（issue #539）の実機・実 API 確認（2026-11-17 実施。不具合 3 件を起票）
+
+背景: issue #539（PR #540〜#545）で、アウトカムの一覧（`SchemaOutcomes` タブ、一覧モードと論文単位モード）を抽出・検証・裁定・エクスポートにつないだ。jest / E2E は stub の応答なので、実シートと実 LLM の応答で 6 項目（[remaining-work-plan.md](remaining-work-plan.md) の #539 の行）を確かめた。
+
+**実施方法**: master `aad7ff2`（v0.36.0）の dev ビルドを Selenium の専用プロファイル（`.selenium-profile`。owner 1 アカウント・with_ai）に読ませ、Chrome をデバッグポート付きで起動して Playwright の `connectOverCDP` で操作した（`manualCheck.mjs` は通しのシーンしか持たないため。操作の手順は下の表）。論文は架空の RCT 3 本（`video/fixtures/demo-paper-01〜03.pdf`。主要アウトカムは順に 6MWT の変化・術後 24 時間以内の PONV・術後在院日数）を PC から取り込んだ。プロジェクトは新規に 2 つ作った。
+
+- 一覧モード: 「issue539 実機確認 20261117」（スプレッドシート `1l7qNNByJQyHLdLml5m8M_NFOvKnixcnyB6_dRjNy5AM`）
+- 論文単位モード → 移行: 「issue539 移行の確認 20261117」（スプレッドシート `1nOvt7YszxGllJBlj9Pvn1nov9D6sKyU-WpQ0tjwVDwA`）
+
+抽出は `gemini-3.8-flash`（ExtractionRuns の `prompt_version = 17`・`extension_version = 0.36.0`・`reasoning_effort = low`）。S5 の AI ドラフトはプロファイルの既定モデル `gemini-3.5-flash`。
+
+| # | 操作 | 期待結果 | OK |
+|---|---|---|---|
+| 1 | プロトコル v1（主要アウトカム 2 つ。在院日数は「対象外」と明記）で AI ドラフト → 一覧の案（`six_minute_walk_test_change`・`ponv_incidence_24h`）のまま v1 を確定 → 3 本でパイロット。続いてプロトコル v2（在院日数も「群別の結果があれば抽出する」）で論文 1・3 の 2 本のパイロット → v2 の版で 3 本の一括抽出 → PONV を外した v4 で論文 2 だけ一括抽出をやり直す | 要求の本文に一覧（id・表示名・説明・主な時点）が入り、応答の entity_key が一覧の outcome_id を使う。一覧に無いアウトカムは検証のセルに出ず、アウトカムタブの欄外の「一覧外の候補」に引用つきで出る。パイロットの候補には「表のデザインに追加」があり、本番の検証画面の候補には無い | [x] |
+| 2 | 2 回目のパイロットで論文 3 の候補 `postoperative_length_of_hospital_stay` の「表のデザインに追加」を押し、同じパイロットの論文 1 を開く | 版が 1 つ増え（v1 → v2、パイロット改訂、改訂理由つき、`SchemaOutcomes` に `added_via = pilot_candidate`）、論文 3 では候補が消えて AI の値のセルになり、論文 1 には同じアウトカムが「AI 抽出なし（手入力のみ）」の空セルとして出る | [x] |
+| 3 | owner で S8 の 3 本と裁定画面を開く。テスト用シートの Meta の作成者を一時的に別の値にし、自分を `reviewer`（with_ai）、続けて `adjudicator` として Reviewers に足して同じ画面を開く（確認後に作成者を戻し、登録は `revoked` で取り消した） | S8・裁定とも一覧のアウトカムのキーだけが出る（外した `ponv_incidence_24h` は出ない）。owner には「アウトカムの一覧を直す（表のデザイン）」のリンク、reviewer と adjudicator には「抜けているアウトカムは、owner にスキーマへの追加を頼んでください」の案内が出て、追加のフォームは出ない | [x] |
+| 4 | 在院日数の表示名を「術後在院日数」に直した v3、PONV を外した v4 を確定 → ページを読み直してから R セット・audit・results_long・evidence_quotes を生成し、Drive から取得して数える | ma.csv の `outcome_label` が一覧の表示名（「術後在院日数」など）。外した PONV は results_long・evidence_quotes・ma.csv・ma_status.csv・rob.csv に 0 行で、audit.csv には 20 行残る | [x] |
+| 5 | 本番の draft-schema（プロンプト・構造化出力のスキーマ・パーサ）と `providerFactory` をそのまま呼ぶ一時スクリプトで、プロトコル v2 と 3 本の本文を 4 経路に送る（スクリプトは確認後に消した） | 4 経路とも応答のパースが通り、`outcomes` に一覧の案が入る | [x] |
+| 6 | 一覧を空のまま確定（論文単位モード）→ 3 本の一括抽出（AI の id は `6mwt_change`・`ponv`・`length_of_stay`）→ S8 の論文 1 に手入力のアウトカム `hospital_stay` を足して判定 → S5 の移行のカードで `hospital_stay` を `length_of_stay` の別名にまとめて確定 | 移行で最初の一覧の版ができ（`added_via = migration`、`length_of_stay` の aliases に `hospital_stay`）、S8 では論文 1 の `hospital_stay` の判定が `length_of_stay` の下に出る。results_long・ma.csv では `length_of_stay` の 1 つにまとまり、audit.csv には元のキーが残る | 一部（[#548](https://github.com/youkiti/sr-data-extraction-plugin/issues/548)） |
+
+**結果メモ**
+
+| 日付 | 実施者 | 結果 / 症状 |
+|---|---|---|
+| 2026-11-17 | Claude（Selenium の専用プロファイル + CDP・owner 1 アカウント + 架空の 2 人目） | #1〜#5 は期待どおり。#1: プロトコル v1 では AI が在院日数を返さず（「対象外」に従った）、v2 で論文 3 の在院日数が候補に出た。v4 で論文 2 をやり直すと AI は外した `ponv_incidence_24h` ではなく新しい id `ponv` を返し、本番の検証画面の候補に出た（追加ボタンなし、owner にはリンク）。#2: パイロットの候補から足したアウトカムの表示名は id のまま（このスキーマに `outcome_name` の項目が無いため。仕様どおり）。#3 の裁定は、Decisions に自分の論文 3 の判定を写した架空の 2 人目（`reviewer2@example.invalid`、在院日数の平均を 1 セルだけ 6.3 に変更）の行と、外した PONV の判定行を 1 行足して確かめた。2 人目はデータ行と群構成を持たないため A 側の値は「未入力」と出る。#4 は rob.csv が見出しだけ（このスキーマに RoB の項目が無い）なので、rob は空の確認にとどまる |
+| 2026-11-17 | 同上 | #5 の内訳（プロトコル v2・3 本・draft-schema 版数 5）: Gemini `gemini-3.8-flash` 一覧の案 3 件（16 秒）、Anthropic `claude-haiku-4-5` 3 件（25 秒）、OpenRouter `deepseek/deepseek-v4-flash` 2 件（6MWT が抜ける、30 秒）、OpenAI 互換（キーが無いため OpenRouter の `https://openrouter.ai/api/v1/chat/completions` を互換エンドポイントとして `deepseek/deepseek-v4-flash`）1 件（PONV だけ、49 秒）。形式はどれも通る。件数の差はモデルの出力の差で、コードの経路の差ではないと見ている。拡張の画面からのドラフトは Gemini（`gemini-3.5-flash`）だけで確かめた |
+| 2026-11-17 | 同上 | **不具合 1（[#547](https://github.com/youkiti/sr-data-extraction-plugin/issues/547)）**: S5 で PONV を外した v4 を確定しても、同じタブの S8 は読み直すまで PONV のセルを出し続けた（進捗も 12 / 36 のまま。読み直すと消えて 0 / 24）。`confirmSchema` が `verify` のキャッシュを捨てていない |
+| 2026-11-17 | 同上 | **不具合 2（[#548](https://github.com/youkiti/sr-data-extraction-plugin/issues/548)）**: #6 で AI が付けた `6mwt_change`（数字で始まる）が一覧の id の規則に合わず、移行のカードで一覧を作れなかった。エラーはどの id かを示さず、カードには id を直す欄が無い。`6mwt_change` を選択から外して（判定済み 14 セルを一覧の外に置いて）確定し、別名のまとめを確かめた。外した `6mwt_change` は一覧モードの S8 で「一覧外の候補」に出る |
+| 2026-11-17 | 同上 | **不具合 3（[#549](https://github.com/youkiti/sr-data-extraction-plugin/issues/549)）**: 移行のプロジェクトの AI ドラフトが outcome_result の項目に `outcome_id` と `timepoint` を作り、ma.csv の見出しに同じ列名が 2 回出た（予約名が StudyData の固定列だけ） |
+| 2026-11-17 | 同上 | **気づいた点**（issue にしていない）: ①S5 で「外す」の確認が開いたまま「版として確定」を押すと、外さずに版ができる（v3 がそうなった。確認の文は判定済みのセル数を出しており、仕様どおり）②移行のカードで表示名を入力して確定ボタンを押すと、1 回目の押下が効かないことがあった。入力欄の change で画面が作り直されたためと見ている（自動操作で 2 回）③移行のカードで、選択を変えた後も前回の id のエラーの文が残る（#548 に含めた）④論文 2 の群の割付人数で、AI の値 `sixty` を承認できた（integer の項目。#539 とは別の話） |

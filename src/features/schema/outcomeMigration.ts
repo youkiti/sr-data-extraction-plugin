@@ -4,11 +4,13 @@ import type { SchemaField } from '../../domain/schemaField';
 import type { SchemaOutcomeEditorRow } from './types';
 import type { OutcomeListContext } from './outcomeListContext';
 import { parseEntityKey } from '../../utils/entityKey';
-import { countJudgedCellsForOutcome } from './schemaOutcomes';
+import { countJudgedCellsForOutcome, isValidOutcomeId, suggestOutcomeId } from './schemaOutcomes';
 
 export interface OutcomeMigrationRow {
   /** 既存のアウトカムの id。 */
   id: string;
+  /** 元の id が一覧の id の規則に合わないときの新しい id。合うときは null。 */
+  newId: string | null;
   /** 一覧に含めるか。 */
   selected: boolean;
   /** 一覧に表示する名称。 */
@@ -44,17 +46,25 @@ export function buildOutcomeMigrationRows(evidence: readonly Evidence[], decisio
     group.set(row.value, (group.get(row.value) ?? 0) + 1);
     names.set(parsed.outcome, group);
   }
-  return [...studies].map(([id, group]) => ({
-    id, selected: true, target: null, studies: group.size,
-    label: [...(names.get(id) ?? [])].sort((a, b) => b[1] - a[1])[0]?.[0] ?? id,
-    judgedCells: countJudgedCellsForOutcome(decisions, id).cells,
-  }));
+  const taken = new Set(studies.keys());
+  return [...studies].map(([id, group]) => {
+    const newId = isValidOutcomeId(id) ? null : suggestOutcomeId(id, taken);
+    if (newId !== null) {
+      taken.add(newId);
+    }
+    return {
+      id, newId, selected: true, target: null, studies: group.size,
+      label: [...(names.get(id) ?? [])].sort((a, b) => b[1] - a[1])[0]?.[0] ?? id,
+      judgedCells: countJudgedCellsForOutcome(decisions, id).cells,
+    };
+  });
 }
 
 /** 選んだ id と一段だけの別名を最初の一覧の行へ変換する。 */
 export function migrationOutcomes(rows: readonly OutcomeMigrationRow[]): SchemaOutcomeEditorRow[] {
   return rows.filter((row) => row.selected && row.target === null).map((row) => ({
-    outcomeId: row.id, outcomeLabel: row.label, aliases: rows.filter((alias) => alias.target === row.id).map((alias) => alias.id),
+    outcomeId: row.newId ?? row.id, outcomeLabel: row.label,
+    aliases: [...(row.newId !== null ? [row.id] : []), ...rows.filter((alias) => alias.target === row.id).map((alias) => alias.id)],
     description: null, typicalTimepoints: null, addedVia: 'migration', note: null, idLocked: true, idEdited: false,
   }));
 }

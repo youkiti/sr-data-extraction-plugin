@@ -1,4 +1,6 @@
-# sr-data-extraction-plugin 要件定義書（v0.49）
+# sr-data-extraction-plugin 要件定義書（v0.50）
+
+- **更新**: 2026-11-17（v0.50: outcome_result の項目名に ma.csv のキー列名を予約し、既存項目の CSV 見出し衝突を回避。issue #549）
 
 - **更新**: 2026-11-16（v0.49: 既存アウトカムの移行カードと別名による統合を追加）
 
@@ -250,6 +252,8 @@ SR では 1 つの試験（trial）が複数の報告文書を持ちうる（本
 | multi_select | bool | | 2026-10 追加（issue #307）。**複数選択**（当てはまる選択肢をすべて選ぶ）。`data_type = enum` かつ `allowed_values` を持つ項目だけが TRUE にできる。空 = 従来どおり単一選択。`data_type` を増やさず列で表すのは、未知の `data_type` を `text` として読む旧版のビルドで項目の型が変わるのを避けるため。この列と次の 2 列は、複数選択の項目を含む版を確定するときにヘッダ末尾へ追加する（`max_quotes` と同じ方式。`max_quotes` だけを使う版では 16 列止まり）。列が無い・空のシートは全項目 OFF として読む。AI ドラフトは提案しない。再ドラフトの差分承認では、field_name が一致し提案が enum のとき現行項目の設定を引き継ぐ（次の 2 列は提案側の許容値に残っている選択肢だけ）。**旧版の拡張で版を確定し直すと、この 3 列の設定は引き継がれない**（`max_quotes` と同じ既知の制約） |
 | exclusive_values | string | | 2026-10 追加（issue #307）。**ほかの選択肢と同時に選べない選択肢**（`\|` 区切り。例: `NA\|unclear`）。`allowed_values` の部分集合で、`multi_select` が TRUE のときだけ指定できる |
 | free_text_values | string | | 2026-10 追加（issue #307）。**自由記述を付けられる選択肢**（`\|` 区切り。例: `Other`）。`allowed_values` の部分集合で、`multi_select` が TRUE のときだけ指定できる。`exclusive_values` と同じ選択肢は指定できない |
+
+> **field_name の予約名**: `StudyData` の固定列名（`STUDY_DATA_FIXED_HEADERS`）は全 entity_level で使えない。`outcome_result` の行に限り、ma.csv のキー列名 `study_id`, `study_label`, `outcome_id`, `outcome_label`, `timepoint`, `timepoint_value`, `timepoint_unit`, `arm_id`, `arm_label`, `rob_tool`, `rob_overall_judgement`, `schema_version` も使えない。study / arm / rob_domain の追加制約は無く、study の `timepoint` は引き続き使える。AI ドラフトは `<name>_reported`（さらに重なれば `_reported_2`, `_reported_3`…）に自動改名する。手入力と既存スキーマの次回保存では改名を求める。両方の予約名に当たる場合は StudyData 固定列のエラーを優先する。
 
 > **複数選択の値の保存形式（issue #307）**: 1 セル 1 文字列のまま、選んだ選択肢を **`allowed_values` の並び順**に `|` でつなぐ（例: `Students|Records themselves`）。自由記述付きは `選択肢: 説明`（例: `Other: Standardized patients`。説明の中の `|` は `/` に、改行は空白に置き換える）。許容値に無い要素は既知の要素の後ろに文字列の昇順で残す（保存は許容値でブロックしない。§4.2）。並び順を固定するので、同じ集合は必ず同じ文字列になり、S12 の一致判定と κ は従来の文字列一致のまま働く（選択肢の集合全体が 1 カテゴリ。部分一致は数えない）。読み書きは `src/domain/multiSelect.ts` に集約する。検証（S5）: `NR` は「未報告」操作で付けるため複数選択の項目の許容値に入れられない／許容値は「自由記述付きの選択肢 + `: `」で始められない（保存形式を一意に読み戻すため）
 
@@ -790,6 +794,7 @@ Methods 文案（英日 × 単一 / 二重）には現行の基準・確定日�
 | `evidence_quotes.csv` | 1 行 = 1 引用（AI の引用 + 各 annotator が直した一覧。v0.31・issue #307。列と `is_final` の決め方は下記） | 根拠の表（文・頁・節）。投稿時の supplementary |
 
 - 文字コードは UTF-8（BOM 付き、Excel 互換）
+- **R セットの値列名**: ma.csv / ma_status.csv は outcome_result の項目を横持ちし、通常は `field_name` を列名にする。キー列名と重なる既存項目だけ `<field_name>_field` に変更し、他の項目名・キー列・改名結果とも重なる場合は `_field_2`, `_field_3`… で一意にする（項目順）。値や内部の項目名は変えない。data_dictionary.csv の `field_name` は SchemaFields の名前のままで、列構成も変えない。該当する R コードでは列名の読み替えが必要になる（詳細は design-r-export.md §4.2・§4.4）。
 - 未検証セル（human 行の空セル）が残る場合は警告ダイアログ（「未検証の項目が n 件あります」）を出し、audit.csv には判定履歴の有無で明示
 - **アウトカムの一覧（issue #539）**: 一覧モードでは、`results_long.csv`・`evidence_quotes.csv` と R セットに現行の一覧のアウトカムのキーだけを出す（外したアウトカム・一覧外の候補は出さない）。一覧に足したアウトカムの空セルは未検証の件数に入る。`audit.csv` はキーで絞らず、外したアウトカムの判定も経緯として残す。export_manifest にエクスポート時点の一覧の版を記録する
 - **複数選択の項目の 1/0 列（issue #307）**: `study_wide.csv` では、複数選択の study レベル項目の列（保存値そのまま）の直後に、許容値の並び順で `<field_name>__<slug>` の列を足す（選ばれていれば `1`、いなければ `0`）。自由記述付きの選択肢は、その直後に説明の列 `<field_name>__<slug>_text` を足す。`slug` は選択肢を小文字にして英数字以外を `_` にまとめたもの（空になる選択肢は `opt<n>`）。列名はヘッダ全体で一意にし、衝突したら `_2`、`_3`… を付ける。**未検証のセルと `NR` のセルは、足した列をすべて空にする**。単独選択肢（`NA`・`unclear` など）が選ばれた論文は、ほかの選択肢の列が `0` になる（割合を出すときは集計側で除く）。許容値外の要素には列を作らない。`results_long.csv` と R セットは連結した値のまま出す（データ辞書には `multi_select` / `exclusive_values` / `free_text_values` の 3 列を足す）

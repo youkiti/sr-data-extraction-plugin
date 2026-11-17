@@ -165,6 +165,66 @@ for (const route of ['#/verify', '#/pilot']) {
 }
 
 
+test('移行の規則外 id を修正し、表示名の入力直後の一回の確定で別名と AI の値を引き継ぐ', async ({ page }) => {
+  const values: Record<string, string[][]> = {
+    Protocol: [PROTOCOL_ROW],
+    SchemaVersions: [['1', '', '1', 'user_edit', '2026-07-01T00:00:00Z', 'e2e@example.com', '']],
+    SchemaFields: [['1', 'f-outcome', '1', 'results', 'outcome_name', 'アウトカム名', 'outcome_result', 'text', '', '', 'TRUE', '原文どおり', '', 'FALSE', '']],
+    Evidence: ['6mwt_change', 'pain'].map((id) => [`ev-${id}`, 'run-1', 'study-1', 'f-outcome', 'doc-1', `outcome:${id}|arm:1`, 'Pain', 'FALSE', QUOTE, '1', 'high', 'exact']),
+    ExtractionRuns: [['run-1', 'pilot', '1', 'study-1', 'gemini', 'gemini-test', '', 'text_only', 'done', 't1', 't2', '', '', '']],
+    ArmStructures: [['study-1', '1', 'arm:1', '全体', 'e2e@example.com', 'human_with_ai', 't1', '']],
+  };
+  await page.route('https://sheets.googleapis.com/**', async (route) => {
+    const request = route.request();
+    const url = decodeURIComponent(request.url());
+    if (url.includes('values:batchGet')) {
+      const ranges = new URL(request.url()).searchParams.getAll('ranges');
+      await route.fulfill({ json: { valueRanges: ranges.map((range) => {
+        const name = range.split('!')[0] as keyof typeof SHEET_HEADERS;
+        return { range, values: [[...SHEET_HEADERS[name]], ...(values[name] ?? [])] };
+      }) } });
+      return;
+    }
+    const tab = Object.keys(SHEET_HEADERS).find((name) => url.includes(`/values/${name}`)) as keyof typeof SHEET_HEADERS | undefined;
+    if (tab !== undefined && request.method() === 'POST') {
+      values[tab] = [...(values[tab] ?? []), ...(request.postDataJSON() as { values: (string | number | boolean | null)[][] }).values
+        .map((row) => row.map((value) => value === null ? '' : String(value)))];
+    }
+    await route.fulfill({ json: tab === undefined
+      ? { sheets: Object.keys(SHEET_HEADERS).map((title) => ({ properties: { title } })) }
+      : { values: [[...SHEET_HEADERS[tab]], ...(values[tab] ?? [])] } });
+  });
+  await page.route('https://www.googleapis.com/**', async (route) => {
+    await route.fulfill(route.request().url().includes('txt-1')
+      ? { contentType: 'text/plain', body: QUOTE }
+      : { contentType: 'application/pdf', body: minimalPdf(QUOTE) });
+  });
+  await initApp(page, { documents: [DOCUMENT], schema: { versions: null, currentFields: null }, route: '#/pilot', pilot: { history: null, historyInitialized: false, run: null } });
+  await expect(page.locator('#pilot-verify-study')).toHaveValue('study-1');
+  await page.evaluate(() => { location.hash = '#/schema?outcomes'; });
+  const card = page.locator('#schema-outcome-migration');
+  const newId = card.getByLabel('新しい id 6mwt_change', { exact: true });
+  await expect(newId).toHaveValue('outcome_6mwt_change');
+  await newId.fill('6x');
+  await card.getByRole('button', { name: 'この内容で一覧を作る' }).click();
+  await expect(newId.locator('xpath=../following-sibling::p[1]')).toHaveClass('schema__error');
+  expect(values.SchemaOutcomes ?? []).toEqual([]);
+  expect(values.SchemaVersions).toHaveLength(1);
+  await newId.fill('outcome_6mwt_change');
+  await newId.blur();
+  await expect(card.locator('.schema__error')).toHaveCount(0);
+  await card.getByLabel('表示名 pain', { exact: true }).fill('Pain X');
+  await card.getByRole('button', { name: 'この内容で一覧を作る' }).click();
+  await expect.poll(() => values.SchemaOutcomes?.find((row) => row[2] === 'outcome_6mwt_change')?.[8]).toBe('6mwt_change');
+  expect(values.SchemaOutcomes?.find((row) => row[2] === 'pain')?.[3]).toBe('Pain X');
+  await page.evaluate(() => { location.hash = '#/pilot'; });
+  await expect(page.locator('#pilot-verify-study')).toHaveValue('study-1');
+  await page.locator('.verify__tab', { hasText: 'アウトカム' }).click();
+  await page.locator('#verify-layout-toggle').click();
+  await expect(page.locator('.verify__cell[data-cell-key*="outcome:outcome_6mwt_change|"]')).toHaveCount(1);
+  await expect(page.locator('.verify__cell[data-cell-key*="outcome:6mwt_change|"]')).toHaveCount(0);
+});
+
 test.beforeEach(async ({ page }) => {
   await page.route('https://sheets.googleapis.com/**', async (route) => {
     const url = decodeURIComponent(route.request().url());

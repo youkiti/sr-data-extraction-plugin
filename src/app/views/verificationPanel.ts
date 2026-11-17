@@ -2221,7 +2221,8 @@ export function createVerificationPanel(
         if (candidates.length > 0) {
           form.append(renderOutcomeCandidates('verify', candidates,
             (evidence) => handlers.onJump(quoteKeyOf(evidence)), data.canEditSchema === true, options.pilot,
-            outcomeAdd === null ? undefined : (candidate) => outcomeAdd.addCandidate(candidate.id, candidate.name ?? candidate.id)));
+            outcomeAdd === null ? undefined : (candidate) => outcomeAdd.addCandidate(candidate.id, candidate.name ?? candidate.id,
+              candidates.map((other) => other.id))));
         }
       }
     }
