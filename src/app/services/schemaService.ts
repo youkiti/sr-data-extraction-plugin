@@ -1008,7 +1008,7 @@ export function outcomeEditorRows(outcomes: readonly SchemaOutcome[]): SchemaOut
 }
 
 /** 移行の候補を更新し、別名の連鎖や選択を外したまとめ先を防ぐ。 */
-export function updateOutcomeMigration(store: Store, id: string, patch: Partial<Pick<OutcomeMigrationRow, 'selected' | 'label' | 'target'>>): void {
+export function updateOutcomeMigration(store: Store, id: string, patch: Partial<Pick<OutcomeMigrationRow, 'selected' | 'label' | 'target' | 'newId'>>): void {
   const migration = store.getState().schema.outcomeMigration;
   if (!migration || store.getState().schema.confirming) {
     return;
@@ -1018,13 +1018,15 @@ export function updateOutcomeMigration(store: Store, id: string, patch: Partial<
     || migration.rows.some((row) => row.target === id))) {
     return;
   }
-  const rows = migration.rows.map((row) => ({ ...row, ...(row.id === id ? patch : {}) }));
+  const { newId, ...rest } = patch;
+  const rows = migration.rows.map((row) => ({ ...row, ...(row.id === id
+    ? { ...rest, ...(row.newId !== null && newId !== undefined ? { newId } : {}) } : {}) }));
   for (const row of rows) {
     if (row.target !== null && !rows.some((candidate) => candidate.id === row.target && candidate.selected && candidate.target === null)) {
       row.target = null;
     }
   }
-  patchSchema(store, { outcomeMigration: { ...migration, rows, confirmingExclusions: false } });
+  patchSchema(store, { outcomeMigration: { ...migration, rows, confirmingExclusions: false }, editorOutcomeErrors: [] });
 }
 
 /** 現行の項目を保ち、移行で選んだ最初の一覧を版として確定する。 */

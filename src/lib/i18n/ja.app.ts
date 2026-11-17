@@ -17,6 +17,8 @@ export const jaApp = {
   'schema.outcomeLastRequired': 'アウトカムの一覧は 1 件以上必要です（一覧を作った後は空にできません）',
   'schema.outcomeTitle': 'アウトカムの一覧',
   'schema.migrationTitle': 'アウトカムの一覧を作る',
+  'schema.migrationNewId': '新しい id',
+  'schema.migrationNewIdHint': 'この id は一覧では使えないため新しい id を付けます。元の id は別名として残り、判定と AI の値を引き継ぎます',
   'schema.migrationLink': '既存のアウトカムは移行のカードから一覧にまとめてください',
   'schema.migrationTarget': '別名としてまとめる先',
   'schema.migrationNone': 'まとめない',

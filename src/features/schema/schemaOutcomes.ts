@@ -56,14 +56,40 @@ export interface OutcomeValidationError {
   message: string;
 }
 
+/** 一覧の id として保存できる形式かを判定する。 */
+export function isValidOutcomeId(id: string): boolean {
+  return /^[a-z][a-z0-9_]*$/.test(id) && id.length <= 64;
+}
+
+/** 別名は保存時と entity_key の区切り文字・空白を含めない。 */
+export function isValidOutcomeAlias(alias: string): boolean {
+  return alias.length > 0 && alias.length <= 256 && !/[|:\s]/.test(alias);
+}
+
+/** 元のキーから、既存の id と重ならない一覧用の id を提案する。 */
+export function suggestOutcomeId(key: string, taken: Iterable<string>): string {
+  let base = key.trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+  if (!/^[a-z]/.test(base)) {
+    base = base ? `outcome_${base}` : 'outcome';
+  }
+  base = base.slice(0, 64);
+  const ids = new Set(taken);
+  let candidate = base;
+  for (let n = 2; ids.has(candidate); n += 1) {
+    const suffix = `_${n}`;
+    candidate = base.slice(0, 64 - suffix.length) + suffix;
+  }
+  return candidate;
+}
+
 /** id・表示名と一覧作成後の最低件数を検証する。 */
 export function validateOutcomeRows(rows: readonly (Pick<SchemaOutcomeEditorRow, 'outcomeId' | 'outcomeLabel'> & Partial<Pick<SchemaOutcomeEditorRow, 'aliases'>>)[], options: { listModeBefore: boolean }): OutcomeValidationError[] {
   const errors: OutcomeValidationError[] = [];
   const seen = new Set<string>();
   rows.forEach((row, index) => {
-    for (const value of [row.outcomeId, ...(row.aliases ?? [])]) {
+    for (const [position, value] of [row.outcomeId, ...(row.aliases ?? [])].entries()) {
       const id = value.trim();
-      if (!/^[a-z][a-z0-9_]*$/.test(id) || id.length > 64) {
+      if (!(position === 0 ? isValidOutcomeId(id) : isValidOutcomeAlias(id))) {
         errors.push({ index, message: t('schema.outcomeInvalidId') });
       }
       if (seen.has(id)) {

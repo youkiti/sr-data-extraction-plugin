@@ -150,7 +150,7 @@ export interface SchemaViewCallbacks {
   onCancelEnumSuggestion(): void;
   onAddOutcome(): void;
   /** 既存アウトカムの移行の選択・表示名・まとめ先を変更する。 */
-  onEditOutcomeMigration?(id: string, patch: { selected?: boolean; label?: string; target?: string | null }): void;
+  onEditOutcomeMigration?(id: string, patch: { selected?: boolean; label?: string; target?: string | null; newId?: string }): void;
   /** 既存アウトカムから最初の一覧を確定する。 */
   onConfirmOutcomeMigration?(acknowledge?: boolean): void;
   onEditOutcome(index: number, patch: Partial<SchemaOutcomeEditorRow>): void;

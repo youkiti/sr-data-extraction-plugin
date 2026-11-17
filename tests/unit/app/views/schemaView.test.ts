@@ -2259,9 +2259,9 @@ test('移行カードは選択・名称・まとめ先と衝突を表示し、�
   const { ctx, callbacks } = makeCtx();
   const migration: NonNullable<AppState['schema']['outcomeMigration']> = {
     rows: [
-      { id: 'pain', label: '痛み', selected: true, target: null, studies: 1, judgedCells: 1 },
-      { id: 'old', label: '旧名', selected: true, target: 'pain', studies: 1, judgedCells: 1 },
-      { id: 'excluded', label: '除外', selected: false, target: null, studies: 1, judgedCells: 1 },
+      { id: 'pain', newId: null, label: '痛み', selected: true, target: null, studies: 1, judgedCells: 1 },
+      { id: 'old', newId: null, label: '旧名', selected: true, target: 'pain', studies: 1, judgedCells: 1 },
+      { id: 'excluded', newId: null, label: '除外', selected: false, target: null, studies: 1, judgedCells: 1 },
     ],
     evidence: [], decisions: [{ studyId: 's', annotator: 'a', fieldId: 'f', entityKey: 'outcome:excluded', action: 'edit', value: '1', decidedAt: 't' } as Decision],
     confirmingExclusions: true,
@@ -2296,6 +2296,63 @@ test('移行カードは選択・名称・まとめ先と衝突を表示し、�
   expect(editor.querySelector('#schema-outcome-add')).toBeNull();
   expect(editor.querySelector('#schema-outcomes a')).not.toBeNull();
   expect(renderSchemaView({ ...state, schema: { ...state.schema, outcomeMigration: { ...migration, confirmingExclusions: false } } }, ctx).querySelector('#schema-outcome-migration')).not.toBeNull();
+});
+
+test('移行の新しい id と行エラーを表示し、確定前に入力のフォーカスを外す', () => {
+  const { ctx, callbacks } = makeCtx();
+  const migration: NonNullable<AppState['schema']['outcomeMigration']> = {
+    rows: [
+      { id: 'excluded', newId: 'outcome_excluded', label: '除外', selected: false, target: null, studies: 1, judgedCells: 0 },
+      { id: 'old', newId: 'outcome_old', label: '別名', selected: true, target: 'pain', studies: 1, judgedCells: 0 },
+      { id: '6mwt_change', newId: 'outcome_6mwt_change', label: '歩行', selected: true, target: null, studies: 1, judgedCells: 0 },
+      { id: 'pain', newId: null, label: '痛み', selected: true, target: null, studies: 1, judgedCells: 0 },
+    ], evidence: [], decisions: [], confirmingExclusions: false,
+  };
+  const state = makeState({ versions: [makeVersion(1)], currentFields: [makeField({ entityLevel: 'outcome_result' })],
+    outcomeMigration: migration, editorOutcomeErrors: [{ index: 0, message: '行のエラー' }, { index: -1, message: '一覧のエラー' }] });
+  const root = renderSchemaView(state, ctx);
+  document.body.replaceChildren(root);
+  const card = root.querySelector<HTMLElement>('#schema-outcome-migration')!;
+  const input = card.querySelector<HTMLInputElement>('[aria-label="新しい id 6mwt_change"]')!;
+  expect(card.querySelectorAll('[aria-label^="新しい id "]')).toHaveLength(1);
+  expect(input.value).toBe('outcome_6mwt_change');
+  expect(input.parentElement!.nextElementSibling!.textContent).toBe('行のエラー');
+  expect(card.querySelector('select option[value="6mwt_change"]')!.textContent).toBe('outcome_6mwt_change');
+  input.value = 'walking';
+  input.dispatchEvent(new Event('change'));
+  expect(callbacks.onEditOutcomeMigration).toHaveBeenCalledWith('6mwt_change', { newId: 'walking' });
+  const confirm = Array.from(card.querySelectorAll('button')).find((button) => button.textContent === 'この内容で一覧を作る')!;
+  expect(confirm.previousElementSibling!.textContent).toBe('一覧のエラー');
+  const down = new MouseEvent('mousedown', { cancelable: true });
+  confirm.dispatchEvent(down);
+  expect(down.defaultPrevented).toBe(true);
+  const order: string[] = [];
+  input.addEventListener('blur', () => order.push('blur'));
+  (callbacks.onConfirmOutcomeMigration as jest.Mock).mockImplementation(() => { order.push('confirm'); });
+  input.focus();
+  confirm.click();
+  expect(order).toEqual(['blur', 'confirm']);
+  confirm.click();
+  expect(order).toEqual(['blur', 'confirm', 'confirm']);
+  const outside = document.createElement('input');
+  document.body.append(outside);
+  outside.focus();
+  confirm.click();
+  expect(document.activeElement).toBe(outside);
+  expect(order).toEqual(['blur', 'confirm', 'confirm', 'confirm']);
+  for (const patch of [{ selected: false }, { target: 'pain' }]) {
+    const changed = renderSchemaView({ ...state, schema: { ...state.schema, outcomeMigration: {
+      ...migration, rows: migration.rows.map((row) => row.id === '6mwt_change' ? { ...row, ...patch } : row),
+    } } }, ctx);
+    expect(changed.querySelector('[aria-label="新しい id 6mwt_change"]')).toBeNull();
+  }
+  const withoutCallbacks = renderSchemaView(state, { ...ctx, schema: { ...ctx.schema,
+    onEditOutcomeMigration: undefined, onConfirmOutcomeMigration: undefined } });
+  withoutCallbacks.querySelector<HTMLInputElement>('[aria-label="新しい id 6mwt_change"]')!.dispatchEvent(new Event('change'));
+  Array.from(withoutCallbacks.querySelectorAll<HTMLButtonElement>('#schema-outcome-migration button'))
+    .find((button) => button.textContent === 'この内容で一覧を作る')!.click();
+  const busy = renderSchemaView({ ...state, schema: { ...state.schema, confirming: true } }, ctx);
+  expect(busy.querySelector<HTMLInputElement>('[aria-label="新しい id 6mwt_change"]')!.disabled).toBe(true);
 });
 
 test('アウトカムの編集欄は対象項目か一覧があるときだけ出し、各操作を配線する', () => {
