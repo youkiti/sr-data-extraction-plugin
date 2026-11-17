@@ -370,6 +370,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         evidenceRows: after.counts.evidenceRows + outcome.result.evidence.length,
         dataRows: after.counts.dataRows + outcome.transferredRowCount,
       },
+      schema: { ...after.schema, migrationStale: true },
       pilot: {
         ...after.pilot,
         running: false,
@@ -766,6 +767,7 @@ export async function persistPilotInstanceDeclarations(
     return;
   }
   await persistInstanceDeclarations(project.spreadsheetId, decisions, deps);
+  store.setState({ schema: { ...store.getState().schema, migrationStale: true } });
 }
 
 /**

@@ -1555,6 +1555,7 @@ describe('persistVerifyInstanceDeclarations', () => {
       note: 'outcome_instance_declared',
     });
     await persistVerifyInstanceDeclarations(store, makeDeps(), [decision]);
+    expect(store.getState().schema.migrationStale).toBe(true);
     expect(appendDecisionsMock).toHaveBeenCalledWith('sheet-1', [decision], expect.anything());
     expect(upsertResultsMock).not.toHaveBeenCalled();
     expect(upsertStudyMock).not.toHaveBeenCalled();

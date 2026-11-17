@@ -37,7 +37,7 @@ import { persistVerifyDecision } from '../../../../src/app/services/verifyServic
 import { runExtraction } from '../../../../src/app/services/extractionService';
 import { installChromeMock } from '../../../setup/chrome-mock';
 import { relocateQuote } from '../../../../src/app/services/relocateQuoteService';
-import { resolveProtocol } from '../../../../src/app/services/schemaService';
+import { loadSchema, resolveProtocol } from '../../../../src/app/services/schemaService';
 import { createInitialState, createStore, type Store } from '../../../../src/app/store';
 import type { Decision } from '../../../../src/domain/decision';
 import type { DocumentRecord } from '../../../../src/domain/document';
@@ -866,6 +866,19 @@ describe('runPilot: 実行', () => {
     await runPilot(store, makeDeps());
     expect(runExtractionMock.mock.calls[0]?.[1].reasoningEffort).toBe('low');
     delete chromeMock.storage.local.data['settings.defaultReasoningEffort'];
+  });
+
+  test('パイロット完了後に S5 を開くとキャッシュした版の移行候補を更新する', async () => {
+    const store = makeReadyStore();
+    const deps = makeDeps();
+    store.setState({ schema: { ...store.getState().schema, versions: [{ schemaVersion: 1 } as SchemaVersion] } });
+    runExtractionMock.mockResolvedValue(makeOutcome());
+    await runPilot(store, deps);
+    expect(store.getState().schema.migrationStale).toBe(true);
+    readEvidenceRowsMock.mockResolvedValue([makeEvidence({ entityKey: 'outcome:pain' })]);
+    await loadSchema(store, deps);
+    expect(store.getState().schema.outcomeMigration?.rows).toEqual([expect.objectContaining({ id: 'pain' })]);
+    expect(store.getState().schema.migrationStale).toBe(false);
   });
 
   test('ページ画像の明示選択を runExtraction へ渡す', async () => {
@@ -1963,7 +1976,9 @@ describe('persistPilotInstanceDeclarations', () => {
       value: 'outcome:mortality|arm:1',
       note: 'outcome_instance_declared',
     });
-    await persistPilotInstanceDeclarations(makeStore({}), makeDeps(), [decision]);
+    const store = makeStore({});
+    await persistPilotInstanceDeclarations(store, makeDeps(), [decision]);
+    expect(store.getState().schema.migrationStale).toBe(true);
     expect(appendDecisionsMock).toHaveBeenCalledWith('sheet-1', [decision], expect.anything());
     expect(upsertResultsMock).not.toHaveBeenCalled();
   });

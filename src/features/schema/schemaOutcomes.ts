@@ -6,6 +6,7 @@ import { t } from '../../lib/i18n';
 import { nextOutcomeId, parseEntityKey } from '../../utils/entityKey';
 import { deriveCellStates } from '../verification/cellState';
 import { isEntityInstanceDeclaration } from '../verification/instanceDeclarations';
+import { applyOutcomeAliases } from './applyOutcomeAliases';
 import type { SchemaOutcomeEditorRow } from './types';
 
 /** 指定版の一覧を解決し、行が無いときは直近の前の版を使う。 */
@@ -81,9 +82,18 @@ export function validateOutcomeRows(rows: readonly (Pick<SchemaOutcomeEditorRow,
 }
 
 /** アウトカムに紐づく判定済みセルと論文の件数を集計する。 */
-export function countJudgedCellsForOutcome(decisions: readonly Decision[], outcomeId: string): { cells: number; studies: number } {
+export function countJudgedCellsForOutcome(
+  decisions: readonly Decision[],
+  outcomeId: string,
+  aliases: readonly string[] = [],
+  aliasMigratedAt?: ReadonlyMap<string, string>,
+): { cells: number; studies: number } {
+  const resolved = applyOutcomeAliases({ decisions }, {
+    schemaVersion: 0, outcomes: [], currentIds: new Set([outcomeId, ...aliases]), everIds: new Set([outcomeId, ...aliases]),
+    aliasToId: new Map(aliases.map((alias) => [alias, outcomeId])), aliasMigratedAt,
+  });
   const groups = new Map<string, Decision[]>();
-  for (const decision of decisions) {
+  for (const decision of resolved.decisions) {
     if (isEntityInstanceDeclaration(decision)) {
       continue;
     }

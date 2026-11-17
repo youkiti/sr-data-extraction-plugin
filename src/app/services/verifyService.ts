@@ -644,6 +644,7 @@ export async function persistVerifyInstanceDeclarations(
     return;
   }
   await persistInstanceDeclarations(project.spreadsheetId, decisions, deps);
+  store.setState({ schema: { ...store.getState().schema, migrationStale: true } });
 }
 
 /**

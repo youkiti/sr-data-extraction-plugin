@@ -1957,6 +1957,102 @@ test('一覧を読み込み、欠けた最新版では前版の一覧と参照�
   expect(store.getState().schema).toMatchObject({ allOutcomes: [schemaOutcome()], currentOutcomes: [schemaOutcome()], currentOutcomesSourceVersion: 1 });
 });
 
+test('一覧なしの版をキャッシュした後に抽出すると、S5 の再表示で移行候補を読み直す', async () => {
+  const store = makeStore();
+  const deps = makeDeps().deps;
+  listVersionsMock.mockResolvedValue([makeVersion(1)]);
+  getFieldsMock.mockResolvedValue([makeField()]);
+  await loadSchema(store, deps);
+  expect(store.getState().schema.outcomeMigration).toBeNull();
+  jest.mocked(readEvidenceRows).mockResolvedValue([migrationEvidence({ entityKey: 'outcome:pain' })]);
+  store.setState({ schema: { ...store.getState().schema, migrationStale: true } });
+  await loadSchema(store, deps);
+  expect(store.getState().schema.outcomeMigration?.rows).toEqual([expect.objectContaining({ id: 'pain' })]);
+  expect(store.getState().schema.migrationStale).toBe(false);
+  expect(listVersionsMock).toHaveBeenCalledTimes(1);
+  expect(getFieldsMock).toHaveBeenCalledTimes(1);
+  expect(jest.mocked(readAllSchemaOutcomes)).toHaveBeenCalledTimes(1);
+  await loadSchema(store, deps);
+  expect(jest.mocked(readEvidenceRows)).toHaveBeenCalledTimes(2);
+  expect(jest.mocked(readAllDecisions)).toHaveBeenCalledTimes(2);
+  startEditorFromCurrent(store);
+  addEditorOutcome(store);
+  expect(store.getState().schema.editorOutcomes).toEqual([]);
+  jest.mocked(readEvidenceRows).mockRejectedValueOnce(new Error('offline'));
+  store.setState({ schema: { ...store.getState().schema, migrationStale: true } });
+  await loadSchema(store, deps);
+  expect(store.getState().schema.loadError).toBe('offline');
+  expect(store.getState().schema.migrationStale).toBe(true);
+});
+
+test('キャッシュに一覧と項目が未設定でも移行素材を読み込める', async () => {
+  const store = makeStore();
+  store.setState({ schema: { ...store.getState().schema, versions: [makeVersion(1)], migrationStale: true } });
+  await loadSchema(store, makeDeps().deps);
+  expect(store.getState().schema.currentFields).toBeNull();
+  expect(store.getState().schema.allOutcomes).toBeNull();
+  expect(store.getState().schema.migrationStale).toBe(false);
+});
+
+test('復元候補と新規入力で再利用した id は最後の版の別名を引き継ぐ', () => {
+  const store = makeStore();
+  seedOutcomeEditor(store);
+  store.setState({ schema: { ...store.getState().schema, allOutcomes: [
+    schemaOutcome({ outcomeId: 'pain', aliases: ['old_pain'] }),
+    schemaOutcome({ schemaVersion: 2, outcomeId: 'pain', aliases: ['legacy_pain'] }),
+  ] } });
+  restoreEditorOutcome(store, 'pain');
+  expect(store.getState().schema.editorOutcomes[1]?.aliases).toEqual(['legacy_pain']);
+  addEditorOutcome(store);
+  updateEditorOutcome(store, 2, { outcomeId: ' pain ' });
+  expect(store.getState().schema.editorOutcomes[2]?.aliases).toEqual(['legacy_pain']);
+  updateEditorOutcome(store, 2, { outcomeId: 'fresh' });
+  expect(store.getState().schema.editorOutcomes[2]?.aliases).toEqual([]);
+});
+
+test.each(['row', 'replacement'] as const)('別名側だけの判定も削除確認に含める: %s', async (mode) => {
+  const store = makeStore();
+  seedOutcomeEditor(store);
+  const current = schemaOutcome({ schemaVersion: 2, aliases: ['old'] });
+  store.setState({ schema: { ...store.getState().schema, allOutcomes: [current], currentOutcomes: [current] } });
+  startEditorFromCurrent(store);
+  jest.mocked(readAllDecisions).mockResolvedValue([{ ...outcomeDecision(), entityKey: 'outcome:old' }]);
+  if (mode === 'row') {
+    await requestRemoveEditorOutcome(store, makeDeps().deps, 0);
+    expect(store.getState().schema.outcomeRemoval?.counts).toEqual({ cells: 1, studies: 1 });
+  } else {
+    store.setState({ schema: { ...store.getState().schema, editorOutcomes: [{
+      ...store.getState().schema.editorOutcomes[0]!, outcomeId: 'pain', aliases: [],
+    }] } });
+    await confirmSchema(store, makeDeps().deps, '');
+    expect(store.getState().schema.pendingOutcomeRemovals?.items).toEqual([
+      expect.objectContaining({ outcomeId: 'mortality', cells: 1, studies: 1 }),
+    ]);
+  }
+  expect(saveVersionMock).not.toHaveBeenCalled();
+});
+
+test.each(['row', 'replacement'] as const)('一覧の履歴が未読込でも判定済みアウトカムの削除を確認する: %s', async (mode) => {
+  const store = makeStore();
+  seedOutcomeEditor(store);
+  store.setState({ schema: { ...store.getState().schema, allOutcomes: null, versions: null } });
+  jest.mocked(readAllDecisions).mockResolvedValue([outcomeDecision()]);
+  if (mode === 'row') {
+    await requestRemoveEditorOutcome(store, makeDeps().deps, 0);
+    expect(store.getState().schema.outcomeRemoval?.counts).toEqual({ cells: 1, studies: 1 });
+    store.setState({ schema: { ...store.getState().schema, versions: [] } });
+    await requestRemoveEditorOutcome(store, makeDeps().deps, 0);
+    expect(store.getState().schema.outcomeRemoval?.counts).toEqual({ cells: 1, studies: 1 });
+  } else {
+    store.setState({ schema: { ...store.getState().schema, editorOutcomes: [] } });
+    await confirmSchema(store, makeDeps().deps, '');
+    expect(store.getState().schema.pendingOutcomeRemovals?.items).toEqual([
+      expect.objectContaining({ outcomeId: 'mortality', cells: 1, studies: 1 }),
+    ]);
+  }
+  expect(saveVersionMock).not.toHaveBeenCalled();
+});
+
 test('新しい版は id を固定して一覧を引き継ぎ、未編集の id だけを名称から更新する', () => {
   const store = makeStore();
   seedOutcomeEditor(store);

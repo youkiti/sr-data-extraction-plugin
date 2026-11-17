@@ -326,6 +326,8 @@ export interface SchemaState {
     items: { outcomeId: string; outcomeLabel: string; cells: number; studies: number }[];
   } | null;
   outcomeDecisions: Decision[] | null;
+  /** 抽出・インスタンス宣言の保存後は移行素材だけを再読込する。未設定は false。 */
+  migrationStale?: boolean;
   /** 論文単位モードから一覧を作るための候補と衝突の素材。 */
   outcomeMigration?: { rows: OutcomeMigrationRow[]; evidence: Evidence[]; decisions: Decision[]; confirmingExclusions: boolean } | null;
   /** 自由記述から選択肢への変換案（未反映の下書き）。 */

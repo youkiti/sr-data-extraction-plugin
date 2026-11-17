@@ -30,9 +30,22 @@ test('指定版を優先し、欠けた版だけ直近の前版の一覧を順�
 
 test('復元候補は編集中に無い id ごとの最終版の行', () => {
   const old = outcome();
-  const latest = outcome({ schemaVersion: 3, outcomeLabel: '新名称' });
+  const latest = outcome({ schemaVersion: 3, outcomeLabel: '新名称', aliases: ['old_mortality'] });
   const pain = outcome({ outcomeId: 'pain' });
   expect(restorableOutcomes([latest, old, pain, latest], ['pain'])).toEqual([latest]);
+});
+
+test('別名のセルと RoB を合流し、重複と移行後の undo を読み替えと同じ規則で数える', () => {
+  const decisions = [
+    decision(), decision({ entityKey: 'outcome:old|arm:1' }),
+    decision({ entityKey: 'rob:domain_1|outcome:old|arm:1' }),
+    decision({ entityKey: 'outcome:old|arm:2' }),
+    decision({ entityKey: 'outcome:mortality|arm:2', action: 'edit', decidedAt: '2026-11-17T00:00:00Z' }),
+    decision({ entityKey: 'outcome:mortality|arm:2', action: 'undo', decidedAt: '2026-11-17T00:00:01Z' }),
+  ];
+  expect(countJudgedCellsForOutcome(decisions, 'mortality', ['old'], new Map([
+    ['old', '2026-11-16T12:00:00Z'],
+  ]))).toEqual({ cells: 3, studies: 1 });
 });
 
 test('表示名から id を作り、使えない名称や重複には outcome の連番を使う', () => {

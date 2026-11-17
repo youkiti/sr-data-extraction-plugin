@@ -968,6 +968,7 @@ describe('runExtract', () => {
 
     const state = store.getState();
     expect(state.counts).toMatchObject({ evidenceRows: 1, dataRows: 1 });
+    expect(state.schema.migrationStale).toBe(true);
     expect(state.extract.running).toBe(false);
     expect(state.extract.confirming).toBe(false);
     expect(state.extract.run?.runId).toBe('run-1');

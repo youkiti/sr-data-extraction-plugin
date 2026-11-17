@@ -468,6 +468,7 @@ async function performRun(
   // catch へ落ち、専用の転記失敗文言が出せなくなる
   const after = store.getState();
   store.setState({
+    schema: { ...after.schema, migrationStale: true },
     counts: {
       ...after.counts,
       evidenceRows: after.counts.evidenceRows + outcome.result.evidence.length,

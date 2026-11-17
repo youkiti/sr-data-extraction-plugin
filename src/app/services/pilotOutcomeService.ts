@@ -39,6 +39,7 @@ export async function addPilotOutcome(store: Store, deps: PilotServiceDeps, row:
       outcomeId: row.outcomeId.trim(),
       addedVia: history[0]?.addedVia ?? row.addedVia,
       typicalTimepoints: restored?.typicalTimepoints ?? null,
+      aliases: [...(restored?.aliases ?? row.aliases)],
     };
     const outcomes = [...outcomeEditorRows(current), added];
     const errors = validateOutcomeRows(outcomes, { listModeBefore: true });

@@ -70,12 +70,12 @@ test('最新の項目と一覧から版を作り、全パイロットの文脈�
 test('外した id は初出の経路と最後の時点を引き継ぐ', async () => {
   const { store, deps } = setup();
   jest.mocked(readAllSchemaOutcomes).mockResolvedValue([
-    outcome(2, 'sleep', { addedVia: 'pilot_candidate', typicalTimepoints: '12 weeks' }),
-    outcome(1, 'sleep', { addedVia: 'migration', typicalTimepoints: '4 weeks' }), outcome(3),
+    outcome(2, 'sleep', { addedVia: 'pilot_candidate', typicalTimepoints: '12 weeks', aliases: ['legacy_sleep'] }),
+    outcome(1, 'sleep', { addedVia: 'migration', typicalTimepoints: '4 weeks', aliases: ['old_sleep'] }), outcome(3),
   ]);
   await addPilotOutcome(store, deps, row);
   expect(saveSchemaVersion).toHaveBeenCalledWith(expect.objectContaining({ outcomes: expect.arrayContaining([
-    expect.objectContaining({ outcomeId: 'sleep', addedVia: 'migration', typicalTimepoints: '12 weeks' }),
+    expect.objectContaining({ outcomeId: 'sleep', addedVia: 'migration', typicalTimepoints: '12 weeks', aliases: ['legacy_sleep'] }),
   ]) }), deps);
 });
 

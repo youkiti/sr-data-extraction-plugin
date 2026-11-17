@@ -44,6 +44,7 @@ import {
 } from '../../features/schema/schemaRepository';
 import { saveSchemaVersion } from '../../features/schema/saveSchemaVersion';
 import { readAllSchemaOutcomes } from '../../features/schema/schemaOutcomeRepository';
+import { buildOutcomeListContext } from '../../features/schema/outcomeListContext';
 import { countJudgedCellsForOutcome, isOutcomeListMode, outcomesForVersion, restorableOutcomes, slugifyOutcomeLabel, validateOutcomeRows } from '../../features/schema/schemaOutcomes';
 import { importNoteDefault } from '../../features/schema/schemaTransfer';
 import { SCHEMA_PRESETS, type SchemaPresetKind } from '../../features/schema/presets';
@@ -156,7 +157,8 @@ export function emptyEditorRow(): SchemaEditorRow {
 
 /**
  * SchemaVersions + 最新版の SchemaFields を読み込む。
- * 読込済み（versions !== null）なら force 指定時のみ再読込。プロジェクト未選択・読込中は no-op
+ * 読込済みのスキーマは force 指定時のみ再読込し、古くなった移行素材だけを読み直す。
+ * プロジェクト未選択・読込中は no-op。
  */
 export async function loadSchema(
   store: Store,
@@ -167,18 +169,19 @@ export async function loadSchema(
   if (!state.currentProject || state.schema.loading) {
     return;
   }
-  if (state.schema.versions !== null && options.force !== true) {
+  const cached = state.schema.versions !== null && options.force !== true;
+  if (cached && !state.schema.migrationStale) {
     return;
   }
   patchSchema(store, { loading: true, loadError: null });
   try {
-    const [versions, allOutcomes] = await Promise.all([
+    const [versions, allOutcomes] = cached ? [state.schema.versions!, state.schema.allOutcomes ?? []] : await Promise.all([
       listSchemaVersions(state.currentProject.spreadsheetId, deps.google),
       readAllSchemaOutcomes(state.currentProject.spreadsheetId, deps.google),
     ]);
     const resolved = outcomesForVersion(allOutcomes, versions, versions[0]?.schemaVersion ?? 0);
     const latest = versions[0];
-    const currentFields =
+    const currentFields = cached ? state.schema.currentFields ?? [] :
       latest === undefined
         ? []
         : await getSchemaFieldsByVersion(
@@ -191,17 +194,22 @@ export async function loadSchema(
     // 優先順位: Options の設定値 → 工場出荷の既定モデル（FACTORY_DEFAULT_MODEL。Q8 = 抽出精度ベンチで確定）。
     const currentModel = store.getState().schema.model;
     const model =
-      currentModel !== ''
+      cached || currentModel !== ''
         ? currentModel
         : ((await (deps.loadDefaultModel ?? loadDefaultModel)()) ?? FACTORY_DEFAULT_MODEL);
-    const after = store.getState();
     const migrationMaterials = latest !== undefined && !isOutcomeListMode(allOutcomes)
       ? await Promise.all([readEvidenceRows(state.currentProject.spreadsheetId, deps.google), readAllDecisions(state.currentProject.spreadsheetId, deps.google)])
       : null;
     const migrationRows = migrationMaterials === null ? [] : buildOutcomeMigrationRows(migrationMaterials[0], migrationMaterials[1], currentFields);
+    const outcomeMigration = migrationMaterials !== null && migrationRows.length > 0 ? { rows: migrationRows, evidence: migrationMaterials[0], decisions: migrationMaterials[1], confirmingExclusions: false } : null;
+    if (cached) {
+      patchSchema(store, { loading: false, migrationStale: false, outcomeMigration });
+      return;
+    }
+    const after = store.getState();
     store.setState({
       schema: { ...after.schema, loading: false, loadError: null, versions, currentFields, model, allOutcomes, currentOutcomes: resolved.outcomes, currentOutcomesSourceVersion: resolved.sourceVersion,
-        outcomeMigration: migrationMaterials !== null && migrationRows.length > 0 ? { rows: migrationRows, evidence: migrationMaterials[0], decisions: migrationMaterials[1], confirmingExclusions: false } : null },
+        migrationStale: false, outcomeMigration },
       counts: { ...after.counts, schemaVersions: versions.length },
     });
   } catch (err) {
@@ -1093,7 +1101,8 @@ async function checkRemovedOutcomes(store: Store, deps: SchemaServiceDeps, note:
     const counted = removed.map((row) => ({
       outcomeId: row.outcomeId,
       outcomeLabel: row.outcomeLabel,
-      ...countJudgedCellsForOutcome(decisions, row.outcomeId),
+      ...countJudgedCellsForOutcome(decisions, row.outcomeId, row.aliases,
+        buildOutcomeListContext(schema.allOutcomes ?? [], schema.versions ?? [], row.schemaVersion)?.aliasMigratedAt),
     }));
     const items = counted.filter((item) => item.cells > 0);
     patchSchema(store, {
@@ -1151,6 +1160,10 @@ export function updateEditorOutcome(store: Store, index: number, patch: Partial<
     next.idEdited = true;
   } else if (patch.outcomeLabel !== undefined && !row.idEdited) {
     next.outcomeId = slugifyOutcomeLabel(patch.outcomeLabel, schema.editorOutcomes.filter((_, i) => i !== index).map((item) => item.outcomeId));
+  }
+  if (!row.idLocked) {
+    const restored = restorableOutcomes(schema.allOutcomes ?? [], []).find((item) => item.outcomeId === next.outcomeId.trim());
+    next.aliases = [...(restored?.aliases ?? [])];
   }
   patchEditorOutcomes(store, schema.editorOutcomes.map((item, i) => i === index ? next : item));
 }
@@ -1212,7 +1225,8 @@ export async function requestRemoveEditorOutcome(store: Store, deps: Pick<Schema
       return;
     }
     patchSchema(store, { outcomeDecisions: decisions });
-    const counts = countJudgedCellsForOutcome(decisions, row.outcomeId);
+    const counts = countJudgedCellsForOutcome(decisions, row.outcomeId, row.aliases,
+      buildOutcomeListContext(state.schema.allOutcomes ?? [], state.schema.versions ?? [], state.schema.versions?.[0]?.schemaVersion ?? 0)?.aliasMigratedAt);
     if (counts.cells === 0) {
       patchSchema(store, { acknowledgedRemovedOutcomeIds: [...after.schema.acknowledgedRemovedOutcomeIds, row.outcomeId] });
       patchEditorOutcomes(store, after.schema.editorOutcomes.filter((_, i) => i !== index));
