@@ -13,6 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
+（まだありません / Nothing yet）
+
+## v0.36.0（2026-11-17）
+
 ### AI の結果に影響する変更 / Changes that affect AI output
 
 - draft-schema が初回の表のデザインでアウトカムの一覧の案も出すようにしました（プロンプト版数 5）。再ドラフトは現行の一覧を引き継ぎます（2026-11-16、issue #539）。
