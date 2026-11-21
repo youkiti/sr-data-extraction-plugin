@@ -1,4 +1,6 @@
 // issue #176 のモード別採点・比較レポート生成。
+// 出力先は BENCH_SCORES_DIR（絶対パス）で上書き可。未指定時は outputs/scores-issue176。
+// 既存ファイルがある場合は BENCH_SCORES_OVERWRITE=1 が必要。
 import { readdir, readFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { benchRoot } from './config';
@@ -21,6 +23,29 @@ interface Aggregate {
   meanCostUsd: number | null;
   totalCostUsd: number | null;
   meanElapsedMs: number | null;
+}
+
+/** 出力先。BENCH_SCORES_DIR（絶対パス）があればそちらを優先する。 */
+function issue176ScoresDir(): string {
+  const override = process.env.BENCH_SCORES_DIR?.trim();
+  if (override !== undefined && override !== '') return override;
+  return path.join(benchRoot, 'outputs', 'scores-issue176');
+}
+
+async function ensureWritableScoresDir(dir: string): Promise<void> {
+  let existingNames: string[] = [];
+  try {
+    existingNames = await readdir(dir);
+  } catch {
+    existingNames = [];
+  }
+  if (existingNames.length > 0 && process.env.BENCH_SCORES_OVERWRITE !== '1') {
+    throw new Error(
+      `採点結果の出力先に既存ファイルがあります（上書きしません）: ${dir}\n` +
+        'BENCH_SCORES_OVERWRITE=1 を設定すると上書きします（過去の採点結果を誤って上書きしないための既定）。',
+    );
+  }
+  await mkdir(dir, { recursive: true });
 }
 
 function r4(value: number | null): number | null {
@@ -57,6 +82,8 @@ function delta(a: number | null, b: number | null): number | null {
 
 async function main(): Promise<void> {
   const gold = await validateAllGold();
+  const scoresDir = issue176ScoresDir();
+  await ensureWritableScoresDir(scoresDir);
   const runsDir = path.join(benchRoot, 'outputs', 'runs-issue176');
   const names = (await readdir(runsDir).catch(() => [] as string[])).filter((name) => name.endsWith('.json'));
   if (names.length === 0) {
@@ -113,8 +140,6 @@ async function main(): Promise<void> {
     byStudy,
     perRun,
   };
-  const scoresDir = path.join(benchRoot, 'outputs', 'scores-issue176');
-  await mkdir(scoresDir, { recursive: true });
   await writeFile(path.join(scoresDir, 'comparison.json'), JSON.stringify(comparison, null, 2), 'utf8');
 
   const lines = [
