@@ -145,6 +145,20 @@ describe('parseDraftSchemaResponse', () => {
     expect(rows[0]?.fieldName).toBe('sample_size_total');
   });
 
+  test.each([false, true])('tab1.csv キー列は study だけ改名し、既存名を避ける（既存名: %s）', (hasExisting) => {
+    const items = [
+      { ...DRAFTED_ITEM, entity_level: 'study', field_name: 'registration_id' },
+      { ...DRAFTED_ITEM, entity_level: 'arm', field_name: 'registration_id' },
+      ...(hasExisting ? [{ ...DRAFTED_ITEM, field_name: 'registration_id_reported' }] : []),
+    ];
+    const { rows } = parseDraftSchemaResponse(JSON.stringify(items));
+    expect(rows.map((row) => row.fieldName)).toEqual([
+      hasExisting ? 'registration_id_reported_2' : 'registration_id_reported',
+      'registration_id',
+      ...(hasExisting ? ['registration_id_reported'] : []),
+    ]);
+  });
+
   test('ma.csv キー列の改名は outcome_result に限り、既存名と改名結果の両方を避ける', () => {
     const items = [
       { ...DRAFTED_ITEM, field_name: 'timepoint' },

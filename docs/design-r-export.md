@@ -85,6 +85,8 @@ resolveRSetValue(rawValue, status):
 - `registration_id`: 無ければ空文字
 - 感度分析・サブグループ用の共変量は tab1 に study レベル全項目としてそろうため、R 側で `study_id` join して後付けする（合意メモの結論。`analysis_role` タグ付けは実装しない）
 
+値列の列名は通常 `field_name` と同じ。キー列と重なる既存項目だけ `<field_name>_field`（例: `registration_id_field`）にし、その候補が他の項目名・キー列・先に改名した見出しとも重なるなら `_field_2`, `_field_3`… と連番で一意にする（§4.2 と同じ規則。`src/domain/rsetColumns.ts` の `rsetValueHeaders`）。値や内部の項目名による判定は変えない。新規の study 項目にはキー列名を使えないが、既存スキーマの出力はこの規則で保護する（issue #553）。凍結した事前登録ベンチのスキーマ（`experiments/extraction-benchmark/schema/benchmark-schema.json`・`experiments/anchor-spike/schema/mini-schema.json`）は study の項目 `registration_id` を持つため、tab1.csv では `registration_id_field` になる。
+
 `tab1_status.csv` は同じ列名で、キー列（`study_id`〜`schema_version`）は値をそのまま複製し、`field_name` 列だけをステータス語彙へ置換する。
 
 ### 4.2 `ma.csv` / `ma_status.csv`（解析単位・arm 単位 long）

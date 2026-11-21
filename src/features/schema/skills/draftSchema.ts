@@ -214,7 +214,7 @@ function stripJsonFence(text: string): string {
 }
 
 /**
- * StudyData の固定列名、および outcome_result 行の ma.csv キー列名との衝突を
+ * StudyData の固定列名、outcome_result 行の ma.csv・study 行の tab1.csv キー列名との衝突を
  * 共通の予約名判定で検出し、保存時の手戻りを防ぐためパース段階で自動リネームする。
  * 命名規則: "<name>_reported" を第一候補とし、既存の field_name（他の衝突リネーム結果を
  * 含む）とさらに重複する場合は "<name>_reported_2"、"_3" ... と連番で一意になるまで試す

@@ -9,7 +9,7 @@ import type { ArmStructureRow, ConfirmedArmStructure } from '../../../domain/arm
 import type { Decision } from '../../../domain/decision';
 import type { Evidence } from '../../../domain/evidence';
 import type { SchemaField } from '../../../domain/schemaField';
-import { MA_KEY_HEADER } from '../../../domain/rsetColumns';
+import { MA_KEY_HEADER, rsetValueHeaders } from '../../../domain/rsetColumns';
 import type { StudyRecord } from '../../../domain/study';
 import type { ParsedEntityKey } from '../../../utils/entityKey';
 import {
@@ -113,23 +113,7 @@ export function buildMaCsv(
   const outcomeFields = fields
     .filter((field) => field.entityLevel === 'outcome_result')
     .sort((a, b) => a.fieldIndex - b.fieldIndex);
-  // 既存スキーマの衝突は見出しだけで回避し、項目名による値・状態の判定は維持する。
-  // 後続の項目名も先に確保し、改名先が既存の値列を奪わないようにする。
-  const keyNames = new Set<string>(MA_KEY_HEADER);
-  const usedNames = new Set<string>([...MA_KEY_HEADER, ...outcomeFields.map((field) => field.fieldName)]);
-  const valueHeaders = outcomeFields.map((field) => {
-    if (!keyNames.has(field.fieldName)) {
-      return field.fieldName;
-    }
-    let candidate = `${field.fieldName}_field`;
-    let suffix = 2;
-    while (usedNames.has(candidate)) {
-      candidate = `${field.fieldName}_field_${suffix}`;
-      suffix += 1;
-    }
-    usedNames.add(candidate);
-    return candidate;
-  });
+  const valueHeaders = rsetValueHeaders(MA_KEY_HEADER, outcomeFields.map((field) => field.fieldName));
   const header = [...MA_KEY_HEADER, ...valueHeaders];
   const robToolSets = activeRobToolFieldSets(fields);
   // v1 の割り切り: 複数ツール同時挿入時は先頭（rob2 優先）のみを ma.csv の複製列に使う（robFields.ts 参照）

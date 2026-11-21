@@ -25,6 +25,28 @@ function makeRow(overrides: Partial<SchemaEditorRow> = {}): SchemaEditorRow {
 }
 
 describe('validateEditorRows', () => {
+  test.each(['study_label', 'registration_id', 'n_documents'])('study の %s は tab1.csv キー列のエラー', (fieldName) => {
+    expect(validateEditorRows([makeRow({ fieldName })])).toEqual([
+      { index: 0, column: 'fieldName', message:
+        `"${fieldName}" は R セットの tab1.csv のキー列名のため、研究単位（study）の項目名に使えません。` +
+        `別名（例: "${fieldName}_reported"）へ変更してください` },
+    ]);
+  });
+
+  test.each(['study_id', 'schema_version'])('study の %s は従来の固定列エラーを優先する', (fieldName) => {
+    expect(validateEditorRows([makeRow({ fieldName })])).toEqual([
+      { index: 0, column: 'fieldName', message:
+        `"${fieldName}" はシステムが使う StudyData の固定列名のため項目名に使えません。` +
+        `別名（例: "${fieldName}_reported"）へ変更してください` },
+    ]);
+  });
+
+  test.each(['arm', 'rob_domain'] as const)('%s の登録番号・文献数は予約名にしない', (entityLevel) => {
+    for (const fieldName of ['registration_id', 'n_documents']) {
+      expect(validateEditorRows([makeRow({ fieldName, entityLevel })])).toEqual([]);
+    }
+  });
+
   test.each(['outcome_id', 'timepoint'])('outcome_result の %s は ma.csv キー列のエラー', (fieldName) => {
     expect(validateEditorRows([makeRow({ fieldName, entityLevel: 'outcome_result' })])).toEqual([
       { index: 0, column: 'fieldName', message:

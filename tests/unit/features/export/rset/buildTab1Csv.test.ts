@@ -4,6 +4,32 @@ import { buildTab1Csv } from '../../../../../src/features/export/rset/buildTab1C
 import { makeEvidence, makeField, makeStudy, makeStudyDataRow } from './testHelpers';
 
 describe('buildTab1Csv', () => {
+  test.each([0, 1, 2])('キー列と衝突する項目の見出しだけ改名する（既存の改名候補: %s 件）', (existingCount) => {
+    const existingNames = ['registration_id_field', 'registration_id_field_2'].slice(0, existingCount);
+    const names = ['registration_id', 'study_label', ...existingNames];
+    const fields = names.map((fieldName, fieldIndex) => makeField({
+      fieldId: `f-${fieldIndex}`, fieldName, fieldIndex, entityLevel: 'study',
+    }));
+    const study = makeStudy({ studyLabel: 'Smith 2020', registrationId: 'NCT001' });
+    const studyRows = [makeStudyDataRow({
+      values: Object.fromEntries(names.map((name, index) => [name, `value-${index}`])),
+    })];
+    const result = buildTab1Csv([study], studyRows, [], [], fields);
+    const values = parseCsv(result.csv);
+    const statuses = parseCsv(result.statusCsv);
+    expect(values[0]).toEqual(result.header);
+    expect(statuses[0]).toEqual(result.header);
+    expect(new Set(result.header).size).toBe(result.header.length);
+    expect(result.header.slice(5)).toEqual([
+      existingCount === 0 ? 'registration_id_field' : `registration_id_field_${existingCount + 1}`,
+      'study_label_field', ...existingNames,
+    ]);
+    expect(values[1]?.slice(5)).toEqual(names.map((_, index) => `value-${index}`));
+    expect(statuses[1]?.slice(5)).toEqual(names.map(() => 'verified'));
+    expect(values[1]?.[1]).toBe(study.studyLabel);
+    expect(values[1]?.[2]).toBe(study.registrationId);
+  });
+
   test('study が無ければヘッダーのみ', () => {
     const result = buildTab1Csv([], [], [], [], []);
     expect(result.csv).toBe(`${result.header.join(',')}\r\n`);
