@@ -21,6 +21,7 @@ import { validateEditorRows } from './validateField';
 export interface SaveSchemaVersionParams {
   spreadsheetId: string;
   rows: readonly SchemaEditorRow[];
+  existingFields?: readonly Pick<SchemaField, 'fieldId' | 'fieldName' | 'entityLevel'>[];
   outcomes: readonly SchemaOutcomeEditorRow[];
   listModeBefore: boolean;
   /** 派生元の版。初版は null */
@@ -64,7 +65,7 @@ export async function saveSchemaVersion(
   if (params.rows.length === 0) {
     throw new SchemaValidationError('表のデザイン項目が 1 件もありません');
   }
-  const validationErrors = validateEditorRows(params.rows);
+  const validationErrors = validateEditorRows(params.rows, { existingFields: params.existingFields });
   if (validationErrors.length > 0) {
     const first = validationErrors
       .slice(0, 1)

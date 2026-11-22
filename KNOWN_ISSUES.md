@@ -156,7 +156,7 @@
 - 症状: 表のデザインに outcome_result の項目として `outcome_id`・`timepoint` などの ma.csv のキー列と同じ名前の項目があると、R セットの ma.csv と ma_status.csv の見出しに同じ列名が 2 回出ていました。R の `read.csv` では後の列が `outcome_id.1` のように改名され、Python の `csv.DictReader` では後の列（項目の値）が前の列（キー）を上書きします。AI ドラフトがこの名前の項目を作ることがありました。シートの値そのものは変わりません。
 - 影響する版: R セットの導入版 v0.2.0（推定）〜v0.36.0。修正版 v0.36.1。表のデザインにキー列と同じ名前の outcome_result の項目があるプロジェクトだけが対象です。
 - 確かめ方: `SchemaFields` で `entity_level=outcome_result` かつ `field_name` が `study_id`・`study_label`・`outcome_id`・`outcome_label`・`timepoint`・`timepoint_value`・`timepoint_unit`・`arm_id`・`arm_label`・`rob_tool`・`rob_overall_judgement`・`schema_version` のどれかに当たる行があるかを見ます。書き出した ma.csv の 1 行目に同じ列名が 2 回出ていないかも確かめます。その ma.csv を読み込んだ R・Python の解析は、キーの列を正しく読んでいたかを確認してください。
-- 直し方・回避策: v0.36.1 以降で R セットを出し直します。重なった項目は列名が `<名前>_field`（さらに重なれば連番）になるので、解析コードの列名を読み替えます。表のデザインは次に保存するときに改名を求められます。
+- 直し方・回避策: v0.36.1 以降で R セットを出し直します。重なった項目は列名が `<名前>_field`（さらに重なれば連番）になるので、解析コードの列名を読み替えます。v0.36.1 では表のデザインの保存時に改名を求めましたが、v0.36.2 以降は既存の項目をそのまま保存できます。
 - 関連: [PR #551](https://github.com/youkiti/sr-data-extraction-plugin/pull/551)、[issue #549](https://github.com/youkiti/sr-data-extraction-plugin/issues/549)、R セットの導入 `d17b463a`。
 
 ### KI-016 版を確定した直後のエクスポートが古い表のデザインのまま
@@ -172,7 +172,7 @@
 - 症状: 表のデザインに研究単位（study）の項目として `study_label`・`registration_id`・`n_documents` のような tab1.csv のキー列と同じ名前の項目があると、R セットの tab1.csv と tab1_status.csv の見出しに同じ列名が 2 回出ていました。R の `read.csv` では後の列が `registration_id.1` のように改名され、Python の `csv.DictReader` では後の列（項目の値）が前の列（キー）を上書きします。シートの値そのものは変わりません。KI-015（ma.csv）と同じ種類の重なりです。
 - 影響する版: R セットの導入版 v0.2.0（推定）〜v0.36.1。修正版 v0.36.2。表のデザインにキー列と同じ名前の study の項目があるプロジェクトだけが対象です。
 - 確かめ方: `SchemaFields` で `entity_level=study` かつ `field_name` が `study_label`・`registration_id`・`n_documents` のどれかに当たる行があるかを見ます。書き出した tab1.csv の 1 行目に同じ列名が 2 回出ていないかも確かめます。その tab1.csv を読み込んだ R・Python の解析は、キーの列（試験登録番号など）を正しく読んでいたかを確認してください。
-- 直し方・回避策: v0.36.2 以降で R セットを出し直します。重なった項目は列名が `<名前>_field`（さらに重なれば連番）になるので、解析コードの列名を読み替えます。表のデザインは次に保存するときに改名を求められます。
+- 直し方・回避策: v0.36.2 以降で R セットを出し直します。重なった項目は列名が `<名前>_field`（さらに重なれば連番）になるので、解析コードの列名を読み替えます。既存の項目は改名せずにそのまま使えます（StudyData は項目名で列を持つため、改名すると検証済みの値が新しい列へ移りません）。
 - 関連: [issue #553](https://github.com/youkiti/sr-data-extraction-plugin/issues/553)、KI-015、R セットの導入 `d17b463a`。
 
 ## 版の根拠

@@ -53,6 +53,20 @@ beforeEach(() => {
 });
 
 describe('saveSchemaVersion', () => {
+  test.each([
+    ['registration_id', 'study'], ['timepoint', 'outcome_result'],
+  ] as const)('既存の予約名 %s は現行項目を渡した場合だけ保存できる', async (fieldName, entityLevel) => {
+    const params = {
+      spreadsheetId: 'sheet-1', rows: [makeRow({ fieldId: 'f-old', fieldName, entityLevel })],
+      outcomes: [], listModeBefore: false, parentVersion: 1, protocolVersion: 1,
+      createdByType: 'user_edit' as const, createdBy: '', note: null,
+    };
+    await expect(saveSchemaVersion(params, { google })).rejects.toBeInstanceOf(SchemaValidationError);
+    const saved = await saveSchemaVersion({ ...params, existingFields: [{ fieldId: 'f-old', fieldName, entityLevel }] }, { google });
+    expect(saved.fields[0]).toMatchObject({ fieldId: 'f-old', fieldName, entityLevel });
+    expect(appendFieldsMock).toHaveBeenCalledWith('sheet-1', saved.fields, google);
+  });
+
   test('検証を通った行を新版として追記する（新規行は UUID 採番・既存 ID は維持・trim 済み）', async () => {
     const rows = [
       makeRow(),

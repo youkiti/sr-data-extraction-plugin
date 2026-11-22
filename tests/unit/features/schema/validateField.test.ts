@@ -25,6 +25,29 @@ function makeRow(overrides: Partial<SchemaEditorRow> = {}): SchemaEditorRow {
 }
 
 describe('validateEditorRows', () => {
+  test.each([
+    ['registration_id', 'study'], ['timepoint', 'outcome_result'],
+  ] as const)('既存の %s は ID・名前・レベルが一致するときだけ認める', (fieldName, entityLevel) => {
+    const row = makeRow({ fieldId: 'f-old', fieldName, entityLevel });
+    const existingFields = [{ fieldId: 'f-old', fieldName: ` ${fieldName} `, entityLevel }];
+    expect(validateEditorRows([{ ...row, fieldName: ` ${fieldName} ` }], { existingFields })).toEqual([]);
+    expect(validateEditorRows([row], {})).toHaveLength(1);
+    expect(validateEditorRows([row], { existingFields: [] })).toHaveLength(1);
+    expect(validateEditorRows([row], { existingFields: [{ ...existingFields[0]!, fieldId: 'other' }] })).toHaveLength(1);
+    expect(validateEditorRows([row], { existingFields: [{ ...existingFields[0]!, fieldName: 'old_name' }] })).toHaveLength(1);
+    expect(validateEditorRows([row], { existingFields: [{ ...existingFields[0]!, entityLevel: 'arm' }] })).toHaveLength(1);
+    expect(validateEditorRows([{ ...row, fieldId: null }], { existingFields })).toHaveLength(1);
+    expect(validateEditorRows([row, row], { existingFields })).toHaveLength(2);
+  });
+
+  test('予約キー名の検査を省略しても固定列・重複・形式の検査は残る', () => {
+    const rows = ['registration_id', 'timepoint', 'study_id', 'Bad Name'].map((fieldName) =>
+      makeRow({ fieldId: 'f', fieldName, entityLevel: fieldName === 'timepoint' ? 'outcome_result' : 'study' }));
+    expect(validateEditorRows(rows, { skipReservedKeyNames: true }).map((error) => error.index)).toEqual([2, 3]);
+    expect(validateEditorRows([rows[2]!], { existingFields: [{ fieldId: 'f', fieldName: 'study_id', entityLevel: 'study' }] })).toHaveLength(1);
+    expect(validateEditorRows([rows[0]!, rows[0]!], { skipReservedKeyNames: true })).toHaveLength(2);
+  });
+
   test.each(['study_label', 'registration_id', 'n_documents'])('study の %s は tab1.csv キー列のエラー', (fieldName) => {
     expect(validateEditorRows([makeRow({ fieldName })])).toEqual([
       { index: 0, column: 'fieldName', message:

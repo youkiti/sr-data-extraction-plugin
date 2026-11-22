@@ -233,7 +233,7 @@ export function parseSchemaExport(text: string): ParsedSchemaImport {
     }
     rows.push(row);
   }
-  const errors = validateEditorRows(rows);
+  const errors = validateEditorRows(rows, { skipReservedKeyNames: true });
   const first = errors[0];
   if (first !== undefined) {
     throw new SchemaImportError('schema.importValidation', {

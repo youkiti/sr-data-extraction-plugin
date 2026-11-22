@@ -6,6 +6,7 @@ import { t } from '../../lib/i18n';
 import { STUDY_DATA_FIXED_HEADERS } from '../../domain/sheetsSchema';
 import { MA_KEY_HEADER, TAB1_KEY_HEADER } from '../../domain/rsetColumns';
 import type { SchemaEditorRow } from './types';
+import type { SchemaField } from '../../domain/schemaField';
 
 /** 1 件のバリデーションエラー。column はエディタの該当セル強調に使う */
 export interface FieldValidationError {
@@ -41,7 +42,13 @@ export function reservedFieldNameReason(
  * エディタ全行を検証してエラー一覧を返す（空配列 = 確定可能）。
  * 行単位の必須・形式チェックに加えて、field_name の行間重複も検出する
  */
-export function validateEditorRows(rows: readonly SchemaEditorRow[]): FieldValidationError[] {
+export function validateEditorRows(
+  rows: readonly SchemaEditorRow[],
+  options?: {
+    existingFields?: readonly Pick<SchemaField, 'fieldId' | 'fieldName' | 'entityLevel'>[];
+    skipReservedKeyNames?: boolean;
+  },
+): FieldValidationError[] {
   const errors: FieldValidationError[] = [];
 
   const nameCounts = new Map<string, number>();
@@ -63,7 +70,10 @@ export function validateEditorRows(rows: readonly SchemaEditorRow[]): FieldValid
         column: 'fieldName',
         message: 'field_name は snake_case（英小文字始まり・英数と _ のみ）にしてください',
       });
-    } else if (reservedReason !== null) {
+    } else if (reservedReason !== null && (reservedReason === 'study_data' ||
+      !(options?.skipReservedKeyNames || (row.fieldId !== null && options?.existingFields?.some(
+        (field) => field.fieldId === row.fieldId && field.fieldName.trim() === name && field.entityLevel === row.entityLevel,
+      ))))) {
       errors.push({
         index,
         column: 'fieldName',

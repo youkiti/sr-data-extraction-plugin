@@ -47,6 +47,10 @@ function expectImportError(text: string, message: string): void {
 
 const HEADER = 'section,field_name,field_label,entity_level,data_type,extraction_instruction';
 
+test('登録番号の予約名を含む CSV もエディタ行として読み込む', () => {
+  expect(parseSchemaCsv(`${HEADER}\nmethods,registration_id,登録番号,study,text,Report it.`)[0]?.fieldName).toBe('registration_id');
+});
+
 describe('serializeSchemaCsv', () => {
   test('field_index の順に、BOM 付き・CRLF の CSV にする', () => {
     const csv = serializeSchemaCsv([

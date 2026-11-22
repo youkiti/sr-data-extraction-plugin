@@ -55,5 +55,6 @@ describe('凍結ベンチのスキーマとの互換性', () => {
         '"registration_id" は R セットの tab1.csv のキー列名のため、研究単位（study）の項目名に使えません。' +
         '別名（例: "registration_id_reported"）へ変更してください',
     }]);
+    expect(validateEditorRows([row], { existingFields: fields })).toEqual([]);
   });
 });

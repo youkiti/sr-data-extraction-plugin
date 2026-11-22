@@ -4,7 +4,7 @@
 //   app/services/schemaService.ts が withRetry(withLogging(provider)) で配線する
 // - 抽出対象論文は英語を主想定のため、プロンプト本文は英語（requirements.md §6）
 import { z } from 'zod';
-import type { EntityLevel, FieldDataType } from '../../../domain/schemaField';
+import type { EntityLevel, FieldDataType, SchemaField } from '../../../domain/schemaField';
 import { reservedFieldNameReason } from '../validateField';
 import type { SchemaEditorRow, SchemaOutcomeEditorRow } from '../types';
 
@@ -216,13 +216,20 @@ function stripJsonFence(text: string): string {
 /**
  * StudyData の固定列名、outcome_result 行の ma.csv・study 行の tab1.csv キー列名との衝突を
  * 共通の予約名判定で検出し、保存時の手戻りを防ぐためパース段階で自動リネームする。
+ * ただし ma.csv・tab1.csv のキー列名は、現行版と名前・レベルが同じなら維持する。
  * 命名規則: "<name>_reported" を第一候補とし、既存の field_name（他の衝突リネーム結果を
  * 含む）とさらに重複する場合は "<name>_reported_2"、"_3" ... と連番で一意になるまで試す
  */
-function resolveReservedFieldNameCollisions(rows: SchemaEditorRow[]): SchemaEditorRow[] {
-  const usedNames = new Set(rows.map((row) => row.fieldName));
+function resolveReservedFieldNameCollisions(
+  rows: SchemaEditorRow[],
+  existingFields: readonly Pick<SchemaField, 'fieldName' | 'entityLevel'>[],
+): SchemaEditorRow[] {
+  const usedNames = new Set([...rows, ...existingFields].map((row) => row.fieldName));
   return rows.map((row) => {
-    if (reservedFieldNameReason(row.fieldName, row.entityLevel) === null) {
+    const reason = reservedFieldNameReason(row.fieldName, row.entityLevel);
+    if (reason === null || (reason !== 'study_data' && existingFields.some(
+      (field) => field.fieldName === row.fieldName && field.entityLevel === row.entityLevel,
+    ))) {
       return row;
     }
     let candidate = `${row.fieldName}_reported`;
@@ -242,7 +249,10 @@ function resolveReservedFieldNameCollisions(rows: SchemaEditorRow[]): SchemaEdit
  * 一覧の形式違反・重複した id の行は捨て、結果の項目が無ければ一覧を空にする。
  * JSON / 形式エラーは DraftSchemaFormatError
  */
-export function parseDraftSchemaResponse(text: string): { rows: SchemaEditorRow[]; outcomes: SchemaOutcomeEditorRow[] } {
+export function parseDraftSchemaResponse(
+  text: string,
+  existingFields: readonly Pick<SchemaField, 'fieldName' | 'entityLevel'>[] = [],
+): { rows: SchemaEditorRow[]; outcomes: SchemaOutcomeEditorRow[] } {
   let raw: unknown;
   try {
     raw = JSON.parse(stripJsonFence(text));
@@ -299,5 +309,5 @@ export function parseDraftSchemaResponse(text: string): { rows: SchemaEditorRow[
       });
     }
   }
-  return { rows: resolveReservedFieldNameCollisions(rows), outcomes };
+  return { rows: resolveReservedFieldNameCollisions(rows, existingFields), outcomes };
 }

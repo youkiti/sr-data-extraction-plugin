@@ -20,6 +20,20 @@ const DRAFTED_ITEM = {
   example: '120',
 };
 
+test.each([
+  ['registration_id', 'study'], ['timepoint', 'outcome_result'],
+] as const)('再ドラフトの %s は既存名を維持し、改名先は既存の全項目名を避ける', (fieldName, entityLevel) => {
+  const text = JSON.stringify([{ ...DRAFTED_ITEM, field_name: fieldName, entity_level: entityLevel }]);
+  expect(parseDraftSchemaResponse(text, [{ fieldName, entityLevel }]).rows[0]?.fieldName).toBe(fieldName);
+  expect(parseDraftSchemaResponse(text, [{ fieldName, entityLevel: 'arm' }]).rows[0]?.fieldName).toBe(`${fieldName}_reported`);
+  expect(parseDraftSchemaResponse(text, [{ fieldName: `${fieldName}_reported`, entityLevel: 'arm' }]).rows[0]?.fieldName).toBe(`${fieldName}_reported_2`);
+});
+
+test('固定列名は既存項目でも改名し、既存の改名候補も避ける', () => {
+  const text = JSON.stringify([{ ...DRAFTED_ITEM, field_name: 'study_id', entity_level: 'study' }]);
+  expect(parseDraftSchemaResponse(text, [{ fieldName: 'study_id', entityLevel: 'study' }]).rows[0]?.fieldName).toBe('study_id_reported');
+});
+
 describe('buildDraftSchemaUserPrompt', () => {
   const samples = [
     { label: 'Smith 2020', pages: [{ page: 1, text: 'Abstract...' }, { page: 2, text: 'Methods...' }] },
