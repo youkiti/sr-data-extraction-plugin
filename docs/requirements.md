@@ -1,4 +1,6 @@
-# sr-data-extraction-plugin 要件定義書（v0.51）
+# sr-data-extraction-plugin 要件定義書（v0.52）
+
+- **更新**: 2026-11-23（v0.52: study_wide.csv でも、キー列 study_label と重なる既存の study 項目の見出しを `<名前>_field` にする。issue #561）
 
 - **更新**: 2026-11-22（v0.51: study の項目名に tab1.csv のキー列名を予約し、既存項目の CSV 見出し衝突を回避。issue #553）
 
@@ -797,6 +799,7 @@ Methods 文案（英日 × 単一 / 二重）には現行の基準・確定日�
 
 - 文字コードは UTF-8（BOM 付き、Excel 互換）
 - **R セットの値列名**: ma.csv / ma_status.csv は outcome_result の項目を、tab1.csv / tab1_status.csv は study の項目を横持ちし、通常は `field_name` を列名にする。各表のキー列名と重なる既存項目だけ `<field_name>_field` に変更し、他の項目名・キー列・改名結果とも重なる場合は `_field_2`, `_field_3`… で一意にする（項目順）。値や内部の項目名は変えない。data_dictionary.csv の `field_name` は SchemaFields の名前のままで、列構成も変えない。該当する R コードでは列名の読み替えが必要になる（詳細は design-r-export.md §4.1・§4.2・§4.4。tab1.csv は issue #553）。
+- **study_wide.csv の値列名（issue #561）**: 先頭のキー列 `study_label` と重なる既存の study 項目だけ、見出しを R セットの値列名と同じ規則で `<field_name>_field`（さらに重なれば `_field_2`…）にする。複数選択の 1/0 列・自由記述列、AI 下書きの `<field_name>__source` 列、`consult_fields` の値は元の `field_name` のままで、これらの生成列と `consult_fields` 列は改名後の見出しとも重ならない名前にする。
 - 未検証セル（human 行の空セル）が残る場合は警告ダイアログ（「未検証の項目が n 件あります」）を出し、audit.csv には判定履歴の有無で明示
 - **アウトカムの一覧（issue #539）**: 一覧モードでは、`results_long.csv`・`evidence_quotes.csv` と R セットに現行の一覧のアウトカムのキーだけを出す（外したアウトカム・一覧外の候補は出さない）。一覧に足したアウトカムの空セルは未検証の件数に入る。`audit.csv` はキーで絞らず、外したアウトカムの判定も経緯として残す。export_manifest にエクスポート時点の一覧の版を記録する
 - **複数選択の項目の 1/0 列（issue #307）**: `study_wide.csv` では、複数選択の study レベル項目の列（保存値そのまま）の直後に、許容値の並び順で `<field_name>__<slug>` の列を足す（選ばれていれば `1`、いなければ `0`）。自由記述付きの選択肢は、その直後に説明の列 `<field_name>__<slug>_text` を足す。`slug` は選択肢を小文字にして英数字以外を `_` にまとめたもの（空になる選択肢は `opt<n>`）。列名はヘッダ全体で一意にし、衝突したら `_2`、`_3`… を付ける。**未検証のセルと `NR` のセルは、足した列をすべて空にする**。単独選択肢（`NA`・`unclear` など）が選ばれた論文は、ほかの選択肢の列が `0` になる（割合を出すときは集計側で除く）。許容値外の要素には列を作らない。`results_long.csv` と R セットは連結した値のまま出す（データ辞書には `multi_select` / `exclusive_values` / `free_text_values` の 3 列を足す）

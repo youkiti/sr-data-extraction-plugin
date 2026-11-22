@@ -2,14 +2,18 @@
 // StudyData の確定 annotator 行（Q6）から study_label + study レベル項目列を出力する。
 // study_label は Studies 由来、行のキーは study_id（v0.10）。非アクティブ study は
 // exportService 側で除外し、ここへは渡さない（並び順 = study 作成順）
+// キー列と重なる既存項目は見出しだけ <名前>_field にする。
 import type { StudyDataRow } from '../../domain/annotation';
 import type { StudyRecord } from '../../domain/study';
 import type { SchemaField } from '../../domain/schemaField';
 import type { Decision } from '../../domain/decision';
+import { rsetValueHeaders } from '../../domain/rsetColumns';
 import { activeConsultFlags, consultFlagKey } from '../verification/consultFlags';
 import { buildCsv, CSV_BOM } from './csvEncode';
 import { selectFinalAnnotator } from './finalAnnotator';
 import { buildMultiSelectColumns, multiSelectColumnValues } from './multiSelectColumns';
+
+const STUDY_WIDE_KEY_HEADER = ['study_label'] as const;
 
 export interface StudyWideCsvResult {
   csv: string;
@@ -32,13 +36,14 @@ export function buildStudyWideCsv(
   const studyFields = fields
     .filter((field) => field.entityLevel === 'study')
     .sort((a, b) => a.fieldIndex - b.fieldIndex);
-  const used = new Set(['study_label', ...fields.map((field) => field.fieldName),
+  const valueHeaders = rsetValueHeaders(STUDY_WIDE_KEY_HEADER, studyFields.map((field) => field.fieldName));
+  const used = new Set([...STUDY_WIDE_KEY_HEADER, ...fields.map((field) => field.fieldName), ...valueHeaders,
     ...(draft ? studyFields.map((field) => `${field.fieldName}__source`) : [])]);
   const columns = studyFields.map((field) => buildMultiSelectColumns(field, used));
   let consultColumn = 'consult_fields';
   for (let suffix = 2; used.has(consultColumn); suffix++) consultColumn = `consult_fields_${suffix}`;
-  const header = ['study_label', ...studyFields.flatMap((field, index) =>
-    [field.fieldName, ...columns[index]!.map((column) => column.name),
+  const header = [...STUDY_WIDE_KEY_HEADER, ...studyFields.flatMap((field, index) =>
+    [valueHeaders[index]!, ...columns[index]!.map((column) => column.name),
       ...(draft ? [`${field.fieldName}__source`] : [])],
   ), consultColumn];
 

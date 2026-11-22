@@ -34,6 +34,7 @@ This list covers bugs affecting extracted values, decisions, persistence, agreem
 | KI-015 | The same column name appears twice in the R set ma.csv header | v0.2.0 (estimated) to v0.36.0 | v0.36.1 |
 | KI-016 | An export right after confirming a version uses the previous table design | v0.1.0 (estimated) to v0.36.0 | v0.36.1 |
 | KI-017 | The same column name appears twice in the R set tab1.csv header | v0.2.0 (estimated) to v0.36.1 | v0.36.2 |
+| KI-018 | study_label appears twice in the study_wide.csv header | v0.1.0 (estimated) to v0.36.1 | v0.36.2 |
 
 ## Checks and remedies
 
@@ -174,6 +175,14 @@ This list covers bugs affecting extracted values, decisions, persistence, agreem
 - Check: in `SchemaFields`, look for rows with `entity_level=study` whose `field_name` is `study_label`, `registration_id` or `n_documents`. Also check that no column name appears twice in the first row of exported tab1.csv files. For any R or Python analysis that read such a file, confirm that the key columns (such as the trial registration number) were read correctly.
 - Remedy: export the R set again on v0.36.2 or later. Colliding fields are renamed to `<name>_field` (with numbered suffixes for further collisions), so update column names in analysis code. Existing fields can stay as they are without renaming (StudyData stores columns by field name, so renaming would not carry verified values to the new column).
 - Related: [issue #553](https://github.com/youkiti/sr-data-extraction-plugin/issues/553), KI-015, R set introduced in `d17b463a`.
+
+### KI-018 study_label collides in the study_wide.csv header
+
+- Symptom: when the table design had a study-level field named `study_label`, the `study_wide.csv` header contained `study_label` twice: the leading column (the study label from Studies) and the field's own column. R's `read.csv` renames the later column to `study_label.1`, and Python's `csv.DictReader` lets the later column (the field value) overwrite the earlier one (the study label). Values in the sheet are not changed. This is the same kind of collision as KI-017 (tab1.csv). From v0.36.2 new fields can no longer use this name, but existing fields are still allowed.
+- Affected versions: v0.1.0 (estimated) to v0.36.1. Fixed in v0.36.2. Only projects whose table design has a study-level field named `study_label` are affected.
+- Check: in `SchemaFields`, look for rows with `entity_level=study` and `field_name` `study_label`. Also check that `study_label` does not appear twice in the first row of exported study_wide.csv files. For any analysis or Table 1 built from such a file, confirm that the study label column was read correctly.
+- Remedy: export study_wide.csv again on v0.36.2 or later. That field's column is named `study_label_field` (with numbered suffixes for further collisions), so update column names in analysis code. Multi-select 1/0 columns, the `__source` columns of AI drafts and the values in `consult_fields` keep the original field name.
+- Related: [issue #561](https://github.com/youkiti/sr-data-extraction-plugin/issues/561), KI-017.
 
 ## Version evidence
 

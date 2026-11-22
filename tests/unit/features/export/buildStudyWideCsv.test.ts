@@ -57,6 +57,34 @@ const studyRow = (
 });
 
 describe('buildStudyWideCsv', () => {
+  test('study_label と重なる項目の見出しだけ改名し、Studies のラベルと項目値を分ける', () => {
+    const fields = [field('f1', 'study_label', 1), field('f2', 'country', 2)];
+    const result = buildStudyWideCsv([study('d1', 'Smith 2020')],
+      [studyRow('d1', 'human_with_ai', { study_label: '項目値', country: 'JP' })], fields);
+    expect(result.csv).toBe(CSV_BOM +
+      'study_label,study_label_field,country,consult_fields\r\nSmith 2020,項目値,JP,\r\n');
+  });
+
+  test('study_label_field が既存項目名なら改名する見出しを連番で回避する', () => {
+    const fields = [field('f1', 'study_label', 1), field('f2', 'study_label_field', 2)];
+    const result = buildStudyWideCsv([study('d1', 'Smith 2020')],
+      [studyRow('d1', 'human_with_ai', { study_label: '項目値', study_label_field: '既存値' })], fields);
+    expect(result.csv).toBe(CSV_BOM +
+      'study_label,study_label_field_2,study_label_field,consult_fields\r\nSmith 2020,項目値,既存値,\r\n');
+  });
+
+  test('仮エクスポートで study_label の複数選択列と source 列は元の項目名を保ち、見出しは重複しない', () => {
+    const multi: SchemaField = { ...field('f1', 'study_label', 1), dataType: 'enum', allowedValues: 'A|B',
+      multiSelect: { exclusiveValues: [], freeTextValues: [] } };
+    const result = buildStudyWideCsv([study('d1', 'Smith 2020')],
+      [studyRow('d1', 'ai', { study_label: 'A' })], [multi], [], true);
+    expect(result.csv).toBe(CSV_BOM +
+      'study_label,study_label_field,study_label__a,study_label__b,study_label__source,consult_fields\r\n' +
+      'Smith 2020,A,1,0,ai_unverified,\r\n');
+    const header = result.csv.slice(CSV_BOM.length).split('\r\n')[0]!.split(',');
+    expect(new Set(header).size).toBe(header.length);
+  });
+
   test('空文字の複数選択値は選択肢列と自由記述列をすべて空欄にする', () => {
     const multi: SchemaField = {
       ...field('f', 'design', 1), dataType: 'enum', allowedValues: 'A|B|Other',
@@ -140,6 +168,13 @@ const flag = (overrides: Partial<Decision> = {}): Decision => ({
   studyId: 'd1', fieldId: 'f1', entityKey: '-', annotator: 'a@example.com', annotatorType: 'human_with_ai',
   schemaVersion: 1, decidedAt: 't1', decidedBy: 'a@example.com', action: 'flag_consult', value: null, note: null,
   ...overrides,
+});
+
+test('study_label の見出しを改名しても consult_fields の値には元の項目名を使う', () => {
+  const result = buildStudyWideCsv([study('d1', 'Smith 2020')],
+    [studyRow('d1', 'human_with_ai', { study_label: '項目値' })], [field('f1', 'study_label', 1)], [flag()]);
+  expect(result.csv).toBe(CSV_BOM +
+    'study_label,study_label_field,consult_fields\r\nSmith 2020,項目値,study_label\r\n');
 });
 
 test('consult_fields は確定 annotator の study 項目名だけをデザイン順に連結し、解除を反映する', () => {

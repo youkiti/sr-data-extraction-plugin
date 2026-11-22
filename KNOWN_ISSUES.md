@@ -34,6 +34,7 @@
 | KI-015 | R セットの ma.csv の見出しに同じ列名が 2 回出る | v0.2.0（推定）〜v0.36.0 | v0.36.1 |
 | KI-016 | 版を確定した直後のエクスポートが確定前の表のデザインで作られる | v0.1.0（推定）〜v0.36.0 | v0.36.1 |
 | KI-017 | R セットの tab1.csv の見出しに同じ列名が 2 回出る | v0.2.0（推定）〜v0.36.1 | v0.36.2 |
+| KI-018 | study_wide.csv の見出しに study_label が 2 回出る | v0.1.0（推定）〜v0.36.1 | v0.36.2 |
 
 ## 項目ごとの確認と対処
 
@@ -174,6 +175,14 @@
 - 確かめ方: `SchemaFields` で `entity_level=study` かつ `field_name` が `study_label`・`registration_id`・`n_documents` のどれかに当たる行があるかを見ます。書き出した tab1.csv の 1 行目に同じ列名が 2 回出ていないかも確かめます。その tab1.csv を読み込んだ R・Python の解析は、キーの列（試験登録番号など）を正しく読んでいたかを確認してください。
 - 直し方・回避策: v0.36.2 以降で R セットを出し直します。重なった項目は列名が `<名前>_field`（さらに重なれば連番）になるので、解析コードの列名を読み替えます。既存の項目は改名せずにそのまま使えます（StudyData は項目名で列を持つため、改名すると検証済みの値が新しい列へ移りません）。
 - 関連: [issue #553](https://github.com/youkiti/sr-data-extraction-plugin/issues/553)、KI-015、R セットの導入 `d17b463a`。
+
+### KI-018 study_wide.csv の見出しで study_label が重なる
+
+- 症状: 表のデザインに研究単位（study）の項目として `study_label` という名前の項目があると、`study_wide.csv` の見出しに、先頭の `study_label`（Studies の研究名）と項目の列の `study_label` が 2 回出ていました。R の `read.csv` では後の列が `study_label.1` に改名され、Python の `csv.DictReader` では後の列（項目の値）が前の列（研究名）を上書きします。シートの値そのものは変わりません。KI-017（tab1.csv）と同じ種類の重なりで、v0.36.2 で新しい項目にはこの名前を使えなくなりましたが、既存の項目は認めています。
+- 影響する版: v0.1.0（推定）〜v0.36.1。修正版 v0.36.2。表のデザインに `study_label` という名前の study の項目があるプロジェクトだけが対象です。
+- 確かめ方: `SchemaFields` で `entity_level=study` かつ `field_name` が `study_label` の行があるかを見ます。書き出した study_wide.csv の 1 行目に `study_label` が 2 回出ていないかも確かめます。その study_wide.csv を読み込んだ解析や Table 1 は、研究名の列を正しく読んでいたかを確認してください。
+- 直し方・回避策: v0.36.2 以降で study_wide.csv を出し直します。その項目の列名は `study_label_field`（さらに重なれば連番）になるので、解析コードの列名を読み替えます。複数選択の 1/0 列、AI 下書きの `__source` 列、`consult_fields` の値は元の項目名のままです。
+- 関連: [issue #561](https://github.com/youkiti/sr-data-extraction-plugin/issues/561)、KI-017。
 
 ## 版の根拠
 
