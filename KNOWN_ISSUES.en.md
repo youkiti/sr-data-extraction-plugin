@@ -33,6 +33,7 @@ This list covers bugs affecting extracted values, decisions, persistence, agreem
 | KI-014 | The tiab-review included list contains duplicates or AI decisions not in use | v0.2.0 (estimated) to v0.34.0 | v0.35.0 |
 | KI-015 | The same column name appears twice in the R set ma.csv header | v0.2.0 (estimated) to v0.36.0 | v0.36.1 |
 | KI-016 | An export right after confirming a version uses the previous table design | v0.1.0 (estimated) to v0.36.0 | v0.36.1 |
+| KI-017 | The same column name appears twice in the R set tab1.csv header | v0.2.0 (estimated) to v0.36.1 | v0.36.2 |
 
 ## Checks and remedies
 
@@ -155,7 +156,7 @@ This list covers bugs affecting extracted values, decisions, persistence, agreem
 - Symptom: when the table design had an outcome_result field with the same name as an ma.csv key column, such as `outcome_id` or `timepoint`, the same column name appeared twice in the header of the R set ma.csv and ma_status.csv. R's `read.csv` renames the later column (for example `outcome_id.1`), and Python's `csv.DictReader` lets the later column (the field value) overwrite the earlier one (the key). AI drafts sometimes created fields with these names. Values in the sheet are not changed.
 - Affected versions: v0.2.0 (estimated), which introduced the R set, to v0.36.0. Fixed in v0.36.1. Only projects whose table design has an outcome_result field with a key column name are affected.
 - Check: in `SchemaFields`, look for rows with `entity_level=outcome_result` whose `field_name` is one of `study_id`, `study_label`, `outcome_id`, `outcome_label`, `timepoint`, `timepoint_value`, `timepoint_unit`, `arm_id`, `arm_label`, `rob_tool`, `rob_overall_judgement` or `schema_version`. Also check that no column name appears twice in the first row of exported ma.csv files. For any R or Python analysis that read such a file, confirm that the key columns were read correctly.
-- Remedy: export the R set again on v0.36.1 or later. Colliding fields are renamed to `<name>_field` (with numbered suffixes for further collisions), so update column names in analysis code. The table design asks for a rename the next time it is saved.
+- Remedy: export the R set again on v0.36.1 or later. Colliding fields are renamed to `<name>_field` (with numbered suffixes for further collisions), so update column names in analysis code. v0.36.1 asked for a rename when the table design was saved; from v0.36.2, existing fields can be saved as they are.
 - Related: [PR #551](https://github.com/youkiti/sr-data-extraction-plugin/pull/551), [issue #549](https://github.com/youkiti/sr-data-extraction-plugin/issues/549), R set introduced in `d17b463a`.
 
 ### KI-016 An export right after confirming a version keeps the previous table design
@@ -165,6 +166,14 @@ This list covers bugs affecting extracted values, decisions, persistence, agreem
 - Check: compare `SchemaVersions.created_at` with the time each exported file was made. Files exported in the same tab after confirming a version, without reloading the page, are affected. For an R set, check that `schema_version` in export_manifest (and `outcome_list_schema_version` in list mode) matches the latest version at the time of export.
 - Remedy: export the affected files again on v0.36.1 or later.
 - Related: [PR #554](https://github.com/youkiti/sr-data-extraction-plugin/pull/554), [issue #547](https://github.com/youkiti/sr-data-extraction-plugin/issues/547).
+
+### KI-017 Key columns and field names collide in the tab1.csv header
+
+- Symptom: when the table design had a study-level field with the same name as a tab1.csv key column, such as `study_label`, `registration_id` or `n_documents`, the same column name appeared twice in the header of the R set tab1.csv and tab1_status.csv. R's `read.csv` renames the later column (for example `registration_id.1`), and Python's `csv.DictReader` lets the later column (the field value) overwrite the earlier one (the key). Values in the sheet are not changed. This is the same kind of collision as KI-015 (ma.csv).
+- Affected versions: v0.2.0 (estimated), which introduced the R set, to v0.36.1. Fixed in v0.36.2. Only projects whose table design has a study-level field with a key column name are affected.
+- Check: in `SchemaFields`, look for rows with `entity_level=study` whose `field_name` is `study_label`, `registration_id` or `n_documents`. Also check that no column name appears twice in the first row of exported tab1.csv files. For any R or Python analysis that read such a file, confirm that the key columns (such as the trial registration number) were read correctly.
+- Remedy: export the R set again on v0.36.2 or later. Colliding fields are renamed to `<name>_field` (with numbered suffixes for further collisions), so update column names in analysis code. Existing fields can stay as they are without renaming (StudyData stores columns by field name, so renaming would not carry verified values to the new column).
+- Related: [issue #553](https://github.com/youkiti/sr-data-extraction-plugin/issues/553), KI-015, R set introduced in `d17b463a`.
 
 ## Version evidence
 

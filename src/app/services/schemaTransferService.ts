@@ -190,7 +190,7 @@ export async function importSchemaFile(
           acknowledgedRemovedOutcomeIds: [],
           pendingOutcomeRemovals: null,
           outcomeDecisions: null,
-          editorErrors: validateEditorRows(rows),
+          editorErrors: validateEditorRows(rows, { existingFields: currentFields }),
           editorOrigin: 'user_edit',
           editorParentVersion: null,
           editorNoteDefault: importNoteDefault(source),

@@ -2,18 +2,17 @@
 // StudyData の確定 annotator 行を、study レベル全項目を field_name で横持ちして出力する
 // （既存 buildStudyWideCsv.ts と同じ展開ロジック + join キー列を前置）。
 // tab1_status.csv は同じ列構成のミラー表で、キー列はそのまま複製し、値列だけをステータス語彙へ置き換える
+// キー列と重なる既存項目は見出しだけ <名前>_field にする。
 import { STUDY_ENTITY_KEY } from '../../../utils/entityKey';
 import type { StudyDataRow } from '../../../domain/annotation';
 import type { Evidence } from '../../../domain/evidence';
 import type { StudyRecord } from '../../../domain/study';
 import type { SchemaField } from '../../../domain/schemaField';
+import { TAB1_KEY_HEADER, rsetValueHeaders } from '../../../domain/rsetColumns';
 import { buildCsv } from '../csvEncode';
 import { selectFinalAnnotator } from '../finalAnnotator';
 import type { RSetIssue } from './issues';
 import { resolveRSetStatus, resolveRSetValue } from './rsetStatus';
-
-/** キー列（値表・ステータス表で共通） */
-const TAB1_KEY_HEADER = ['study_id', 'study_label', 'registration_id', 'n_documents', 'schema_version'] as const;
 
 export interface Tab1BuildResult {
   csv: string;
@@ -34,7 +33,7 @@ export function buildTab1Csv(
   const studyFields = fields
     .filter((field) => field.entityLevel === 'study')
     .sort((a, b) => a.fieldIndex - b.fieldIndex);
-  const header = [...TAB1_KEY_HEADER, ...studyFields.map((field) => field.fieldName)];
+  const header = [...TAB1_KEY_HEADER, ...rsetValueHeaders(TAB1_KEY_HEADER, studyFields.map((f) => f.fieldName))];
 
   const documentCountByStudy = new Map<string, number>();
   for (const studyId of documentStudyIds) {

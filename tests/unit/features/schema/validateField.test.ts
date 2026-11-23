@@ -25,6 +25,51 @@ function makeRow(overrides: Partial<SchemaEditorRow> = {}): SchemaEditorRow {
 }
 
 describe('validateEditorRows', () => {
+  test.each([
+    ['registration_id', 'study'], ['timepoint', 'outcome_result'],
+  ] as const)('既存の %s は ID・名前・レベルが一致するときだけ認める', (fieldName, entityLevel) => {
+    const row = makeRow({ fieldId: 'f-old', fieldName, entityLevel });
+    const existingFields = [{ fieldId: 'f-old', fieldName: ` ${fieldName} `, entityLevel }];
+    expect(validateEditorRows([{ ...row, fieldName: ` ${fieldName} ` }], { existingFields })).toEqual([]);
+    expect(validateEditorRows([row], {})).toHaveLength(1);
+    expect(validateEditorRows([row], { existingFields: [] })).toHaveLength(1);
+    expect(validateEditorRows([row], { existingFields: [{ ...existingFields[0]!, fieldId: 'other' }] })).toHaveLength(1);
+    expect(validateEditorRows([row], { existingFields: [{ ...existingFields[0]!, fieldName: 'old_name' }] })).toHaveLength(1);
+    expect(validateEditorRows([row], { existingFields: [{ ...existingFields[0]!, entityLevel: 'arm' }] })).toHaveLength(1);
+    expect(validateEditorRows([{ ...row, fieldId: null }], { existingFields })).toHaveLength(1);
+    expect(validateEditorRows([row, row], { existingFields })).toHaveLength(2);
+  });
+
+  test('予約キー名の検査を省略しても固定列・重複・形式の検査は残る', () => {
+    const rows = ['registration_id', 'timepoint', 'study_id', 'Bad Name'].map((fieldName) =>
+      makeRow({ fieldId: 'f', fieldName, entityLevel: fieldName === 'timepoint' ? 'outcome_result' : 'study' }));
+    expect(validateEditorRows(rows, { skipReservedKeyNames: true }).map((error) => error.index)).toEqual([2, 3]);
+    expect(validateEditorRows([rows[2]!], { existingFields: [{ fieldId: 'f', fieldName: 'study_id', entityLevel: 'study' }] })).toHaveLength(1);
+    expect(validateEditorRows([rows[0]!, rows[0]!], { skipReservedKeyNames: true })).toHaveLength(2);
+  });
+
+  test.each(['study_label', 'registration_id', 'n_documents'])('study の %s は tab1.csv キー列のエラー', (fieldName) => {
+    expect(validateEditorRows([makeRow({ fieldName })])).toEqual([
+      { index: 0, column: 'fieldName', message:
+        `"${fieldName}" は R セットの tab1.csv のキー列名のため、研究単位（study）の項目名に使えません。` +
+        `別名（例: "${fieldName}_reported"）へ変更してください` },
+    ]);
+  });
+
+  test.each(['study_id', 'schema_version'])('study の %s は従来の固定列エラーを優先する', (fieldName) => {
+    expect(validateEditorRows([makeRow({ fieldName })])).toEqual([
+      { index: 0, column: 'fieldName', message:
+        `"${fieldName}" はシステムが使う StudyData の固定列名のため項目名に使えません。` +
+        `別名（例: "${fieldName}_reported"）へ変更してください` },
+    ]);
+  });
+
+  test.each(['arm', 'rob_domain'] as const)('%s の登録番号・文献数は予約名にしない', (entityLevel) => {
+    for (const fieldName of ['registration_id', 'n_documents']) {
+      expect(validateEditorRows([makeRow({ fieldName, entityLevel })])).toEqual([]);
+    }
+  });
+
   test.each(['outcome_id', 'timepoint'])('outcome_result の %s は ma.csv キー列のエラー', (fieldName) => {
     expect(validateEditorRows([makeRow({ fieldName, entityLevel: 'outcome_result' })])).toEqual([
       { index: 0, column: 'fieldName', message:

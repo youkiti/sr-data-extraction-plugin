@@ -63,6 +63,10 @@ const VALID_RAW = {
   multiSelect: null,
 };
 
+test('登録番号の予約名を含むファイルもエディタ行として読み込む', () => {
+  expect(parseSchemaExport(fileWith([{ ...VALID_RAW, fieldName: 'registration_id' }])).rows[0]?.fieldName).toBe('registration_id');
+});
+
 describe('serializeSchemaExport / parseSchemaExport', () => {
   const fields = [
     makeField({

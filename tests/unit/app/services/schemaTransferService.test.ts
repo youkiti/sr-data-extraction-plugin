@@ -220,6 +220,14 @@ describe('exportSchemaFile', () => {
 });
 
 describe('importSchemaFile', () => {
+  test('予約名を読み込み、エディタで新規行のエラーを示す', async () => {
+    const store = storeOf([], []);
+    await importSchemaFile(store, exportedFile([makeField({ fieldName: 'registration_id' })]));
+    expect(store.getState().schema.transfer.importError).toBeNull();
+    expect(store.getState().schema.editorRows?.[0]?.fieldName).toBe('registration_id');
+    expect(store.getState().schema.editorErrors).toEqual([expect.objectContaining({ column: 'fieldName' })]);
+  });
+
   test('版が無いプロジェクトでは、エディタへ直接入れて出所を改訂理由の初期値にする', async () => {
     const store = storeOf([], []);
     await importSchemaFile(store, exportedFile([makeField({ fieldName: 'imported' })]));

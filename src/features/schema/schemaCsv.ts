@@ -204,7 +204,7 @@ export function parseSchemaCsv(text: string): SchemaEditorRow[] {
   if (rows.length === 0) {
     throw new SchemaImportError('schema.importNoFields');
   }
-  const errors = validateEditorRows(rows);
+  const errors = validateEditorRows(rows, { skipReservedKeyNames: true });
   const first = errors[0];
   if (first !== undefined) {
     throw new SchemaImportError('schema.importCsvValidation', {

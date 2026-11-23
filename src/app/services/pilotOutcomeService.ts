@@ -52,6 +52,7 @@ export async function addPilotOutcome(store: Store, deps: PilotServiceDeps, row:
     const saved = await saveSchemaVersion({
       spreadsheetId: project.spreadsheetId,
       rows: fields.map(schemaFieldToEditorRow),
+      existingFields: fields,
       outcomes,
       listModeBefore: true,
       parentVersion: latest.schemaVersion,

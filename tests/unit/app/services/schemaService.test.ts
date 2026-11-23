@@ -1447,6 +1447,27 @@ describe('エディタ操作', () => {
 });
 
 describe('confirmSchema', () => {
+  test('現行版と同じ予約名項目は確定できる', async () => {
+    const store = makeStore();
+    const fields = [makeField({ fieldName: 'registration_id' })];
+    seedEditor(store, [makeEditorRow({ fieldId: 'f-1', fieldName: 'registration_id' })]);
+    store.setState({ schema: { ...store.getState().schema, currentFields: fields } });
+    saveVersionMock.mockResolvedValue({ version: makeVersion(2), fields, outcomes: [] });
+    await confirmSchema(store, makeDeps().deps, '');
+    expect(saveVersionMock).toHaveBeenCalledWith(expect.objectContaining({ existingFields: fields }), expect.anything());
+    expect(store.getState().schema.editorRows).toBeNull();
+    expect(store.getState().schema.draftError).toBeNull();
+  });
+
+  test('新規行の予約名は現行版に同名項目があってもエラーを表示する', async () => {
+    const store = makeStore();
+    seedEditor(store, [makeEditorRow({ fieldName: 'registration_id' })]);
+    store.setState({ schema: { ...store.getState().schema, currentFields: [makeField({ fieldName: 'registration_id' })] } });
+    await confirmSchema(store, makeDeps().deps, '');
+    expect(saveVersionMock).not.toHaveBeenCalled();
+    expect(store.getState().schema.editorErrors).toEqual([expect.objectContaining({ column: 'fieldName' })]);
+  });
+
   function seedEditor(store: Store, rows: SchemaEditorRow[]): void {
     store.setState({
       protocol: { ...store.getState().protocol, records: [makeProtocol({ version: 3 })] },

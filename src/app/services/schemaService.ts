@@ -107,6 +107,10 @@ import type { SchemaState, Store } from '../store';
 import { showToast } from '../ui/toast';
 import { t, type MessageKey } from '../../lib/i18n';
 
+function validateSchemaRows(store: Store, rows: readonly SchemaEditorRow[]) {
+  return validateEditorRows(rows, { existingFields: store.getState().schema.currentFields ?? [] });
+}
+
 export interface SchemaServiceDeps extends ProviderResolutionDeps {
   google: GoogleApiDeps;
   profile: ProfileDeps;
@@ -370,7 +374,7 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
       ],
       { responseFormat: 'json', responseSchema: DRAFT_SCHEMA_RESPONSE_SCHEMA },
     );
-    const { rows, outcomes } = parseDraftSchemaResponse(response.text);
+    const { rows, outcomes } = parseDraftSchemaResponse(response.text, store.getState().schema.currentFields ?? []);
     // 現行版の有無で分岐する（issue #197）: 0 版（初回ドラフト）は従来どおりエディタへ直行、
     // 1 件以上あるときはエディタへ直行せず差分承認画面（redraft）を経由させる
     // （既存項目がユーザーの明示的承認なしに消えないようにするため）
@@ -425,7 +429,7 @@ export function updateEditorRow(
   patchSchema(store, {
     editorRows: next,
     editorOrigin: 'user_edit',
-    editorErrors: validateEditorRows(next),
+    editorErrors: validateSchemaRows(store, next),
   });
 }
 
@@ -439,7 +443,7 @@ export function addEditorRow(store: Store): void {
   patchSchema(store, {
     editorRows: next,
     editorOrigin: 'user_edit',
-    editorErrors: validateEditorRows(next),
+    editorErrors: validateSchemaRows(store, next),
   });
 }
 
@@ -453,7 +457,7 @@ export function removeEditorRow(store: Store, index: number): void {
   patchSchema(store, {
     editorRows: next,
     editorOrigin: 'user_edit',
-    editorErrors: validateEditorRows(next),
+    editorErrors: validateSchemaRows(store, next),
   });
 }
 
@@ -472,7 +476,7 @@ export function moveEditorRow(store: Store, from: number, to: number): void {
   patchSchema(store, {
     editorRows: next,
     editorOrigin: 'user_edit',
-    editorErrors: validateEditorRows(next),
+    editorErrors: validateSchemaRows(store, next),
   });
 }
 
@@ -501,7 +505,7 @@ export function sortEditorRowsBySection(store: Store): void {
   patchSchema(store, {
     editorRows: next,
     editorOrigin: 'user_edit',
-    editorErrors: validateEditorRows(next),
+    editorErrors: validateSchemaRows(store, next),
   });
 }
 
@@ -519,7 +523,7 @@ function appendEditorRows(store: Store, added: readonly SchemaEditorRow[]): void
   patchSchema(store, {
     editorRows: next,
     editorOrigin: 'user_edit',
-    editorErrors: validateEditorRows(next),
+    editorErrors: validateSchemaRows(store, next),
   });
 }
 
@@ -829,7 +833,7 @@ export function applyRedraft(store: Store): void {
       pendingOutcomeRemovals: null,
       outcomeDecisions: null,
       editorRows: rows,
-      editorErrors: validateEditorRows(rows),
+      editorErrors: validateSchemaRows(store, rows),
       editorOrigin: 'user_edit',
       editorParentVersion: redraft.revert.sourceVersion,
       editorNoteDefault: t('schema.revertNoteDefault', { version: redraft.revert.sourceVersion }),
@@ -849,7 +853,7 @@ export function applyRedraft(store: Store): void {
       pendingOutcomeRemovals: null,
       outcomeDecisions: null,
       editorRows: rows,
-      editorErrors: validateEditorRows(rows),
+      editorErrors: validateSchemaRows(store, rows),
       editorOrigin: 'user_edit',
       editorParentVersion: null,
       editorNoteDefault: importNoteDefault(redraft.imported),
@@ -866,7 +870,7 @@ export function applyRedraft(store: Store): void {
     pendingOutcomeRemovals: null,
     outcomeDecisions: null,
     editorRows: rows,
-    editorErrors: validateEditorRows(rows),
+    editorErrors: validateSchemaRows(store, rows),
     editorOrigin: isRedraftSelectionPristine(redraft.diff, redraft.selection) ? 'ai_draft' : 'user_edit',
     editorParentVersion: null,
     editorNoteDefault: null,
@@ -895,7 +899,7 @@ export async function confirmSchema(
   if (!project || rows === null || state.schema.confirming || state.schema.outcomeRemoval !== null) {
     return;
   }
-  const errors = validateEditorRows(rows);
+  const errors = validateSchemaRows(store, rows);
   const outcomeErrors = validateOutcomeRows(state.schema.editorOutcomes, { listModeBefore: isOutcomeListMode(state.schema.allOutcomes ?? []) });
   if (rows.length === 0 || errors.length > 0 || outcomeErrors.length > 0) {
     patchSchema(store, {
@@ -930,6 +934,7 @@ export async function confirmSchema(
       {
         spreadsheetId: project.spreadsheetId,
         rows,
+        existingFields: state.schema.currentFields ?? [],
         outcomes: state.schema.editorOutcomes,
         listModeBefore: isOutcomeListMode(state.schema.allOutcomes ?? []),
         // 「前の版に戻す」（issue #318）でエディタへ入ったときは戻し元の版、それ以外は最新版

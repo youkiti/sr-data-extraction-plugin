@@ -67,6 +67,18 @@ test('最新の項目と一覧から版を作り、全パイロットの文脈�
   expect(loadPilotVerification).toHaveBeenCalledWith(store, deps, 'study');
 });
 
+test('現行版の登録番号を既存項目として渡してアウトカムを追加する', async () => {
+  const { store, deps, fields } = setup();
+  fields[0] = { ...fields[0]!, fieldName: 'registration_id', entityLevel: 'study' };
+  await addPilotOutcome(store, deps, row);
+  expect(saveSchemaVersion).toHaveBeenCalledWith(expect.objectContaining({
+    existingFields: fields,
+    rows: [expect.objectContaining({ fieldId: 'f', fieldName: 'registration_id', entityLevel: 'study' })],
+    outcomes: expect.arrayContaining([expect.objectContaining({ outcomeId: 'sleep' })]),
+  }), deps);
+  expect(store.getState().pilot.outcomeList?.currentIds.has('sleep')).toBe(true);
+});
+
 test('追加成功後は依存キャッシュを破棄し、パイロットの PDF を保って検証を読み直す', async () => {
   const { store, deps } = setup();
   type State = ReturnType<typeof store.getState>;

@@ -15,3 +15,26 @@ export const MA_KEY_HEADER = [
   'rob_overall_judgement',
   'schema_version',
 ] as const;
+
+/** tab1.csv / tab1_status.csv のキー列。study レベルの項目名の予約名にも使う（issue #553） */
+export const TAB1_KEY_HEADER = ['study_id', 'study_label', 'registration_id', 'n_documents', 'schema_version'] as const;
+
+// 既存スキーマの衝突は見出しだけで回避し、項目名による値・状態の判定は維持する。
+// 後続の項目名も先に確保し、改名先が既存の値列を奪わないようにする。
+export function rsetValueHeaders(keyHeader: readonly string[], fieldNames: readonly string[]): string[] {
+  const keyNames = new Set<string>(keyHeader);
+  const usedNames = new Set<string>([...keyHeader, ...fieldNames]);
+  return fieldNames.map((name) => {
+    if (!keyNames.has(name)) {
+      return name;
+    }
+    let candidate = `${name}_field`;
+    let suffix = 2;
+    while (usedNames.has(candidate)) {
+      candidate = `${name}_field_${suffix}`;
+      suffix += 1;
+    }
+    usedNames.add(candidate);
+    return candidate;
+  });
+}
