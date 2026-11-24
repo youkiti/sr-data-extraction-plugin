@@ -13,7 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
-（まだありません / Nothing yet）
+### AI の結果に影響する変更 / Changes that affect AI output
+
+- Claude Sonnet 5.5（`claude-sonnet-5-5`）の単価を足し、費用の概算を表示するようにしました。これまで単価が不明で費用の集計から外れていた Sonnet 5.5 の呼び出しも、費用の合計に入ります（入力 2.00 / 出力 10.00 USD per 1M。キャッシュ読み出しは割り引かずに概算。2026-11-25、PR #570）。  
+  Added pricing for Claude Sonnet 5.5 (`claude-sonnet-5-5`) so estimated costs are displayed. Sonnet 5.5 calls, previously left out of cost totals because the price was unknown, are now included (input 2.00 / output 10.00 USD per 1M; cache reads are estimated without a discount; 2026-11-25, PR #570).
 
 ## v0.36.2（2026-11-24）
 

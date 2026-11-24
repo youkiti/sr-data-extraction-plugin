@@ -31,7 +31,7 @@ test('実ソースからも収集でき、別の表の ID を拾わない', () =
     .map(([name, file]) => [name, readFileSync(new URL(file, root), 'utf8')]));
   const models = collectModelIds(actual);
   assert.ok(models.some(model => model.usedBy.includes('FACTORY_DEFAULT_MODEL')));
-  assert.equal(models.filter(model => model.usedBy.includes('MODEL_PRICING')).length, 13);
+  assert.equal(models.filter(model => model.usedBy.includes('MODEL_PRICING')).length, 14);
   assert.equal(models.filter(model => model.usedBy.some(place => place.startsWith('CONSULT_MODELS.'))).length, 3);
 });
 

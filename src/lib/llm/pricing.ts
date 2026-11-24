@@ -64,17 +64,23 @@ export const MODEL_PRICING: Readonly<Record<string, ModelPricing>> = {
   // 実行前と費用未報告時の概算用。実行後は応答の usage.cost を優先する。
   'qwen/qwen3-235b-a22b-2507': { inputPerMillion: 0.0875, outputPerMillion: 0.35, cachedInputPerMillion: 0.0175 },
   'deepseek/deepseek-v4-flash': { inputPerMillion: 0.14, outputPerMillion: 0.28, cachedInputPerMillion: 0.028 },
-  // Anthropic 3 モデル。issue #127 PR2 で Options 配線とあわせて追加。
+  // Anthropic のモデル。
   // **2026-08-31 に公式料金ページで再確認**（https://platform.claude.com/docs/en/about-claude/pricing）:
   // claude-sonnet-5 の $2/$10 は「2026-08-31 までの導入価格」ではなく**標準価格として恒久化**され、
   // 予定されていた $3/$15 への改定は行われないと明記された。旧コメントは「導入価格の期限切れで
   // 過小表示になるのを避けるため通常価格 $3/$15 を採る」という判断だったが、その前提が失効し、
   // 逆に 1.5 倍の過大表示になっていたため実価格へ修正した。
-  // キャッシュ read は 3 モデルとも入力単価の 0.1 倍（同ページの Prompt caching 表）。
+  // キャッシュ read は opus-5 / sonnet-5 / haiku-4-5 の 3 モデルで入力単価の 0.1 倍（同ページの Prompt caching 表）。
   // cache write（5 分 TTL で 1.25 倍）は現状この拡張が cache_control を送らないため発生しない。
-  // claude-haiku-4-5 のみコンテキスト長 200K（他の 2 モデルは 1M）
+  // claude-haiku-4-5 はコンテキスト長 200K（claude-opus-5 / claude-sonnet-5 は 1M）
   'claude-opus-5': { inputPerMillion: 5.0, outputPerMillion: 25.0, cachedInputPerMillion: 0.5 },
   'claude-sonnet-5': { inputPerMillion: 2.0, outputPerMillion: 10.0, cachedInputPerMillion: 0.2 },
+  // 入力 $2.00 / 出力 $10.00 per 1M は 2026-11-23 に公式料金ページで確認した値
+  // （https://platform.claude.com/docs/en/about-claude/pricing、docs/evaluation-plan.md §3.2）。
+  // キャッシュ読み出し単価は確認に含まれないため省略し、ModelPricing の既定どおり
+  // 入力単価と同額（割引を見込まない安全側）で概算する。この拡張は cache_control を
+  // 送らないため実際の影響はない。
+  'claude-sonnet-5-5': { inputPerMillion: 2.0, outputPerMillion: 10.0 },
   'claude-haiku-4-5': { inputPerMillion: 1.0, outputPerMillion: 5.0, cachedInputPerMillion: 0.1 },
 };
 
@@ -219,9 +225,10 @@ export const MODEL_IMAGE_CAPABILITY: Readonly<Record<string, ModelImageCapabilit
   'gemini-3.5-flash-lite': { provider: 'gemini', support: 'supported' },
   'qwen/qwen3-235b-a22b-2507': { provider: 'openrouter', support: 'unsupported' },
   'deepseek/deepseek-v4-flash': { provider: 'openrouter', support: 'unsupported' },
-  // Anthropic 3 モデルはネイティブ base64 画像入力に対応（docs/requirements.md §10 Q11）
+  // Anthropic のモデルはネイティブ base64 画像入力に対応（docs/requirements.md §10 Q11）
   'claude-opus-5': { provider: 'anthropic', support: 'supported' },
   'claude-sonnet-5': { provider: 'anthropic', support: 'supported' },
+  'claude-sonnet-5-5': { provider: 'anthropic', support: 'supported' },
   'claude-haiku-4-5': { provider: 'anthropic', support: 'supported' },
 };
 

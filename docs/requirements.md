@@ -1,4 +1,6 @@
-# sr-data-extraction-plugin 要件定義書（v0.53）
+# sr-data-extraction-plugin 要件定義書（v0.54）
+
+- **更新**: 2026-11-25（v0.54: 単価表に claude-sonnet-5-5 を足した〔入力 2.00 / 出力 10.00 USD、キャッシュ読み出しの単価は未確認のため書かない〕。画像入力対応表にも追加した）
 
 - **更新**: 2026-11-24（v0.53: 合格基準の初期値〔正確度 92%・偽陽性の割合 3%〕を、CESAR のデータ抽出の中止境界〔点推定〕の流用と書き直し、`AcceptanceCriteria` の節の「自動入力しない」を実装に合わせた。Q8 参考の表に原文の脚注を足した。issue #557）
 
@@ -1083,15 +1085,16 @@ summarizeComparison の研究集合・entity_levels 絞り込み後の comparato
 
 合格基準（`AcceptanceCriteria`）の初期値は、データ抽出の行の中止境界（点推定）だけを流用し、感度 92% を正確度の下限 92% の、重大エラー割合 3% を偽陽性の割合の上限 3% の出発点にした。指標は同じではない（CESAR の感度は、報告のある項目のうち正しく抽出された割合。重大エラーは結論を誤らせうる誤り）。どれも中止の基準で、合格の目標ではない。非劣性マージン（97%、2%）は 95%CI に掛ける値なので、初期値には使わない。
 
-### Q11 参考: `MODEL_PRICING` / `MODEL_IMAGE_CAPABILITY` の Anthropic 3 モデルの数値（PR2 で転記済み）
+### Q11 参考: `MODEL_PRICING` / `MODEL_IMAGE_CAPABILITY` の Anthropic のモデルの数値
 
-issue #127 PR1 時点では `createProvider()` / `settingsStore.LLM_PROVIDERS` が `'anthropic'` を解決できず、モデルセレクタに出しても選択すると誤って Gemini へ送信されてしまうため、単価表への追加を見送っていた。**PR2 で `src/lib/llm/pricing.ts` の `MODEL_PRICING` / `MODEL_IMAGE_CAPABILITY` へ以下の数値をそのまま転記済み**（再調査は行っていない）。
+issue #127 PR1 時点では `createProvider()` / `settingsStore.LLM_PROVIDERS` が `'anthropic'` を解決できず、モデルセレクタに出しても選択すると誤って Gemini へ送信されてしまうため、単価表への追加を見送っていた。**PR2 で `src/lib/llm/pricing.ts` の `MODEL_PRICING` / `MODEL_IMAGE_CAPABILITY` へ opus-5 / sonnet-5 / haiku-4-5 の数値をそのまま転記済み**（転記時の再調査は行っていない）。sonnet-5-5 は 2026-11-23 の確認値をもとに追加した。
 
 | モデル ID | 入力 USD/1M | 出力 USD/1M | 画像入力 | 備考 |
 | --- | --- | --- | --- | --- |
 | `claude-opus-5` | 5.00 | 25.00 | 対応（ネイティブ base64） | コンテキスト長 1M |
 | `claude-sonnet-5` | 2.00 | 10.00 | 対応（ネイティブ base64） | コンテキスト長 1M。**2026-08-31 に公式料金ページで再確認し $2.00 / $10.00 へ修正**。当初「2026-08-31 までの導入価格」とされていた $2/$10 は**標準価格として恒久化**され、予定されていた $3/$15 への改定は行われないと明記された。旧記述は「導入価格終了後に単価表を直さずに済むよう通常価格 $3/$15 を載せる」という判断だったが前提が失効し、逆に 1.5 倍の過大表示になっていた |
-| `claude-haiku-4-5` | 1.00 | 5.00 | 対応（ネイティブ base64） | **コンテキスト長 200K**（他の 2 モデルは 1M）。全文 PDF 抽出という本用途では長尺文書で haiku だけ収まらないケースが起こりうる点に注意 |
+| `claude-sonnet-5-5` | 2.00 | 10.00 | 対応（ネイティブ base64） | 2026-11-23 に公式料金ページ（https://platform.claude.com/docs/en/about-claude/pricing）で確認した値（docs/evaluation-plan.md §3.2）。キャッシュ読み出しの単価は未確認のため設定せず、入力単価と同額で割引なしに概算する |
+| `claude-haiku-4-5` | 1.00 | 5.00 | 対応（ネイティブ base64） | **コンテキスト長 200K**（claude-opus-5 / claude-sonnet-5 は 1M）。全文 PDF 抽出という本用途では長尺文書で haiku だけ収まらないケースが起こりうる点に注意 |
 
 ---
 
