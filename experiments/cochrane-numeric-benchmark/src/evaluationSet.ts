@@ -66,12 +66,24 @@ export interface EvalValue {
 export interface Page { page: number; text: string }
 export interface UsableDocument extends Document { pages: Page[] }
 export interface DocumentState { exists: boolean; pages: Page[] }
-export interface Excluded { studyKey: string; reason: 'no_pdf' | 'no_text_layer' }
+export interface Excluded { studyKey: string; reason: 'no_pdf' | 'no_text_layer' | 'no_gold' }
+export interface EmptyGoldCounts { items: number; values: number }
 
 export function filterItems(items: TaskItem[]): TaskItem[] {
   return items.filter((item) => (EVAL_DATA_TYPES as readonly string[]).includes(item.data_type));
 }
+export function filterGoldItems(study: Study): { items: TaskItem[]; emptyGold: EmptyGoldCounts } {
+  const emptyGold = { items: 0, values: 0 };
+  const items = study.items.flatMap((item) => {
+    const fields = item.fields.filter((field) => study.task.gold[item.row_id]?.[field]?.trim() !== '');
+    emptyGold.values += item.fields.length - fields.length;
+    if (!fields.length) { emptyGold.items++; return []; }
+    return [{ ...item, fields }];
+  });
+  return { items, emptyGold };
+}
 export function usableDocuments(study: Study, states: DocumentState[]): { documents: UsableDocument[]; reason: Excluded['reason'] | null } {
+  if (!study.items.length) return { documents: [], reason: 'no_gold' };
   const hasPdf = study.task.documents.some((doc, i) => doc.pdf_path && states[i]?.exists);
   const documents = study.task.documents.flatMap((doc, i) => {
     const state = states[i];
@@ -87,7 +99,7 @@ export function evaluationValues(study: Study, refs: Reference[], provenance: Pr
     const key = `${judgment.task_id}\t${judgment.item}\t${judgment.field}`;
     if (judgment.label === 'reported') reported.set(key, [...(reported.get(key) ?? []), judgment]);
   }
-  return study.items.flatMap((item, index) => item.fields.map((field) => {
+  return filterGoldItems(study).items.flatMap((item, index) => item.fields.map((field) => {
     const ref = refMap.get(`${item.row_id}\t${field}`);
     if (!ref) throw new Error(`参照ラベル行がありません: ${study.studyKey} / ${field}`);
     const prov = provMap.get(item.row_id);

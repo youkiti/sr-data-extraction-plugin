@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { filterItems, evaluationValues, usableDocuments, type Study, type Reference, type Provenance, type Judgment } from './evaluationSet';
+import { filterItems, filterGoldItems, evaluationValues, usableDocuments, type Study, type Reference, type Provenance, type Judgment } from './evaluationSet';
 import { buildFields, buildOutcomeList, cleanFootnotes, resolveContext, schemaInput, protocolContext } from './schema';
 import { buildStudyRequest, EXTRACT_DATA_TEMPERATURE } from './prompt';
 import { buildExtractDataSystemPrompt, buildExtractDataUserContent, extractDataResponseSchema } from '../../../src/features/extraction/skills/extractData';
@@ -38,6 +38,34 @@ test('参照・出所の結合と gold の三者一致', () => {
   assert.throws(() => evaluationValues(study, [], provenance, []), /参照ラベル行/);
   assert.throws(() => evaluationValues(study, refs.map((r) => ({ ...r, gold: '3' })), provenance, []), /gold/);
   assert.throws(() => evaluationValues(study, refs, [{ ...provenance[0]!, values: {} }], []), /gold/);
+});
+test('全 gold が空の項目を落とし、残った項目を連番にする', () => {
+  const { study, refs, provenance } = fixture();
+  const empty = { ...study.items[0]!, row_id: 'empty' };
+  study.items.unshift(empty);
+  study.task.gold.empty = { experimental_mean: '', control_mean: ' \t' };
+  const filtered = filterGoldItems(study);
+  assert.deepEqual(filtered.emptyGold, { items: 1, values: 2 });
+  study.items = filtered.items;
+  assert.equal(study.items.length, 1);
+  assert.equal(buildOutcomeList(study.items)[0]!.outcomeId, 'o1');
+  assert.ok(evaluationValues(study, refs, provenance, []).every((value) => value.itemIndex === 1));
+});
+test('一部の空 gold は参照行も整合性検査も不要で、非空値だけを残す', () => {
+  const { study, refs, provenance } = fixture();
+  study.task.gold['REV1:r:1']!.control_mean = ' ';
+  const filtered = filterGoldItems(study);
+  assert.deepEqual(filtered.emptyGold, { items: 0, values: 1 });
+  assert.deepEqual(filtered.items[0]!.fields, ['experimental_mean']);
+  const values = evaluationValues(study, refs.slice(0, 1), [{ ...provenance[0]!, values: { experimental_mean: '987654' } }], []);
+  assert.equal(values.length, 1); assert.equal(values[0]!.field, 'experimental_mean');
+});
+test('唯一の項目が全空 gold の研究は no_gold で除外する', () => {
+  const { study } = fixture();
+  study.task.gold['REV1:r:1'] = { experimental_mean: '', control_mean: ' ' };
+  assert.deepEqual(evaluationValues(study, [], [], []), []);
+  study.items = filterGoldItems(study).items;
+  assert.equal(usableDocuments(study, []).reason, 'no_gold');
 });
 test('figureOnly は reported 読み手の figure 全員一致・text 優先・不明を区別', () => {
   const { study, refs, provenance } = fixture();

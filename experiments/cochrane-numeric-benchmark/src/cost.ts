@@ -1,7 +1,7 @@
 import { estimateCostUsd } from '../../../src/lib/llm/pricing';
 import { GUARD_PRICING, REPORT_FALLBACK_PRICING } from './config';
 
-export type CostBasis = 'measured' | 'measured_failure' | 'estimated_output_limit' | 'estimated_input_only';
+export type CostBasis = 'measured' | 'estimated_input_tokens' | 'measured_failure' | 'estimated_output_limit' | 'estimated_input_only';
 export function guardCostUsd(model: string, tokensIn: number, tokensOut: number): number {
   const price = GUARD_PRICING[model];
   if (!price) throw new Error(`監視単価がありません: ${model}`);

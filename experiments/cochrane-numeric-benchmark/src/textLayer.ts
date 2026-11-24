@@ -13,9 +13,9 @@ export async function extractText(): Promise<void> {
   await mkdir(textLayerDir(), { recursive: true });
   for (const tier of selectedTiers()) {
     const docs = new Map(studies.filter((study) => study.tier === tier).flatMap((study) => study.task.documents).map((doc) => [doc.pmcid, doc]));
-    let extracted = 0, cached = 0, failed = 0, empty = 0;
+    let extracted = 0, cached = 0, failed = 0, empty = 0, noPdfPath = 0;
     for (const doc of docs.values()) {
-      if (!doc.pdf_path) { failed++; continue; }
+      if (!doc.pdf_path) { noPdfPath++; continue; }
       try {
         const data = new Uint8Array(await readFile(upstreamPath(root, doc.pdf_path)));
         const pdfSha256 = sha256(data);
@@ -33,6 +33,6 @@ export async function extractText(): Promise<void> {
         } finally { await loading.destroy(); }
       } catch { failed++; }
     }
-    console.log(`${tier}: documents=${docs.size}, extracted=${extracted}, cached=${cached}, failed=${failed}, empty=${empty}`);
+    console.log(`${tier}: documents=${docs.size}, extracted=${extracted}, cached=${cached}, no_pdf_path=${noPdfPath}, failed=${failed}, empty=${empty}`);
   }
 }

@@ -97,7 +97,7 @@ test('レジャの切れた最終行だけを許容し中間破損を拒否', as
   } finally { await rm(dir, { recursive: true }); }
 });
 test('入力 manifest は追加・削除・内容差・版数差を拒否', () => {
-  const manifest: InputManifest = { hashes: { 'task.json': sha256('a') }, promptVersion: 17, harnessCommit: null, excluded: [] };
+  const manifest: InputManifest = { hashes: { 'task.json': sha256('a') }, promptVersion: 17, harnessCommit: null, excluded: [], emptyGold: {} };
   checkManifest(manifest, manifest);
   const variants: Record<string, string>[] = [{}, { 'task.json': sha256('b') }, { ...manifest.hashes, other: sha256('a') }];
   for (const hashes of variants) {

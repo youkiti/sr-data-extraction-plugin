@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile, readdir, stat, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { cochraneRoot, readSubset, selectedTiers, textLayerDir, type Tier } from './config';
-import { evaluationValues, filterItems, usableDocuments, type Study, type Task, type Reference, type Provenance,
+import { evaluationValues, filterItems, filterGoldItems, usableDocuments, type EmptyGoldCounts, type Study, type Task, type Reference, type Provenance,
   type Judgment, type ReviewContext, type Page, type EvalValue, type UsableDocument, type Excluded } from './evaluationSet';
 import { resolveContext } from './schema';
 
@@ -89,12 +89,14 @@ export interface EvaluationSet {
   documents: Map<string, UsableDocument[]>;
   excluded: Excluded[];
   hashes: Record<string, string>;
+  emptyGold: Partial<Record<Tier, EmptyGoldCounts>>;
 }
 export async function loadEvaluation(root: string): Promise<EvaluationSet> {
   const candidates = await loadStudies(root);
-  const result: EvaluationSet = { studies: [], values: [], documents: new Map(), excluded: [], hashes: {} };
+  const result: EvaluationSet = { studies: [], values: [], documents: new Map(), excluded: [], hashes: {}, emptyGold: {} };
   const joins = new Map<Tier, { refs: Reference[]; prov: Provenance[]; judgments: Judgment[] }>();
   for (const tier of selectedTiers()) {
+    result.emptyGold[tier] = { items: 0, values: 0 };
     const base = refDir(root, tier);
     const judgments: Judgment[] = [];
     for (const file of await filesUnder(path.join(base, 'judgments'))) {
@@ -104,6 +106,11 @@ export async function loadEvaluation(root: string): Promise<EvaluationSet> {
   }
   for (const study of candidates) {
     result.hashes[`upstream/${path.relative(root, study.taskPath).replace(/\\/g, '/')}`] = await fileHash(study.taskPath);
+    const filtered = filterGoldItems(study);
+    const counts = result.emptyGold[study.tier] ??= { items: 0, values: 0 };
+    counts.items += filtered.emptyGold.items; counts.values += filtered.emptyGold.values;
+    study.items = filtered.items;
+    if (!study.items.length) { result.excluded.push({ studyKey: study.studyKey, reason: 'no_gold' }); continue; }
     const states = [];
     for (const doc of study.task.documents) {
       const pdf = doc.pdf_path ? upstreamPath(root, doc.pdf_path) : null;
@@ -138,7 +145,19 @@ export function printCounts(set: EvaluationSet): void {
   for (const tier of selectedTiers()) {
     const studies = set.studies.filter((study) => study.tier === tier);
     console.log(`${tier}: reviews=${new Set(studies.map((study) => study.reviewId)).size}, studies=${studies.length}, items=${studies.reduce((n, study) => n + study.items.length, 0)}, values=${set.values.filter((value) => value.tier === tier).length}`);
+    const empty = set.emptyGold[tier] ?? { items: 0, values: 0 };
+    console.log(`${tier}: empty gold: items=${empty.items}, values=${empty.values}`);
   }
-  console.log(`excluded: ${set.excluded.length} (no_pdf: ${set.excluded.filter((s) => s.reason === 'no_pdf').length} / no_text_layer: ${set.excluded.filter((s) => s.reason === 'no_text_layer').length})`);
+  console.log(`excluded: ${set.excluded.length} (no_pdf: ${set.excluded.filter((s) => s.reason === 'no_pdf').length} / no_text_layer: ${set.excluded.filter((s) => s.reason === 'no_text_layer').length} / no_gold: ${set.excluded.filter((s) => s.reason === 'no_gold').length})`);
   for (const excluded of set.excluded) console.log(`${excluded.studyKey}: ${excluded.reason}`);
+}
+export function evaluationCounts(set: EvaluationSet) {
+  return Object.fromEntries(selectedTiers().map((tier) => {
+    const studies = set.studies.filter((study) => study.tier === tier);
+    const values = set.values.filter((value) => value.tier === tier);
+    return [tier, { reviews: new Set(studies.map((study) => study.reviewId)).size, studies: studies.length,
+      items: studies.reduce((n, study) => n + study.items.length, 0), values: values.length,
+      valuesPerLabel: Object.fromEntries(['reported', 'derivable', 'different_value', 'not_in_documents', 'null'].map((label) =>
+        [label, values.filter((value) => (value.label ?? 'null') === label).length])) }];
+  }));
 }

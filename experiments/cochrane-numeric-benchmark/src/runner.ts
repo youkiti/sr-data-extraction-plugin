@@ -15,7 +15,7 @@ import { buildStudyRequest, promptCharacters } from './prompt';
 import { classifyFailure, errorInfo, retryDecision, RETRY_MAX_ATTEMPTS } from './retry';
 import { costLimits, failureUsage, guardCostUsd, reportCostUsd, safeError, type CostBasis } from './cost';
 import { ledgerWriter, readLedger } from './ledger';
-import { inputManifest, readRunState, resumeDecision, runIdFor } from './resume';
+import { harnessCommit, inputManifest, readRunState, resumeDecision, runIdFor } from './resume';
 import type { Study, UsableDocument } from './evaluationSet';
 
 export interface ScoringItem {
@@ -25,7 +25,10 @@ export interface RunRecord {
   runId: string; model: string; studyKey: string; tier: string; reviewId: string; promptVersion: number;
   executedAt: string; attempts: number; elapsedMs: number; tokensIn: number; tokensOut: number; cachedTokensIn: number | null;
   thoughtsTokens: number | null; sentSettings: unknown; responseModel: string | null;
+  // 費用欄は最後の試行のみ。採点は台帳の全試行を合算する。
   guardCostUsd: number; listCostUsd: number; reportCostUsd: number; costBasis: CostBasis;
+  // 今回の run 実行内の合計（過去の中断分は含めない）。
+  attemptsGuardCostUsd: number;
   outcome: 'ok' | 'format_error' | 'request_failed'; error: string | null;
   items: ScoringItem[]; rejected: RejectedAiItem[]; rawText: string | null;
 }
@@ -50,6 +53,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 export async function main(): Promise<void> {
   let executed = 0, skipped = 0, failed = 0, cumulative = 0;
   try {
+    console.log(`harness commit: ${await harnessCommit()}, prompt version: ${EXTRACT_DATA_PROMPT_VERSION}`);
     const dry = process.env.BENCH_DRY_RUN === '1';
     if (!dry) dotenv.config({ path: [path.join(benchRoot, '.env'), path.join(repoRoot, '.env')], quiet: true });
     const root = await inputRoot();
@@ -91,10 +95,15 @@ export async function main(): Promise<void> {
         if (plan.action === 'backup_execute') await rename(plan.file, path.join(dir, `_corrupt-${Date.now()}__${plan.runId}.json.bak`));
         const provider = createProvider({ apiKey: process.env[keyEnv]!, model: plan.model.id, fetch: timeoutFetch });
         const chars = promptCharacters(plan.request.messages);
+        let attemptsGuardCostUsd = 0;
         for (let attempt = 1; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
           await sleep(Math.max(0, lastFinished + 2000 - Date.now()));
           if (stopped) return;
-          if (cumulative >= limits!.pause) { stopped = true; process.exitCode = 1; return; }
+          if (cumulative >= limits!.pause) {
+            stopped = true; process.exitCode = 1;
+            console.error(`費用の見張りで停止しました（累計 $${cumulative.toFixed(6)} / 停止 $${limits!.pause} / 上限 $${limits!.limit}）。本人に確認してから BENCH_COST_PAUSE_USD を上げて再開してください`);
+            return;
+          }
           const attemptAt = new Date().toISOString();
           const start = Date.now();
           let response: ChatResponse | null = null, failure: unknown = null;
@@ -116,11 +125,13 @@ export async function main(): Promise<void> {
           }
           const usage = response ? {
             tokensIn: response.tokensIn ?? Math.ceil(chars / 4), tokensOut: response.tokensOut ?? 0,
-            cachedTokensIn: response.cachedTokensIn, costBasis: 'measured' as CostBasis,
+            cachedTokensIn: response.cachedTokensIn,
+            costBasis: (response.tokensIn === null ? 'estimated_input_tokens' : 'measured') as CostBasis,
           } : failureUsage(failure, chars);
           const guard = guardCostUsd(plan.model.id, usage.tokensIn, usage.tokensOut);
           // extraction-benchmark-real/src/runner.ts と同じく、費用の永続化を run 保存より先にする。
           cumulative += guard;
+          attemptsGuardCostUsd += guard;
           await append({ runId: plan.runId, attempt, attemptAt, model: plan.model.id, studyKey: plan.study.studyKey,
             outcome, ...usage, guardCostUsd: guard, elapsedMs });
           const decision = response ? { retry: false, waitMs: 0 } : retryDecision(kind, attempt, info.retryAfterMs);
@@ -130,7 +141,7 @@ export async function main(): Promise<void> {
             executedAt: attemptAt, attempts: attempt, elapsedMs, ...usage,
             thoughtsTokens: response?.thoughtsTokensOut ?? null, sentSettings: response?.sentSettings ??
               (typeof failure === 'object' && failure !== null ? (failure as Record<string, unknown>).sentSettings ?? null : null),
-            responseModel: response?.responseModel ?? null, guardCostUsd: guard, listCostUsd: guard,
+            responseModel: response?.responseModel ?? null, guardCostUsd: guard, listCostUsd: guard, attemptsGuardCostUsd,
             reportCostUsd: reportCostUsd(plan.model.id, usage.tokensIn, usage.tokensOut, usage.cachedTokensIn, Date.parse(attemptAt)),
             outcome, error: failure === null ? null : safeError(failure), items, rejected, rawText: response?.text ?? null };
           await writeJson(plan.file, record);

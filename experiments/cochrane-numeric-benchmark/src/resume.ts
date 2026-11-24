@@ -33,17 +33,21 @@ export async function readRunState(file: string): Promise<RunState> {
   }
 }
 export const runIdFor = (model: string, studyKey: string) => `${model}__${studyKey}`.replace(/\//g, '__');
-export interface InputManifest { hashes: Record<string, string>; promptVersion: number; harnessCommit: string | null; excluded: EvaluationSet['excluded'] }
+export interface InputManifest { hashes: Record<string, string>; promptVersion: number; harnessCommit: string | null;
+  excluded: EvaluationSet['excluded']; emptyGold: EvaluationSet['emptyGold'] }
 export function checkManifest(previous: InputManifest, current: InputManifest): void {
   if (previous.promptVersion !== current.promptVersion) throw new Error('プロンプト版数が違います。新しい BENCH_RUN_LABEL を指定してください');
   const keys = [...new Set([...Object.keys(previous.hashes), ...Object.keys(current.hashes)])];
   if (keys.some((key) => previous.hashes[key] !== current.hashes[key])) throw new Error('入力のハッシュが違います。新しい BENCH_RUN_LABEL を指定してください');
   if (JSON.stringify(previous.excluded) !== JSON.stringify(current.excluded)) throw new Error('除外研究が変わりました。新しい BENCH_RUN_LABEL を指定してください');
 }
+export async function harnessCommit(): Promise<string | null> {
+  try { return (await promisify(execFile)('git', ['rev-parse', 'HEAD'], { cwd: repoRoot })).stdout.trim(); }
+  catch { return null; /* git の無い配布物も実行可能 */ }
+}
 export async function inputManifest(set: EvaluationSet, dry: boolean): Promise<void> {
-  let harnessCommit: string | null = null;
-  try { harnessCommit = (await promisify(execFile)('git', ['rev-parse', 'HEAD'], { cwd: repoRoot })).stdout.trim(); } catch { /* git の無い配布物も実行可能 */ }
-  const current: InputManifest = { hashes: set.hashes, promptVersion: EXTRACT_DATA_PROMPT_VERSION, harnessCommit, excluded: set.excluded };
+  const current: InputManifest = { hashes: set.hashes, promptVersion: EXTRACT_DATA_PROMPT_VERSION,
+    harnessCommit: await harnessCommit(), excluded: set.excluded, emptyGold: set.emptyGold };
   const file = path.join(runsDir(), '_inputs.json');
   const previous = await readOptional<InputManifest>(file);
   if (previous) checkManifest(previous, current);

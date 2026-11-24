@@ -1,17 +1,19 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { EXTRACT_DATA_PROMPT_VERSION } from '../../../src/features/extraction/skills/extractData';
-import { goldLockPath, runsDir, scoresDir, selectedModels } from './config';
-import { inputRoot, loadEvaluation, printCounts, readOptional, writeJson } from './io';
+import { goldLockPath, runsDir, scoresDir, selectedModels, selectedTiers } from './config';
+import { evaluationCounts, inputRoot, loadEvaluation, printCounts, readOptional, writeJson } from './io';
 import { assertLabels, verifyGoldLock, type GoldLock } from './goldLock';
 import { readLedger } from './ledger';
-import { inputManifest, runIdFor } from './resume';
+import { harnessCommit, inputManifest, runIdFor } from './resume';
 import { scoreValues, metrics, type ScoredValue } from './score';
 import { bootstrap } from './bootstrap';
 import { safeError } from './cost';
 import type { RunRecord } from './runner';
 
 try {
+  const commit = await harnessCommit();
+  console.log(`harness commit: ${commit}, prompt version: ${EXTRACT_DATA_PROMPT_VERSION}`);
   const root = await inputRoot();
   const lock = await readOptional<GoldLock>(goldLockPath());
   if (!lock) throw new Error('gold-lock.json がありません。lock-gold を先に実行してください');
@@ -48,10 +50,15 @@ try {
       label: row.label, state: row.answer.state, errorCategory: row.errorCategory })));
   }
   await mkdir(scoresDir(), { recursive: true });
-  await writeJson(path.join(scoresDir(), 'summary.json'), { models: summaries,
+  const excluded = Object.fromEntries(['no_pdf', 'no_text_layer', 'no_gold'].map((reason) =>
+    [reason, set.excluded.filter((study) => study.reason === reason).length]));
+  await writeJson(path.join(scoresDir(), 'summary.json'), { inputs: {
+    scoredAt: new Date().toISOString(), harnessCommit: commit, promptVersion: EXTRACT_DATA_PROMPT_VERSION,
+    runLabel: path.basename(runsDir()).slice('runs-'.length), models: models.map((model) => model.id),
+    tiers: selectedTiers(), goldLock: lock, counts: evaluationCounts(set), excluded, emptyGold: set.emptyGold,
+  }, models: summaries,
     bootstrap: bootstrap(models.map((model) => model.id), rowsByModel),
-    excluded: { no_pdf: set.excluded.filter((study) => study.reason === 'no_pdf').length,
-      no_text_layer: set.excluded.filter((study) => study.reason === 'no_text_layer').length } });
+    excluded });
   await writeFile(path.join(scoresDir(), 'values.jsonl'), output.map((row) => JSON.stringify(row) + '\n').join(''), 'utf8');
   console.log('採点結果を保存しました');
 } catch (error) { console.error(safeError(error)); process.exitCode = 1; }
