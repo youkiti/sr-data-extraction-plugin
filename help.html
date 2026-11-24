@@ -3,7 +3,7 @@
      正典はこのファイル（master の hosted/）。デプロイ手順は hosted/README.md を参照。
      内容はワークフローレベルに留める（画面細部はアプリ内のリード文が担う。issue #214 §3）。
      文言は ja / en を両方持ち、表示は lang.js + CSS が片方だけに絞る（併記しない）。
-     version: 2026-11-17 -->
+     version: 2026-11-24 -->
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
@@ -53,8 +53,8 @@
           <span class="en" lang="en">User guide</span>
         </h1>
         <p class="last-updated">
-          <span class="ja" lang="ja">最終更新: 2026-11-17 / 対象バージョン: v0.36.0</span>
-          <span class="en" lang="en">Last updated: 2026-11-17 / Covers v0.36.0</span>
+          <span class="ja" lang="ja">最終更新: 2026-11-24 / 対象バージョン: v0.36.2</span>
+          <span class="en" lang="en">Last updated: 2026-11-24 / Covers v0.36.2</span>
         </p>
 
         <nav class="toc" aria-label="目次" data-en-aria-label="Table of contents">
@@ -1312,8 +1312,8 @@
             </ul>
           </div>
           <p>
-            <span class="ja" lang="ja">既存の論文単位のアウトカムがある場合は、「アウトカムの一覧を作る」カードで取り込む id と表示名を確かめます。同じアウトカムに異なる id が付いているときは「別名としてまとめる先」で統合できます。両方にあるセルの件数を表示し、人が判定した方、両方が判定済みならまとめ先の値を使います。一覧に入れない id に判定済みのセルがある場合は、確定前に確認します。移行後の判定・取り消しと、人が編集した引用も再読み込み時に引き継ぎます。保存済みの監査履歴は残ります。</span>
-            <span class="en" lang="en">For existing paper-level outcomes, use “Create an outcome list” to select ids and check their display names. Use “Merge as an alias of” to combine different ids for the same outcome. The card shows overlapping cells: judged human values take precedence, with the target winning if both are judged. Excluding ids with judged cells requires confirmation. Subsequent decisions and undo operations, along with human-edited quotes, are preserved on reload. Saved audit history is retained.</span>
+            <span class="ja" lang="ja">既存の論文単位のアウトカムがある場合は、「アウトカムの一覧を作る」カードで取り込む id と表示名を確かめます。同じアウトカムに異なる id が付いているときは「別名としてまとめる先」で統合できます。両方にあるセルの件数を表示し、人が判定した方、両方が判定済みならまとめ先の値を使います。AI が付けた id が一覧の id の規則（英小文字で始まる英小文字・数字・_）に合わない行（6mwt_change など）には「新しい id」の入力が出ます。既定の案（outcome_6mwt_change など）のままか、直して確定すると、元の id は別名として残り、判定と AI の値は新しい id の下に引き継がれます。入力に誤りがあるときは、その行の下に理由が出ます。一覧に入れない id に判定済みのセルがある場合は、確定前に確認します。移行後の判定・取り消しと、人が編集した引用も再読み込み時に引き継ぎます。保存済みの監査履歴は残ります。</span>
+            <span class="en" lang="en">For existing paper-level outcomes, use “Create an outcome list” to select ids and check their display names. Use “Merge as an alias of” to combine different ids for the same outcome. The card shows overlapping cells: judged human values take precedence, with the target winning if both are judged. Rows whose AI id does not follow the id rule (lowercase letters, digits, and underscores, starting with a letter), such as 6mwt_change, get a “New id” input. Keep the suggestion (such as outcome_6mwt_change) or edit it; the original id stays as an alias, and its judgments and AI values carry over to the new id. Input errors appear under the affected row. Excluding ids with judged cells requires confirmation. Subsequent decisions and undo operations, along with human-edited quotes, are preserved on reload. Saved audit history is retained.</span>
           </p>
           <p>
             <span class="ja" lang="ja">初回の AI ドラフトは、プロトコルから決められるときにアウトカムの一覧の案も出します。版として確定する前に、一覧を確かめて直せます。</span>
@@ -1329,8 +1329,8 @@
           </p>
 
           <p>
-            <span class="ja" lang="ja">一覧のアウトカムは AI が見つけなくても、確定済みの群ごとの空セルとして出ます。人が not_reported などで判定してください。AI が一覧に無いアウトカムを見つけると、欄外に「一覧外の候補」として出ます。パイロットでは候補から表のデザインに追加でき、本番の検証と裁定では owner がスキーマ編集画面から追加します。</span>
-            <span class="en" lang="en">Listed outcomes appear as empty cells for confirmed arms even when AI finds no result. A person must judge them, for example as not_reported. Outcomes found by AI outside the list appear separately as “Candidates outside the list”. During the pilot, candidates can be added to the schema directly; during verification and adjudication, the owner adds them from the schema editor.</span>
+            <span class="ja" lang="ja">一覧のアウトカムは AI が見つけなくても、確定済みの群ごとの空セルとして出ます。人が not_reported などで判定してください。AI が一覧に無いアウトカムを見つけると、欄外に「一覧外の候補」として出ます。パイロットでは候補から表のデザインに追加できます（候補の id が一覧の id の規則に合わないときは、規則に合う新しい id で足し、元の id を別名として残します）。本番の検証と裁定では owner がスキーマ編集画面から追加します。</span>
+            <span class="en" lang="en">Listed outcomes appear as empty cells for confirmed arms even when AI finds no result. A person must judge them, for example as not_reported. Outcomes found by AI outside the list appear separately as “Candidates outside the list”. During the pilot, candidates can be added to the schema directly (a candidate whose id does not follow the id rule is added under a valid new id, with the original id kept as an alias). During verification and adjudication, the owner adds them from the schema editor.</span>
           </p>
         </section>
 
@@ -1399,13 +1399,13 @@
           <p><span class="ja" lang="ja">パイロットの前に owner が合格基準を決め、「確定する」から確認して保存します。
             正確度の下限、偽陽性・偽陰性・誤分類の割合の上限（0〜100%、4 つのうち 1 つ以上）、任意の最小セル数、
             比べる相手（独立の人、裁定後の値、独立抽出者の最終値、AI を見ながら判定した人）、対象レベルを指定します。
-            入力欄には前の版の値を、版がなければ CESAR の参考値として正確度 92%、偽陽性の割合 3% を入れます。必要に応じて書き換えてください。編集済みの下書きは上書きしません。
+            入力欄には前の版の値を入れます。版がなければ、CESAR のデータ抽出の中止境界（感度 92%、重大エラー割合 3%、いずれも点推定）を出発点に流用し、正確度 92%、偽陽性の割合 3% を入れます。CESAR では中止を決める最低ラインで、合格の目標ではありません。必要に応じて書き換えてください。編集済みの下書きは上書きしません。
             AI を見ながら判定した人との比較は独立比較ではありません。
             実行中・中断・失敗を含め、一度でもパイロットを始めた後の確定は、開始後に確定した版として記録します。</span>
             <span class="en" lang="en">Before the pilot, the owner sets and confirms acceptance criteria: minimum accuracy,
             maximum false-positive, false-negative and misclassification proportions (0–100%; at least one proportion), optional minimum compared cells,
             comparator (independent reviewers, consensus, independent final values, or AI-assisted final values), and entity levels.
-            Inputs start with the previous version’s values, or the CESAR reference values of accuracy 92% and false-positive proportion 3% if no version exists. Adjust them as needed. Edited drafts are preserved.
+            Inputs start with the previous version’s values. If no version exists, they start with accuracy 92% and false-positive proportion 3%, adapted from the CESAR project’s stopping (futility) boundaries for data extraction (sensitivity 92% and major error proportion 3%, both point estimates). In CESAR these are minimum bars for stopping, not targets for passing. Adjust them as needed. Edited drafts are preserved.
             AI-assisted review is not an independent comparison.
             Confirmation after any pilot has started, including running, interrupted or failed runs, is recorded as occurring after the pilot began.</span></p>
           <p><span class="ja" lang="ja">「結果を計算」で完了済みパイロットの研究を比較します。基準をすべて満たせば「満たす」、
@@ -1980,8 +1980,8 @@
           </p>
 
           <p>
-            <span class="ja" lang="ja">一覧のアウトカムは AI が見つけなくても、確定済みの群ごとの空セルとして出ます。人が not_reported などで判定してください。AI が一覧に無いアウトカムを見つけると、欄外に「一覧外の候補」として出ます。パイロットでは候補から表のデザインに追加でき、本番の検証と裁定では owner がスキーマ編集画面から追加します。</span>
-            <span class="en" lang="en">Listed outcomes appear as empty cells for confirmed arms even when AI finds no result. A person must judge them, for example as not_reported. Outcomes found by AI outside the list appear separately as “Candidates outside the list”. During the pilot, candidates can be added to the schema directly; during verification and adjudication, the owner adds them from the schema editor.</span>
+            <span class="ja" lang="ja">一覧のアウトカムは AI が見つけなくても、確定済みの群ごとの空セルとして出ます。人が not_reported などで判定してください。AI が一覧に無いアウトカムを見つけると、欄外に「一覧外の候補」として出ます。パイロットでは候補から表のデザインに追加できます（候補の id が一覧の id の規則に合わないときは、規則に合う新しい id で足し、元の id を別名として残します）。本番の検証と裁定では owner がスキーマ編集画面から追加します。</span>
+            <span class="en" lang="en">Listed outcomes appear as empty cells for confirmed arms even when AI finds no result. A person must judge them, for example as not_reported. Outcomes found by AI outside the list appear separately as “Candidates outside the list”. During the pilot, candidates can be added to the schema directly (a candidate whose id does not follow the id rule is added under a valid new id, with the original id kept as an alias). During verification and adjudication, the owner adds them from the schema editor.</span>
           </p>
         </section>
 
