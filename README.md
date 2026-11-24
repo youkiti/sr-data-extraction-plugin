@@ -125,7 +125,9 @@ E2E はローカルの chromium を使います。`npx playwright install chromi
 
 [CITATION.cff](CITATION.cff) の著者・版の情報を使って引用してください。GitHub のリポジトリ画面にある「Cite this repository」から引用形式をコピーできます。利用した版は `chrome://extensions` で確認できます。
 
-TODO: 初回の Zenodo リリースで DOI が発行されたら、DOI のバッジとリンクをここに追加します。特定の版を引用するときは、その版の DOI を使用してください。
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24488766.svg)](https://doi.org/10.5281/zenodo.24488766)
+
+Zenodo の DOI は [10.5281/zenodo.24488766](https://doi.org/10.5281/zenodo.24488766) です。この DOI は全版に共通で、最新の版を指します。特定の版を引用するときは、Zenodo のレコードの「Versions」から、その版の DOI を使用してください（例: v0.36.2 は [10.5281/zenodo.24488767](https://doi.org/10.5281/zenodo.24488767)）。
 
 ## ライセンス・資金
 

@@ -47,6 +47,7 @@ authors:
 version: 0.36.2
 date-released: "2026-11-24"
 license: MIT
+doi: "10.5281/zenodo.24488766"
 repository-code: "https://github.com/youkiti/sr-data-extraction-plugin"
 url: "https://youkiti.github.io/sr-data-extraction-plugin/"
 keywords:
