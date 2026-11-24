@@ -37,6 +37,15 @@ experiments/extraction-benchmark-real/*
 !experiments/extraction-benchmark-real/package-lock.json
 !experiments/extraction-benchmark-real/tsconfig.json
 
+# Cochrane 数値評価はコード・手順・集計報告だけを公開し、本文・設定・応答・結果を除外する。
+experiments/cochrane-numeric-benchmark/*
+!experiments/cochrane-numeric-benchmark/src/
+!experiments/cochrane-numeric-benchmark/package.json
+!experiments/cochrane-numeric-benchmark/package-lock.json
+!experiments/cochrane-numeric-benchmark/tsconfig.json
+!experiments/cochrane-numeric-benchmark/README.md
+!experiments/cochrane-numeric-benchmark/REPORT.md
+
 # anchor-spike の MV3 ハーネスへコピーする vendor / fixture（再現手順は REPORT.md 参照）
 experiments/anchor-spike/mv3-harness/pdf.min.mjs
 experiments/anchor-spike/mv3-harness/pdf.worker.min.mjs

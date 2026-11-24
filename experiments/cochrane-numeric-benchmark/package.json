@@ -6,7 +6,11 @@
   "type": "module",
   "scripts": {
     "test": "tsx --test src/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "extract-text": "tsx src/extractText.ts",
+    "run": "tsx src/runner.ts",
+    "lock-gold": "tsx src/lockGold.ts",
+    "score": "tsx src/scoreCli.ts"
   },
   "devDependencies": {
     "dotenv": "^18.0.10",
