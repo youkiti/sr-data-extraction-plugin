@@ -95,6 +95,15 @@ describe('estimateCostUsd', () => {
     expect(estimateCostUsd('claude-sonnet-5', 1_000_000, 1_000_000)).toBeCloseTo(12.0, 10);
   });
 
+  it('claude-sonnet-5-5 は入力 $2.00 / 出力 $10.00 per 1M で概算し、キャッシュは割り引かない', () => {
+    expect(MODEL_PRICING['claude-sonnet-5-5']).toEqual({
+      inputPerMillion: 2.0,
+      outputPerMillion: 10.0,
+    });
+    expect(estimateCostUsd('claude-sonnet-5-5', 1_000_000, 1_000_000)).toBeCloseTo(12.0, 10);
+    expect(estimateCostUsd('claude-sonnet-5-5', 1_000_000, 1_000_000, 800_000)).toBeCloseTo(12.0, 10);
+  });
+
   it('claude-haiku-4-5 は入力 $1.00 / 出力 $5.00 / キャッシュ $0.10 per 1M で概算する', () => {
     expect(MODEL_PRICING['claude-haiku-4-5']).toEqual({
       inputPerMillion: 1.0,
@@ -128,9 +137,10 @@ describe('resolveModelImageInputSupport（画像非対応モデルの実行ブ�
     );
   });
 
-  it('Anthropic 3 モデルは anthropic provider で supported（issue #127 PR2）', () => {
+  it('Anthropic のモデルは anthropic provider で supported', () => {
     expect(resolveModelImageInputSupport('anthropic', 'claude-opus-5')).toBe('supported');
     expect(resolveModelImageInputSupport('anthropic', 'claude-sonnet-5')).toBe('supported');
+    expect(resolveModelImageInputSupport('anthropic', 'claude-sonnet-5-5')).toBe('supported');
     expect(resolveModelImageInputSupport('anthropic', 'claude-haiku-4-5')).toBe('supported');
   });
 
@@ -205,6 +215,7 @@ describe('resolveThinkingOutputMultiplier', () => {
     'gemini-3.7-flash',
     'claude-opus-5',
     'claude-sonnet-5',
+    'claude-sonnet-5-5',
     'deepseek/deepseek-v4-flash',
     'unknown-model',
   ])('未測定の %s は最大実測倍率を使う', (model) => {
