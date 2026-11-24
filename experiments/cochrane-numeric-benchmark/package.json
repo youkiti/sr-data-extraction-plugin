@@ -1,0 +1,17 @@
+{
+  "name": "cochrane-numeric-benchmark",
+  "private": true,
+  "version": "0.1.0",
+  "description": "評価 A（issue #356）: Cochrane-bench の RevMan の解析データの数値で、拡張の抽出を測るハーネス。src/ とマニフェストだけを公開し、本文・応答・結果は git に入れない",
+  "type": "module",
+  "scripts": {
+    "test": "tsx --test src/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "dotenv": "^18.0.10",
+    "pdfjs-dist": "6.5.438",
+    "tsx": "^4.22.4",
+    "typescript": "~6.0.3"
+  }
+}
