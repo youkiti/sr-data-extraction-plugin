@@ -63,8 +63,21 @@ export function selectedTargets(): typeof TARGETS {
 
 /** BENCH_MODELS=gemini-3.5-flash,gemini-3.1-flash-lite で比較対象モデルを限定する。 */
 export function selectedModels(): typeof MODELS[number][] {
+  // 本文を意図なく Anthropic へ送らず、キー未設定で Gemini の課金後に止まることも避けるため、既定は Gemini のみ。
+  const defaultIds = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-3.5-flash-lite'] as const;
+  if (!process.env.BENCH_MODELS?.trim()) {
+    return MODELS.filter((model) => defaultIds.some((id) => id === model.id));
+  }
   const ids = readSubset('BENCH_MODELS', MODELS.map((model) => model.id));
   return MODELS.filter((model) => ids.includes(model.id));
+}
+
+/** 異なるプロンプト版数の結果が既定の出力先で混ざらないよう、Anthropic ではラベルを明示する。 */
+export function assertRunLabelAvailable(modelIds: readonly string[], rawRunLabel: string | undefined): void {
+  const label = rawRunLabel?.trim();
+  if (modelIds.some((id) => id.startsWith('claude-')) && (!label || label === 'v9-20260921')) {
+    throw new Error('Anthropic のモデルを含む実行では、前回の run と分けるため BENCH_RUN_LABEL を明示してください（例: v17-20261125）');
+  }
 }
 
 /**
