@@ -161,6 +161,11 @@ test('再チェックラベルの置換・不要値の拒否・lock と score �
   assert.ok(updated.every((value) => value.label === 'not_in_documents' && value.upstreamLabel === 'reported' && value.relabelled));
   assert.throws(() => applyRecheckLabels(values.map((value) => ({ ...value, needsRecheck: false })), labels), /不要/);
   assert.throws(() => applyRecheckLabels(values, [labels[0]!, labels[0]!]), /重複/);
+  // 読み込んでいないレビュー（BENCH_TIERS で外した層）の行は読み飛ばし、読み込んだレビューの未知の行は拒否する。
+  const otherReview = { rowId: 'REV9:r:1', field: 'experimental_n', label: 'reported' as const };
+  assert.equal(applyRecheckLabels(values, [...labels, otherReview]).filter((value) => value.relabelled).length, 2);
+  const unknownInLoaded = { rowId: `${values[0]!.rowId.split(':')[0]}:zz:9`, field: 'experimental_n', label: 'reported' as const };
+  assert.throws(() => applyRecheckLabels(values, [...labels, unknownInLoaded]), /不要/);
   assert.throws(() => assertLabels([{ ...updated[0]!, upstreamLabel: null }]), /未裁定/);
   const set: EvaluationSet = { studies: [study], values: updated, documents: new Map(), hashes: {}, excluded: [], emptyGold: {} };
   const counts = evaluationCounts(set)['cc-by']!;

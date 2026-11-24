@@ -9,8 +9,11 @@ export interface RecheckLabel { rowId: string; field: string; label: Label }
 export function applyRecheckLabels(values: EvalValue[], labels: RecheckLabel[]): EvalValue[] {
   const key = (value: { rowId: string; field: string }) => `${value.rowId}\t${value.field}`;
   const map = new Map<string, Label>();
+  // BENCH_TIERS で層を絞ったときは、読み込んでいないレビューの行を読み飛ばす（rowId は `<reviewId>:` で始まる）。
+  const loadedReviews = new Set(values.map((value) => value.reviewId));
   for (const line of labels) {
     if (!['reported', 'derivable', 'different_value', 'not_in_documents'].includes(line.label)) throw new Error('再チェックラベルが不正です');
+    if (!loadedReviews.has(line.rowId.split(':')[0] ?? '')) continue;
     if (!values.some((value) => key(value) === key(line) && value.needsRecheck)) throw new Error('再チェック不要の値にラベルがあります');
     if (map.has(key(line))) throw new Error('再チェックラベルが重複しています');
     map.set(key(line), line.label);
