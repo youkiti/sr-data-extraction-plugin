@@ -143,7 +143,9 @@ All documents below are written in Japanese.
 
 Use the authors and version in [CITATION.cff](CITATION.cff). On GitHub, select **Cite this repository** to copy a formatted citation. A preprint describing the tool and its evaluation is planned (see [issue #258](https://github.com/youkiti/sr-data-extraction-plugin/issues/258)).
 
-TODO: add the DOI badge and link after the first Zenodo release. To cite a specific version, use that version's DOI.
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24488766.svg)](https://doi.org/10.5281/zenodo.24488766)
+
+The Zenodo DOI is [10.5281/zenodo.24488766](https://doi.org/10.5281/zenodo.24488766). It covers all versions and resolves to the latest one. To cite a specific version, use that version's DOI from the Versions list of the Zenodo record (for example, [10.5281/zenodo.24488767](https://doi.org/10.5281/zenodo.24488767) for v0.36.2).
 
 The installed version is shown in `chrome://extensions`. The export screen offers an example Methods paragraph; check that its numbers, reviewer counts and procedures match what you actually did, and edit it before use.
 
