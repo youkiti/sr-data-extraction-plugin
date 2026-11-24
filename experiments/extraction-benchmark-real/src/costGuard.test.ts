@@ -51,11 +51,16 @@ test('課金出力: Anthropic の使用量が無い・出力が有限の数で�
 });
 
 test('費用計算: Sonnet の思考込み出力を補助単価で数える', () => {
-  const result = billedCostUsd({ model: 'claude-sonnet-5-5', tokensIn: 1000, cachedTokensIn: 0,
-    rawResponse: { usage: { input_tokens: 1000, output_tokens: 2000 } } });
+  // 本番の単価表に依存しないよう、本番側を空にして補助単価の経路だけを確かめる
+  const input = { model: 'claude-sonnet-5-5', tokensIn: 1000, cachedTokensIn: 0,
+    rawResponse: { usage: { input_tokens: 1000, output_tokens: 2000 } } };
+  const result = billedCostUsd(input,
+    { production: {}, fallback: FALLBACK_PRICING, estimate: estimateCostUsd });
   assert.equal(result.billedTokensOut, 2000);
   assert.equal(result.costSource, 'bench_fallback');
   assert.ok(Math.abs(result.costUsd! - 0.022) < 1e-12);
+  // 実際の単価表（本番に claude-sonnet-5-5 が入った後は本番の単価）でも同じ額になる
+  assert.ok(Math.abs(billedCostUsd(input).costUsd! - 0.022) < 1e-12);
 });
 
 test('費用計算: Sonnet の総入力にはキャッシュ割引を見込まない', () => {
