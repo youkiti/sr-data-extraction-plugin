@@ -13,6 +13,10 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ## 未リリース / Unreleased
 
+（まだありません / Nothing yet）
+
+## v0.36.2（2026-11-24）
+
 ### AI の結果に影響する変更 / Changes that affect AI output
 
 - 表のデザインの AI ドラフトで、研究単位（study）の項目に tab1.csv のキー列名（study_label・registration_id・n_documents）が提案されたら、`_reported` を付けて自動改名します。再ドラフトでは、現行の版に同じレベル・同じ名前の項目がある提案は改名せず（アウトカムの結果の ma.csv のキー列名も同じ）、改名するときは現行の版の項目名とも重ならない名前にします（2026-11-22、issue #553）。
