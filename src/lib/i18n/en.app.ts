@@ -56,7 +56,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
 
   'criteria.title': 'Acceptance criteria',
   'criteria.empty': 'No acceptance criteria have been confirmed. Set them before the pilot.',
-  'criteria.reference': 'Reference: The CESAR project used sensitivity of 92% and a major-error rate of 3% as stopping boundaries for data extraction. The form starts with the previous version’s values, or these reference values (accuracy 92%, false-positive proportion 3%) if no version exists. Adjust them as needed.',
+  'criteria.reference': 'Reference: Without a previous version, the form starts with accuracy 92% and false-positive proportion 3%. These starting values are adapted from the CESAR project’s stopping (futility) boundaries for data extraction: sensitivity 92% and major error proportion 3%, both point estimates. In CESAR, sensitivity below 92% or a major error proportion above 3% means stopping. They are minimum bars, not targets for passing. With a previous version, the form starts with its values. Adjust them as needed.',
   'criteria.minAccuracy': 'Accuracy ≥ (%)',
   'criteria.maxFabricationRate': 'False-positive proportion ≤ (%)',
   'criteria.maxOmissionRate': 'False-negative proportion ≤ (%)',

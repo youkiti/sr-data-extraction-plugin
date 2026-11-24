@@ -1399,13 +1399,13 @@
           <p><span class="ja" lang="ja">パイロットの前に owner が合格基準を決め、「確定する」から確認して保存します。
             正確度の下限、偽陽性・偽陰性・誤分類の割合の上限（0〜100%、4 つのうち 1 つ以上）、任意の最小セル数、
             比べる相手（独立の人、裁定後の値、独立抽出者の最終値、AI を見ながら判定した人）、対象レベルを指定します。
-            入力欄には前の版の値を、版がなければ CESAR の参考値として正確度 92%、偽陽性の割合 3% を入れます。必要に応じて書き換えてください。編集済みの下書きは上書きしません。
+            入力欄には前の版の値を入れます。版がなければ、CESAR のデータ抽出の中止境界（感度 92%、重大エラー割合 3%、いずれも点推定）を出発点に流用し、正確度 92%、偽陽性の割合 3% を入れます。CESAR では中止を決める最低ラインで、合格の目標ではありません。必要に応じて書き換えてください。編集済みの下書きは上書きしません。
             AI を見ながら判定した人との比較は独立比較ではありません。
             実行中・中断・失敗を含め、一度でもパイロットを始めた後の確定は、開始後に確定した版として記録します。</span>
             <span class="en" lang="en">Before the pilot, the owner sets and confirms acceptance criteria: minimum accuracy,
             maximum false-positive, false-negative and misclassification proportions (0–100%; at least one proportion), optional minimum compared cells,
             comparator (independent reviewers, consensus, independent final values, or AI-assisted final values), and entity levels.
-            Inputs start with the previous version’s values, or the CESAR reference values of accuracy 92% and false-positive proportion 3% if no version exists. Adjust them as needed. Edited drafts are preserved.
+            Inputs start with the previous version’s values. If no version exists, they start with accuracy 92% and false-positive proportion 3%, adapted from the CESAR project’s stopping (futility) boundaries for data extraction (sensitivity 92% and major error proportion 3%, both point estimates). In CESAR these are minimum bars for stopping, not targets for passing. Adjust them as needed. Edited drafts are preserved.
             AI-assisted review is not an independent comparison.
             Confirmation after any pilot has started, including running, interrupted or failed runs, is recorded as occurring after the pilot began.</span></p>
           <p><span class="ja" lang="ja">「結果を計算」で完了済みパイロットの研究を比較します。基準をすべて満たせば「満たす」、
