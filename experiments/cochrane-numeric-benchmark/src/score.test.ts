@@ -53,10 +53,11 @@ function handFixture() {
   const items: ScoringItem[] = [];
   // 手計算: REV1 reported は 1/4、REV2 は 1/1、macro=.625、micro=.4。
   // reported の wrong=1/5、not_reported=1/5、not_returned=1/5。
-  // 本文なしは回答 1/2、正確度=(2+1)/(5+2)=3/7、derivable=1/1、全 gold=5/9。
+  // 本文なしは回答 1/3、正確度=(2+1)/(5+3)=3/8、derivable=1/1、全 gold=5/10。
   const rows: [string, Label, string | null, boolean][] = [
     ['2', 'reported', '2', false], ['2', 'reported', '3', false], ['2', 'reported', null, true], ['2', 'reported', null, false],
     ['2', 'not_in_documents', '2', false], ['2', 'not_in_documents', null, true], ['2', 'derivable', '2', false], ['2', 'different_value', '2', false],
+    ['2', 'not_in_documents', null, false],
   ];
   rows.forEach(([gold, label, text, nr], i) => {
     values.push(value({ itemIndex: i + 1, rowId: `REV1:r:${i + 1}`, gold, label }));
@@ -72,21 +73,26 @@ test('二レビューの手計算による全副指標と層別、different_valu
   const records = [...runs].map(([studyKey, r], i) => ({ ...r, studyKey, runId: `run${i}`, elapsedMs: i ? 300 : 100 } as RunRecord));
   const ledger: LedgerEntry[] = records.flatMap((r) => [1, 2].map((attempt) => ({ runId: r.runId, model: 'claude-sonnet-5-5',
     studyKey: r.studyKey, attempt, attemptAt: '2026-11-24T00:00:00Z', outcome: 'ok', tokensIn: 1000000,
-    tokensOut: 0, cachedTokensIn: 0, guardCostUsd: 2, costBasis: 'measured', elapsedMs: 100 })));
+    tokensOut: 0, cachedTokensIn: 0, guardCostUsd: 2, costBasis: 'measured', elapsedMs: attempt === 1 ? 50 : 150,
+    httpStatus: attempt === 1 ? 503 : null, failureClass: attempt === 1 ? 'server_error' : null })));
   const m = metrics(rows, records, ledger);
   assert.equal(m.primary, 0.625); assert.equal(m.micro, 0.4); assert.equal(m.reviewsUsed, 2);
   assert.equal(m.wrongValueRate, 0.2); assert.equal(m.notReportedMissRate, 0.2); assert.equal(m.notReturnedRate, 0.2);
-  assert.equal(m.answerRateNotInDocuments, 0.5); assert.equal(m.accuracy, 3 / 7); assert.equal(m.derivableMatch, 1);
-  assert.equal(m.goldMatch, 5 / 9); assert.equal(m.differentValueCount, 1);
+  assert.equal(m.answerRateNotInDocuments, 1 / 3); assert.equal(m.accuracy, 3 / 8); assert.equal(m.derivableMatch, 1);
+  assert.equal(m.notReturnedNotInDocuments, 1);
+  assert.equal(m.goldMatch, 5 / 10); assert.equal(m.differentValueCount, 1);
   // 引用付き候補は 6、failed は 1。費用は各研究 2 試行 × $2。
   assert.equal(m.anchorSuccessRate, 5 / 6); assert.equal(m.reportCostPerStudy, 4); assert.equal(m.listCostPerStudy, 4);
-  assert.equal(m.elapsedMsMean, 200); assert.equal(m.elapsedMsMedian, 200); assert.equal(m.failedRuns, 0); assert.equal(m.failedRunRate, 0);
-  for (const dimension of ['tier', 'dataType', 'valueKind', 'provenance', 'figureOnly']) {
-    const slice = Object.values(m.strata[dimension]!)[0]!; assert.equal(slice.primary, 0.625); assert.equal(slice.micro, 0.4); assert.equal(slice.values, 9);
+  assert.equal(m.elapsedMsSuccessfulRunMean, 200); assert.equal(m.elapsedMsSuccessfulRunMedian, 200);
+  assert.equal(m.elapsedMsPerRequestMean, 100); assert.equal(m.elapsedMsPerRequestMedian, 100);
+  assert.equal(m.retries, 2); assert.equal(m.failureClasses.null, 2); assert.equal(m.failureClasses.server_error, 2);
+  assert.equal(m.failedRuns, 0); assert.equal(m.failedRunRate, 0);
+  for (const dimension of ['tier', 'dataType', 'valueKind', 'provenance', 'figureOnly', 'relabelled']) {
+    const slice = Object.values(m.strata[dimension]!)[0]!; assert.equal(slice.primary, 0.625); assert.equal(slice.micro, 0.4); assert.equal(slice.values, 10);
   }
   const failedRecords = [{ ...records[0]!, outcome: 'request_failed' as const }, records[1]!];
   const failedMetrics = metrics(rows, failedRecords, ledger);
-  assert.equal(failedMetrics.failedRuns, 1); assert.equal(failedMetrics.failedRunRate, 0.5); assert.equal(failedMetrics.elapsedMsMean, 300);
+  assert.equal(failedMetrics.failedRuns, 1); assert.equal(failedMetrics.failedRunRate, 0.5); assert.equal(failedMetrics.elapsedMsSuccessfulRunMean, 300);
   assertLabels(values); assert.throws(() => assertLabels([value({ label: null })]), /未裁定/);
 });
 test('ブートストラップ乱数の固定値と type 7 分位数', () => {

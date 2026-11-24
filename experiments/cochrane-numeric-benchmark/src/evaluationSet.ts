@@ -47,7 +47,7 @@ export interface Reference {
   label: Label | null;
 }
 export interface Provenance { row_id: string; values: Record<string, string>; provenance: string }
-export interface Judgment { task_id: string; item: number; field: string; label: string | null; source?: string }
+export interface Judgment { task_id: string; item: number; field: string; label: string | null; source?: string; report_file?: string }
 export interface EvalValue {
   tier: Tier;
   reviewId: string;
@@ -62,6 +62,9 @@ export interface EvalValue {
   label: Label | null;
   provenance: string;
   figureOnly: boolean | null;
+  upstreamLabel?: Label | null;
+  needsRecheck?: boolean;
+  relabelled?: boolean;
 }
 export interface Page { page: number; text: string }
 export interface UsableDocument extends Document { pages: Page[] }
@@ -91,7 +94,7 @@ export function usableDocuments(study: Study, states: DocumentState[]): { docume
   });
   return { documents, reason: documents.length ? null : hasPdf ? 'no_text_layer' : 'no_pdf' };
 }
-export function evaluationValues(study: Study, refs: Reference[], provenance: Provenance[], judgments: Judgment[]): EvalValue[] {
+export function evaluationValues(study: Study, refs: Reference[], provenance: Provenance[], judgments: Judgment[], passedDocIds = study.task.documents.map((doc) => doc.pmcid)): EvalValue[] {
   const refMap = new Map(refs.map((ref) => [`${ref.row_id}\t${ref.field}`, ref]));
   const provMap = new Map(provenance.map((row) => [row.row_id, row]));
   const reported = new Map<string, Judgment[]>();
@@ -116,6 +119,15 @@ export function evaluationValues(study: Study, refs: Reference[], provenance: Pr
     }
     return { tier: study.tier, reviewId: study.reviewId, studyKey: study.studyKey, rowId: item.row_id,
       itemIndex: index + 1, field, group, valueKind: kind === 'cases' ? 'events' : kind as 'n' | 'mean' | 'sd',
-      dataType: item.data_type, gold, label: ref.label, provenance: prov!.provenance, figureOnly };
+      dataType: item.data_type, gold, label: ref.label, upstreamLabel: ref.label, relabelled: false,
+      needsRecheck: study.task.documents.some((doc) => !passedDocIds.includes(doc.pmcid)) &&
+        (ref.label === 'reported' || ref.label === 'derivable') && !judgments.some((reader) =>
+          reader.task_id === ref.task_id && reader.item === ref.item && reader.field === field && reader.label === ref.label &&
+          passedDocIds.some((id) => reportBelongsTo(reader.report_file, id))),
+      provenance: prov!.provenance, figureOnly };
   }));
+}
+export function reportBelongsTo(file: string | undefined, docId: string): boolean {
+  const id = docId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?:^|[\\\\/])(?:report|fig)_${id}[._]`).test(file ?? '');
 }

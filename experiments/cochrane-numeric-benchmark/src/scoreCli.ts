@@ -4,7 +4,8 @@ import { EXTRACT_DATA_PROMPT_VERSION } from '../../../src/features/extraction/sk
 import { goldLockPath, runsDir, scoresDir, selectedModels, selectedTiers } from './config';
 import { evaluationCounts, inputRoot, loadEvaluation, printCounts, readOptional, writeJson } from './io';
 import { assertLabels, verifyGoldLock, type GoldLock } from './goldLock';
-import { readLedger } from './ledger';
+import { readLedger, assertRunFilesLedger } from './ledger';
+import { loadRecheck } from './recheck';
 import { harnessCommit, inputManifest, runIdFor } from './resume';
 import { scoreValues, metrics, type ScoredValue } from './score';
 import { bootstrap } from './bootstrap';
@@ -17,13 +18,15 @@ try {
   const root = await inputRoot();
   const lock = await readOptional<GoldLock>(goldLockPath());
   if (!lock) throw new Error('gold-lock.json がありません。lock-gold を先に実行してください');
-  await verifyGoldLock(root, lock);
   const set = await loadEvaluation(root);
   printCounts(set);
   assertLabels(set.values);
-  await inputManifest(set, true);
+  set.values = (await loadRecheck(set.values)).values;
+  await verifyGoldLock(root, lock, set.values);
+  await inputManifest(set, true, root, true);
   const models = selectedModels();
-  const ledger = await readLedger(path.join(runsDir(), '_ledger.jsonl'));
+  const ledger = await readLedger(path.join(runsDir(), '_ledger.jsonl'), true);
+  await assertRunFilesLedger(runsDir(), ledger);
   const allRuns = new Map<string, RunRecord[]>();
   let missing = 0;
   for (const model of models) {
@@ -47,7 +50,8 @@ try {
     rowsByModel.set(model.id, rows);
     summaries[model.id] = metrics(rows, runs, ledger);
     output.push(...rows.map((row) => ({ model: model.id, studyKey: row.studyKey, rowId: row.rowId, field: row.field,
-      label: row.label, state: row.answer.state, errorCategory: row.errorCategory })));
+      label: row.label, upstreamLabel: row.upstreamLabel, needsRecheck: row.needsRecheck, relabelled: row.relabelled,
+      state: row.answer.state, errorCategory: row.errorCategory })));
   }
   await mkdir(scoresDir(), { recursive: true });
   const excluded = Object.fromEntries(['no_pdf', 'no_text_layer', 'no_gold'].map((reason) =>

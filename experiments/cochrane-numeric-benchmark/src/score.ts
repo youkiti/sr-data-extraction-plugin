@@ -63,6 +63,10 @@ export function scoreValues(values: EvalValue[], runs: Map<string, ScoreRun>): S
 }
 const ratio = (n: number, d: number) => d ? n / d : null;
 const mean = (numbers: number[]) => ratio(numbers.reduce((a, b) => a + b, 0), numbers.length);
+const median = (numbers: number[]) => {
+  const sorted = [...numbers].sort((a, b) => a - b);
+  return sorted.length ? (sorted[Math.floor((sorted.length - 1) / 2)]! + sorted[Math.floor(sorted.length / 2)]!) / 2 : null;
+};
 export function sensitivity(rows: ScoredValue[]) {
   const reviews = [...new Set(rows.map((row) => row.reviewId))].sort();
   const perReview = reviews.map((reviewId) => {
@@ -84,23 +88,30 @@ export function metrics(rows: ScoredValue[], runs: RunRecord[], ledger: LedgerEn
   const elapsed = runs.filter((run) => run.outcome !== 'request_failed').map((run) => run.elapsedMs).sort((a, b) => a - b);
   const runIds = new Set(runs.map((run) => run.runId));
   const attempts = ledger.filter((entry) => runIds.has(entry.runId));
+  const elapsedRequests = attempts.map((entry) => entry.elapsedMs);
+  const failureClasses = Object.fromEntries(['null', 'rate_limit', 'server_error', 'network', 'timeout', 'output_limit', 'retryable_flag', 'other'].map((kind) =>
+    [kind, attempts.filter((entry) => String(entry.failureClass ?? null) === kind).length]));
   const breakdown: Record<string, number> = {};
   for (const row of rows) if (row.errorCategory) breakdown[row.errorCategory] = (breakdown[row.errorCategory] ?? 0) + 1;
   const strata: Record<string, Record<string, ReturnType<typeof sensitivity>>> = {};
-  for (const key of ['tier', 'dataType', 'valueKind', 'provenance', 'figureOnly'] as const) {
-    strata[key] = Object.fromEntries([...new Set(rows.map((row) => String(row[key])))].sort().map((value) =>
-      [value, sensitivity(rows.filter((row) => String(row[key]) === value))]));
+  for (const key of ['tier', 'dataType', 'valueKind', 'provenance', 'figureOnly', 'relabelled'] as const) {
+    const stratum = (row: ScoredValue) => String(key === 'relabelled' ? row.relabelled ?? false : row[key]);
+    strata[key] = Object.fromEntries([...new Set(rows.map(stratum))].sort().map((value) =>
+      [value, sensitivity(rows.filter((row) => stratum(row) === value))]));
   }
   return { ...sensitivity(rows), wrongValueRate: ratio(count(reported, ['wrong_value', 'multiple_values']), reported.length),
     notReportedMissRate: ratio(count(reported, ['not_reported']), reported.length), notReturnedRate: ratio(count(reported, ['not_returned']), reported.length),
     answerRateNotInDocuments: ratio(count(absent, ['match', 'wrong_value', 'multiple_values']), absent.length),
-    accuracy: ratio(count(reported, ['match']) + count(absent, ['not_reported', 'not_returned']), reported.length + absent.length),
+    accuracy: ratio(count(reported, ['match']) + count(absent, ['not_reported']), reported.length + absent.length),
+    notReturnedNotInDocuments: count(absent, ['not_returned']),
     derivableMatch: ratio(count(derivable, ['match']), derivable.length), goldMatch: ratio(count(rows, ['match']), rows.length),
     differentValueCount: rows.filter((row) => row.label === 'different_value').length,
     anchorSuccessRate: ratio([...quoted].filter((item) => item.anchorStatus !== null && item.anchorStatus !== 'failed').length, quoted.size),
     reportCostPerStudy: ratio(attempts.reduce((n, entry) => n + reportCostUsd(entry.model, entry.tokensIn, entry.tokensOut, entry.cachedTokensIn, Date.parse(entry.attemptAt)), 0), runs.length),
     listCostPerStudy: ratio(attempts.reduce((n, entry) => n + entry.guardCostUsd, 0), runs.length),
-    elapsedMsMean: mean(elapsed), elapsedMsMedian: elapsed.length ? (elapsed[Math.floor((elapsed.length - 1) / 2)]! + elapsed[Math.floor(elapsed.length / 2)]!) / 2 : null,
+    elapsedMsSuccessfulRunMean: mean(elapsed), elapsedMsSuccessfulRunMedian: median(elapsed),
+    elapsedMsPerRequestMean: mean(elapsedRequests), elapsedMsPerRequestMedian: median(elapsedRequests),
+    failureClasses, retries: attempts.filter((entry) => entry.attempt > 1).length,
     failedRuns: runs.filter((run) => run.outcome !== 'ok').length, runCount: runs.length,
     failedRunRate: ratio(runs.filter((run) => run.outcome !== 'ok').length, runs.length), breakdown, strata };
 }

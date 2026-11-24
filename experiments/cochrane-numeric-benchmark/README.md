@@ -11,7 +11,7 @@ issue #356 の評価 A。[評価計画 §3–§5・§7–§9](../../docs/evaluat
 3. `BENCH_DRY_RUN=1` を設定して `npm run run`。キー不要・書き込みなしで全依頼を組み立て、対象・除外・予定・スキップ件数、項目数、文書数、user プロンプト文字数だけを確認する。
 4. dry run を解除し、`BENCH_STUDIES` に 3〜5 研究キーをカンマ区切りで指定して疎通確認する。`BENCH_RUN_LABEL=smoke` など本走と別のラベルを使う。実費と処理完了だけを確認し、この段階では採点しない。
 5. 研究の限定を解除し、新しい本走ラベルと明示的な費用上限を設定して `npm run run`。同じ設定で再実行すると未確定 run だけを実行する。
-6. cc-by-nc の裁定終了後、`npm run lock-gold`。表示された全桁ハッシュを REPORT に記録する。
+6. cc-by-nc の裁定終了後、下記の再チェックを終えて `npm run lock-gold`。表示された全桁ハッシュを REPORT に記録する。
 7. `npm run score`。lock のハッシュ、入力 manifest、全ラベル、全 run の存在を確認してから採点する。
 
 上流 abd2102 での参考値（コードは固定件数を仮定せず毎回数える）: cc-by は 2 レビュー・42 研究・223 項目・1,050 値、cc-by-nc は 15 レビュー・102 研究・924 項目・4,374 値。各 tier で 3 研究に PDF パスがない。640 項目の両群ラベルが空で比較名には群が書かれている。PDF の欠落・空の文字層による除外後の件数を実行時に出力する。
@@ -30,9 +30,14 @@ task gold が trim 後に空の値は参照行の検索・整合性検査・採�
 | `BENCH_DRY_RUN` | 1 なら API 呼び出し・ファイル書き込みなし |
 | `BENCH_COST_LIMIT_USD` | 実行時に必須の正数。既定値なし |
 | `BENCH_COST_PAUSE_USD` | 正かつ上限以下。既定は上限 × 0.875 |
+| `BENCH_OTHER_SPEND_USD` | 0 以上の数値、既定 0。評価 B と、同じ予算から使ったその他の費用 |
 | `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` | 本走に必要。環境変数、当フォルダ `.env`、リポジトリ `.env` の順で優先 |
 
 未対応の部分集合は拒否する。キーはログに出さない。評価 B と同じキーを使う実行や拡張の利用を重ねない（キーごとの並列制約は当プロセス内で保証する）。入力 manifest は対象集合も固定するため、部分集合を変えるときも新しいラベルを使う。
+
+## 渡した文書に基づく再チェック
+
+利用可能な PDF または文字層がなく文書を一部省いた研究では、上流が reported / derivable で、同じラベルを付けた読み手の根拠文書が一つも依頼に含まれない値を再判定する。全資料を渡す研究は対象外。`npm run recheck-list` が解析名・比較・群・subgroup・清掃済み脚注・gold と文書 ID を `outputs/recheck-needed.jsonl` に書く。拡張の出力を見ない読み手が、渡した文書だけを読み、`outputs/recheck-labels.jsonl` に `{ "rowId": "行 ID", "field": "フィールド", "label": "not_in_documents" }` 形式で記録する。label は reported / derivable / different_value / not_in_documents。必要なラベルが揃うまで lock-gold と score は拒否し、確定時にはファイルの sha256 も固定する。run は再チェック前にも実行できる。
 
 ## 変換と採点の確定事項
 
@@ -45,9 +50,11 @@ task gold が trim 後に空の値は参照行の検索・整合性検査・採�
 - **ハーネス設計**: レビューを reviewId 順、研究を研究キー順にし、mulberry32(20261122) でレビュー、その中の研究を復元抽出する。2,000 回で全モデルに同じ抽出を使う。reported 分母ゼロのレビュー抽出は平均から除き回数を記録し、全レビューがゼロの反復も記録する。95% 区間は type 7 分位数。対応差はモデル定義順の二番目−最初。
 - **ハーネス設計**: 監視費用はキャッシュ割引なしの定価。報告費用は本番の日時別単価（Gemini の期間割引を含む）と Sonnet 補助単価。tokensOut は思考込みで追加加算しない。失敗は usage 実測を優先、出力打ち切りで usage がなければ入力文字数÷4 の切り上げと出力 65,536、それ以外は入力だけ見積もる。全試行を台帳へ先に書き、採点時の研究費用は再試行・中断前の試行も合算する。
 
-成功応答でも入力トークン数が null なら文字数÷4 を切り上げ、費用基準を `estimated_input_tokens` とする。run の費用欄は最後の試行分で、`attemptsGuardCostUsd` は今回の実行内の全試行分（過去の中断分を除く）；累計監視費用が停止値に達すると理由と再開方法を stderr に一度表示して終了コード 1 で停止する。
+成功応答でも入力トークン数が null なら文字数÷4 を切り上げ、費用基準を `estimated_input_tokens` とする。run の費用欄は最後の試行分で、`attemptsGuardCostUsd` は今回の実行内の全試行分（過去の中断分を除く）；累計監視費用が停止値に達すると理由と再開方法を stderr に一度表示して終了コード 1 で停止する。計画の 80 USD は疎通・本走・評価 B の共通予算で、全 `outputs/runs-*/_ledger.jsonl` の監視費用と `BENCH_OTHER_SPEND_USD` を合算し、開始時にラベル別とその他の内訳を表示する。再開後も run ごとの台帳行数から次の試行番号を復元し、4 試行済みなら追加依頼せず失敗を確定する。
 
 主指標は reported のレビュー単位感度の単純平均。ゼロ reported レビューを列挙する。副指標は micro、誤値、二種類の無回答、本文なしへの回答、正確度、derivable 一致、全 gold 一致、引用照合、費用、応答時間、失敗割合。different_value は件数のみとし、ラベルを使わない全 gold 一致と全候補の引用照合には含む。層別も同じ主定義と micro・件数を出す。
+
+正確度で本文なしの正答に数えるのは明示的な not_reported のみ。not_returned は別件数にする。応答時間は台帳の全試行の依頼単位と、従来の応答が得られた run 単位を明示的な別名で保存する。台帳には HTTP status と失敗分類も記録し、集計に分類別試行数・再試行数を含める。再チェック済み件数とラベル遷移は tier 別に、relabelled は層別にも保存する。
 
 本番との差は **1 研究の全項目を一つの依頼で送ること**（本番は分割する）。temperature・応答スキーマは本番を使い、出力上限や reasoning effort を上書きしない。入力は文字層だけなので図にだけある値の抽出には限界がある。
 
@@ -56,6 +63,8 @@ task gold が trim 後に空の値は参照行の検索・整合性検査・採�
 `outputs/textlayer/` は PDF ハッシュ付き文字層、`outputs/runs-<label>/` は `_inputs.json`・`_ledger.jsonl` と run JSON、`outputs/gold-lock.json` は gold 固定情報、`outputs/scores-<label>/` は summary.json と values.jsonl。これらと `.env` は git 対象外。破損 run は退避、確定した失敗は永久にスキップ、版数違い・入力ハッシュ違いでは新しいラベルが必要。
 
 `_inputs.json` は空 gold の件数も保存し、`summary.json` の `inputs` は採点日時、ハーネス commit、プロンプト版数、run ラベル、モデル・tier、gold lock 全体、tier 別のレビュー・研究・項目・値・ラベル別値数、理由別除外数と空 gold 件数を記録する。実行・採点の開始時にもハーネス commit とプロンプト版数を表示する。
+
+入力 manifest は全予定 run の messages・chatOptions の sha256 と既存のファイルハッシュを含む。両 tier の task gold と cc-by の final は既定接頭辞も検証し、全桁を保存する。裁定中の cc-by-nc final は manifest に含めない。既存 run または台帳がある場合、manifest 欠落では実行を拒否する。採点には manifest・台帳が必須で、台帳行のない run も拒否する。
 
 公開対象はコード・マニフェスト・この手順・後日の REPORT の集計値。本文、gold の複製、依頼、応答、引用原文は公開しない。values.jsonl は引用・raw response を含まないが、公開は上流 gold の公開範囲に従い、tier 別ライセンス・別レコードで扱う。未公開 gold 部分の値別採点は保留する（計画 §9）。
 

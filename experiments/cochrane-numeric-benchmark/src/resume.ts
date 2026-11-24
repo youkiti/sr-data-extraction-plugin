@@ -1,22 +1,26 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import { EXTRACT_DATA_PROMPT_VERSION } from '../../../src/features/extraction/skills/extractData';
-import { repoRoot, runsDir } from './config';
+import { repoRoot, runsDir, TIERS, EXPECTED_SHA256_PREFIX, selectedModels, type Tier } from './config';
 import type { LedgerEntry } from './ledger';
 import type { EvaluationSet } from './io';
-import { readOptional, writeJson } from './io';
+import { readOptional, writeJson, fileHash, goldFile, refDir, sha256 } from './io';
+import { buildStudyRequest } from './prompt';
+import { RETRY_MAX_ATTEMPTS } from './retry';
 
 export type RunState = { kind: 'missing' } | { kind: 'corrupt' } |
   { kind: 'parsed'; promptVersion: number; outcome: 'ok' | 'format_error' | 'request_failed' };
 // 欠落/履歴なし、確定済み（失敗含む）、破損、欠落/履歴あり、版数違いの全状態を扱う。
-export function resumeDecision(state: RunState, ledger: readonly LedgerEntry[], version: number): 'execute' | 'backup_execute' | 'skip' {
-  void ledger; // 欠落時の過去費用は台帳に残し、再開判断の試行上限には使わない。
-  if (state.kind === 'missing') return 'execute';
-  if (state.kind === 'corrupt') return 'backup_execute';
+export type ResumeAction = { kind: 'execute' | 'backup_execute'; attempt: number } | { kind: 'finalise'; last: LedgerEntry } | { kind: 'skip' };
+export function resumeDecision(state: RunState, ledger: readonly LedgerEntry[], version: number): ResumeAction {
+  if (state.kind === 'missing' || state.kind === 'corrupt') {
+    if (ledger.length >= RETRY_MAX_ATTEMPTS) return { kind: 'finalise', last: ledger[ledger.length - 1]! };
+    return { kind: state.kind === 'corrupt' ? 'backup_execute' : 'execute', attempt: ledger.length + 1 };
+  }
   if (state.promptVersion !== version) throw new Error('プロンプト版数が違います。新しい BENCH_RUN_LABEL を指定してください');
-  return 'skip';
+  return { kind: 'skip' };
 }
 export function parseRunState(raw: string | null): RunState {
   if (raw === null) return { kind: 'missing' };
@@ -45,11 +49,41 @@ export async function harnessCommit(): Promise<string | null> {
   try { return (await promisify(execFile)('git', ['rev-parse', 'HEAD'], { cwd: repoRoot })).stdout.trim(); }
   catch { return null; /* git の無い配布物も実行可能 */ }
 }
-export async function inputManifest(set: EvaluationSet, dry: boolean): Promise<void> {
-  const current: InputManifest = { hashes: set.hashes, promptVersion: EXTRACT_DATA_PROMPT_VERSION,
+export function assertInputHash(tier: Tier, name: string, hash: string): void {
+  const prefix = EXPECTED_SHA256_PREFIX[tier][name];
+  if (prefix && !hash.startsWith(prefix)) throw new Error(`gold の既定ハッシュ接頭辞と一致しません: ${tier}/${name}`);
+}
+export async function plannedHashes(set: EvaluationSet, root: string): Promise<Record<string, string>> {
+  const hashes = { ...set.hashes, ...requestHashes(set) };
+  for (const tier of TIERS) for (const name of Object.keys(EXPECTED_SHA256_PREFIX[tier])) {
+    const file = name === 'task3_numeric.jsonl' ? goldFile(root, tier) : path.join(refDir(root, tier), name);
+    const hash = await fileHash(file);
+    assertInputHash(tier, name, hash);
+    hashes[`upstream/${path.relative(root, file).replace(/\\/g, '/')}`] = hash;
+  }
+  return hashes;
+}
+export function requestHashes(set: EvaluationSet): Record<string, string> {
+  const hashes: Record<string, string> = {};
+  for (const model of selectedModels()) for (const study of set.studies) {
+    const { messages, chatOptions } = buildStudyRequest(study, set.documents.get(study.studyKey)!);
+    hashes[`request/${runIdFor(model.id, study.studyKey)}`] = sha256(JSON.stringify({ messages, chatOptions }));
+  }
+  return hashes;
+}
+export async function assertManifestPresent(file: string, required: boolean): Promise<InputManifest | null> {
+  const previous = await readOptional<InputManifest>(file);
+  let existing = false;
+  try { existing = (await readdir(path.dirname(file))).some((name) => name === '_ledger.jsonl' || (name.endsWith('.json') && !name.startsWith('_'))); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  if (!previous && (required || existing)) throw new Error('_inputs.json がありません。新しい BENCH_RUN_LABEL を指定してください');
+  return previous;
+}
+export async function inputManifest(set: EvaluationSet, dry: boolean, root: string, required = false): Promise<void> {
+  const current: InputManifest = { hashes: await plannedHashes(set, root), promptVersion: EXTRACT_DATA_PROMPT_VERSION,
     harnessCommit: await harnessCommit(), excluded: set.excluded, emptyGold: set.emptyGold };
   const file = path.join(runsDir(), '_inputs.json');
-  const previous = await readOptional<InputManifest>(file);
+  const previous = await assertManifestPresent(file, required);
   if (previous) checkManifest(previous, current);
   else if (!dry) await writeJson(file, current);
 }

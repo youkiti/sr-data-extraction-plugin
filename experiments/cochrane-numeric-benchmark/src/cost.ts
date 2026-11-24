@@ -28,6 +28,12 @@ export function costLimits(env: NodeJS.ProcessEnv = process.env) {
   if (!Number.isFinite(pause) || pause <= 0 || pause > limit) throw new Error('BENCH_COST_PAUSE_USD は正かつ上限以下にしてください');
   return { limit, pause };
 }
+export function otherSpend(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.BENCH_OTHER_SPEND_USD;
+  const value = raw === undefined ? 0 : Number(raw);
+  if (raw?.trim() === '' || !Number.isFinite(value) || value < 0) throw new Error('BENCH_OTHER_SPEND_USD は 0 以上の数値にしてください');
+  return value;
+}
 // extraction-benchmark-real/src/costGuard.ts の redactSecret を移植。
 export function redactSecret(text: string, secret: string): string {
   if (secret === '') return text;

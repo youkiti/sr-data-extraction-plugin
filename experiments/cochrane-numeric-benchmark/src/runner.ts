@@ -12,9 +12,9 @@ import { anchorQuoteSegments } from '../../../src/features/anchoring/anchorQuote
 import { benchRoot, repoRoot, runsDir, selectedModels } from './config';
 import { inputRoot, loadEvaluation, printCounts, writeJson } from './io';
 import { buildStudyRequest, promptCharacters } from './prompt';
-import { classifyFailure, errorInfo, retryDecision, RETRY_MAX_ATTEMPTS } from './retry';
-import { costLimits, failureUsage, guardCostUsd, reportCostUsd, safeError, type CostBasis } from './cost';
-import { ledgerWriter, readLedger } from './ledger';
+import { classifyFailure, errorInfo, failureClass, retryDecision, RETRY_MAX_ATTEMPTS } from './retry';
+import { costLimits, failureUsage, guardCostUsd, reportCostUsd, safeError, otherSpend, type CostBasis } from './cost';
+import { ledgerWriter, readLedger, budgetSpend, type LedgerEntry } from './ledger';
 import { harnessCommit, inputManifest, readRunState, resumeDecision, runIdFor } from './resume';
 import type { Study, UsableDocument } from './evaluationSet';
 
@@ -49,6 +49,13 @@ export function anchorItems(items: ValidatedAiItem[], docs: UsableDocument[]) {
   });
 }
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+export function interruptedRecord(study: Study, last: LedgerEntry): RunRecord {
+  return { ...last, tier: study.tier, reviewId: study.reviewId, promptVersion: EXTRACT_DATA_PROMPT_VERSION,
+    executedAt: last.attemptAt, attempts: last.attempt, thoughtsTokens: null, sentSettings: null, responseModel: null,
+    listCostUsd: last.guardCostUsd, attemptsGuardCostUsd: 0,
+    reportCostUsd: reportCostUsd(last.model, last.tokensIn, last.tokensOut, last.cachedTokensIn, Date.parse(last.attemptAt)),
+    outcome: 'request_failed', error: '再試行の上限に達した後に中断されていました', items: [], rejected: [], rawText: null };
+}
 
 export async function main(): Promise<void> {
   let executed = 0, skipped = 0, failed = 0, cumulative = 0;
@@ -65,7 +72,10 @@ export async function main(): Promise<void> {
     const dir = runsDir();
     const ledgerFile = path.join(dir, '_ledger.jsonl');
     const ledger = await readLedger(ledgerFile);
-    cumulative = ledger.reduce((sum, entry) => sum + entry.guardCostUsd, 0);
+    const spend = await budgetSpend(path.join(benchRoot, 'outputs'), otherSpend());
+    cumulative = spend.total;
+    for (const [label, cost] of Object.entries(spend.labels)) console.log(`guard cost / ${label}: $${cost.toFixed(6)}`);
+    console.log(`guard cost / other: $${spend.other.toFixed(6)}, total: $${spend.total.toFixed(6)}`);
     const plans: { model: typeof models[number]; study: Study; docs: UsableDocument[]; runId: string;
       file: string; action: ReturnType<typeof resumeDecision>; request: ReturnType<typeof buildStudyRequest> }[] = [];
     for (const model of models) for (const study of set.studies) {
@@ -75,28 +85,35 @@ export async function main(): Promise<void> {
       const docs = set.documents.get(study.studyKey)!;
       plans.push({ model, study, docs, runId, file, action, request: buildStudyRequest(study, docs) });
     }
-    await inputManifest(set, dry);
-    skipped = plans.filter((plan) => plan.action === 'skip').length;
+    await inputManifest(set, dry, root);
+    skipped = plans.filter((plan) => plan.action.kind === 'skip').length;
     if (dry) {
       const userChars = plans.reduce((sum, plan) => sum + promptCharacters(plan.request.messages.slice(1)), 0);
       console.log(`planned: ${plans.length - skipped}, skip: ${skipped}, items: ${plans.reduce((n, p) => n + p.study.items.length, 0)}, documents: ${plans.reduce((n, p) => n + p.docs.length, 0)}, user-prompt characters: ${userChars}`);
       return;
     }
-    // 全キーの存在を呼び出し前に検査し、途中で別モデルだけが進むことを防ぐ。
-    for (const model of models) if (!process.env[model.keyEnv]?.trim()) throw new Error(`${model.keyEnv} がありません`);
+    for (const plan of plans) if (plan.action.kind === 'finalise') {
+      await writeJson(plan.file, interruptedRecord(plan.study, plan.action.last));
+      executed++; failed++;
+    }
+    // 依頼が残る全キーを呼び出し前に検査し、途中で別モデルだけが進むことを防ぐ。
+    const activeModels = models.filter((model) => plans.some((plan) => plan.model.id === model.id &&
+      (plan.action.kind === 'execute' || plan.action.kind === 'backup_execute')));
+    for (const model of activeModels) if (!process.env[model.keyEnv]?.trim()) throw new Error(`${model.keyEnv} がありません`);
     await mkdir(dir, { recursive: true });
     const append = ledgerWriter(ledgerFile);
     let stopped = false;
-    const workers = [...new Set(models.map((model) => model.keyEnv))];
+    const workers = [...new Set(activeModels.map((model) => model.keyEnv))];
     const worker = async (keyEnv: string) => {
       let lastFinished = 0;
-      for (const plan of plans.filter((entry) => entry.model.keyEnv === keyEnv && entry.action !== 'skip')) {
+      for (const plan of plans.filter((entry) => entry.model.keyEnv === keyEnv && entry.action.kind !== 'skip')) {
         if (stopped) return;
-        if (plan.action === 'backup_execute') await rename(plan.file, path.join(dir, `_corrupt-${Date.now()}__${plan.runId}.json.bak`));
+        if (plan.action.kind === 'skip' || plan.action.kind === 'finalise') continue;
+        if (plan.action.kind === 'backup_execute') await rename(plan.file, path.join(dir, `_corrupt-${Date.now()}__${plan.runId}.json.bak`));
         const provider = createProvider({ apiKey: process.env[keyEnv]!, model: plan.model.id, fetch: timeoutFetch });
         const chars = promptCharacters(plan.request.messages);
         let attemptsGuardCostUsd = 0;
-        for (let attempt = 1; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
+        for (let attempt = plan.action.attempt; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
           await sleep(Math.max(0, lastFinished + 2000 - Date.now()));
           if (stopped) return;
           if (cumulative >= limits!.pause) {
@@ -133,7 +150,8 @@ export async function main(): Promise<void> {
           cumulative += guard;
           attemptsGuardCostUsd += guard;
           await append({ runId: plan.runId, attempt, attemptAt, model: plan.model.id, studyKey: plan.study.studyKey,
-            outcome, ...usage, guardCostUsd: guard, elapsedMs });
+            outcome, ...usage, guardCostUsd: guard, elapsedMs, httpStatus: response ? null : info.status,
+            failureClass: response ? null : failureClass(info) });
           const decision = response ? { retry: false, waitMs: 0 } : retryDecision(kind, attempt, info.retryAfterMs);
           if (decision.retry) { await sleep(decision.waitMs); continue; }
           const record: RunRecord = { runId: plan.runId, model: plan.model.id, studyKey: plan.study.studyKey,

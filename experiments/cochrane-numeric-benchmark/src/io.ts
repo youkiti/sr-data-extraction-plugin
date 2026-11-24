@@ -135,7 +135,7 @@ export async function loadEvaluation(root: string): Promise<EvaluationSet> {
     const join = joins.get(study.tier)!;
     result.studies.push(study);
     result.documents.set(study.studyKey, usable.documents);
-    result.values.push(...evaluationValues(study, join.refs, join.prov, join.judgments));
+    result.values.push(...evaluationValues(study, join.refs, join.prov, join.judgments, usable.documents.map((doc) => doc.pmcid)));
   }
   return result;
 }
@@ -146,6 +146,7 @@ export function printCounts(set: EvaluationSet): void {
     const studies = set.studies.filter((study) => study.tier === tier);
     console.log(`${tier}: reviews=${new Set(studies.map((study) => study.reviewId)).size}, studies=${studies.length}, items=${studies.reduce((n, study) => n + study.items.length, 0)}, values=${set.values.filter((value) => value.tier === tier).length}`);
     const empty = set.emptyGold[tier] ?? { items: 0, values: 0 };
+    console.log(`${tier}: needsRecheck=${set.values.filter((value) => value.tier === tier && value.needsRecheck).length}`);
     console.log(`${tier}: empty gold: items=${empty.items}, values=${empty.values}`);
   }
   console.log(`excluded: ${set.excluded.length} (no_pdf: ${set.excluded.filter((s) => s.reason === 'no_pdf').length} / no_text_layer: ${set.excluded.filter((s) => s.reason === 'no_text_layer').length} / no_gold: ${set.excluded.filter((s) => s.reason === 'no_gold').length})`);
@@ -157,6 +158,11 @@ export function evaluationCounts(set: EvaluationSet) {
     const values = set.values.filter((value) => value.tier === tier);
     return [tier, { reviews: new Set(studies.map((study) => study.reviewId)).size, studies: studies.length,
       items: studies.reduce((n, study) => n + study.items.length, 0), values: values.length,
+      rechecked: values.filter((value) => value.relabelled).length,
+      recheckTransitions: values.filter((value) => value.relabelled).reduce<Record<string, number>>((counts, value) => {
+        const key = `${value.upstreamLabel} → ${value.label}`;
+        counts[key] = (counts[key] ?? 0) + 1; return counts;
+      }, {}),
       valuesPerLabel: Object.fromEntries(['reported', 'derivable', 'different_value', 'not_in_documents', 'null'].map((label) =>
         [label, values.filter((value) => (value.label ?? 'null') === label).length])) }];
   }));

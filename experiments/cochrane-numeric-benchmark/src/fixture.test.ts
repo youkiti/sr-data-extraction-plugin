@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { filterItems, filterGoldItems, evaluationValues, usableDocuments, type Study, type Reference, type Provenance, type Judgment } from './evaluationSet';
+import { filterItems, filterGoldItems, evaluationValues, usableDocuments, reportBelongsTo, type Study, type Reference, type Provenance, type Judgment } from './evaluationSet';
 import { buildFields, buildOutcomeList, cleanFootnotes, resolveContext, schemaInput, protocolContext } from './schema';
 import { buildStudyRequest, EXTRACT_DATA_TEMPERATURE } from './prompt';
 import { buildExtractDataSystemPrompt, buildExtractDataUserContent, extractDataResponseSchema } from '../../../src/features/extraction/skills/extractData';
+import { applyRecheckLabels, assertRechecked } from './recheck';
+import { assertLabels } from './goldLock';
+import { evaluationCounts, sha256 } from './io';
+import { requestHashes, checkManifest, assertInputHash } from './resume';
+import type { EvaluationSet } from './io';
 
 export function fixture() {
   const item = { row_id: 'REV1:r:1', data_type: 'continuous', fields: ['experimental_mean', 'control_mean'],
@@ -119,4 +124,66 @@ test('本番と同じプロンプトと生成設定を組み立てる', () => {
   ]);
   assert.deepEqual(request.chatOptions, { temperature: EXTRACT_DATA_TEMPERATURE, responseSchema: extractDataResponseSchema(false) });
   assert.equal(request.chatOptions.temperature, 0); assert.ok(!('maxOutputTokens' in request.chatOptions));
+});
+
+test('再チェックは文書省略・上流ラベル・同ラベルの根拠文書の三条件で判定する', () => {
+  const { study, refs, provenance } = fixture();
+  study.task.documents.push({ pmcid: 'DOC2', pdf_path: null });
+  const judgment = (report_file: string, label = 'reported'): Judgment => ({ task_id: refs[0]!.task_id, item: 1,
+    field: 'experimental_mean', label, report_file });
+  const needs = (judgments: Judgment[], passed = ['DOC1']) => evaluationValues(study, refs, provenance, judgments, passed)[0]!.needsRecheck;
+  assert.equal(needs([]), true);
+  assert.equal(needs([], ['DOC1', 'DOC2']), false);
+  assert.equal(needs([judgment('report_DOC1.txt')]), false);
+  assert.equal(needs([judgment('folder/fig_DOC1_table.png')]), false);
+  assert.equal(needs([judgment('report_DOC10.txt')]), true);
+  assert.equal(needs([judgment('fig_DOC10_table.png')]), true);
+  assert.equal(reportBelongsTo('report_DOC_1.txt', 'DOC_1'), true);
+  assert.equal(reportBelongsTo('fig_DOC_1_table.png', 'DOC_1'), true);
+  assert.equal(reportBelongsTo('fig_DOC_10_table.png', 'DOC_1'), false);
+  assert.equal(needs([judgment('report_DOC1.txt', 'derivable')]), true);
+  for (const label of ['different_value', 'not_in_documents', null] as const) {
+    refs[0]!.label = label; assert.equal(needs([]), false);
+  }
+  refs[0]!.label = 'derivable';
+  assert.equal(needs([judgment('report_DOC2.txt', 'derivable')]), true);
+  assert.equal(needs([judgment('fig_DOC1_table.png', 'derivable')]), false);
+});
+
+test('再チェックラベルの置換・不要値の拒否・lock と score 共通の未完了検査', () => {
+  const { study, refs, provenance } = fixture();
+  study.task.documents.push({ pmcid: 'DOC2', pdf_path: null });
+  const values = evaluationValues(study, refs, provenance, [], ['DOC1']);
+  assert.throws(() => assertRechecked(values), /2 件.*recheck-labels.jsonl/);
+  const labels = values.map((value) => ({ rowId: value.rowId, field: value.field, label: 'not_in_documents' as const }));
+  const updated = applyRecheckLabels(values, labels);
+  assertRechecked(updated); assertLabels(updated);
+  assert.ok(updated.every((value) => value.label === 'not_in_documents' && value.upstreamLabel === 'reported' && value.relabelled));
+  assert.throws(() => applyRecheckLabels(values.map((value) => ({ ...value, needsRecheck: false })), labels), /不要/);
+  assert.throws(() => applyRecheckLabels(values, [labels[0]!, labels[0]!]), /重複/);
+  assert.throws(() => assertLabels([{ ...updated[0]!, upstreamLabel: null }]), /未裁定/);
+  const set: EvaluationSet = { studies: [study], values: updated, documents: new Map(), hashes: {}, excluded: [], emptyGold: {} };
+  const counts = evaluationCounts(set)['cc-by']!;
+  assert.equal(counts.rechecked, 2); assert.equal(counts.recheckTransitions['reported → not_in_documents'], 2);
+});
+
+test('manifest は依頼本文・設定とモデル部分集合を固定し、固定入力ハッシュも検査する', () => {
+  const { study } = fixture();
+  const set: EvaluationSet = { studies: [study], values: [], documents: new Map([[study.studyKey,
+    [{ ...study.task.documents[0]!, pages: [{ page: 1, text: 'Synthetic' }] }]]]), hashes: {}, excluded: [], emptyGold: {} };
+  const hashes = requestHashes(set);
+  const { messages, chatOptions } = buildStudyRequest(study, set.documents.get(study.studyKey)!);
+  assert.equal(Object.values(hashes)[0], sha256(JSON.stringify({ messages, chatOptions })));
+  const manifest = { hashes, promptVersion: 17, harnessCommit: null, excluded: [], emptyGold: {} };
+  const original = study.context;
+  study.context = { timing_rules: ['Changed'] };
+  assert.throws(() => checkManifest(manifest, { ...manifest, hashes: requestHashes(set) }), /ハッシュ/);
+  study.context = original;
+  study.items[0]!.analysis_name = 'Changed';
+  assert.notDeepEqual(hashes, requestHashes(set));
+  assert.throws(() => checkManifest(manifest, { ...manifest, hashes: {} }), /ハッシュ/);
+  assertInputHash('cc-by', 'task3_numeric.jsonl', 'e28acce8f901rest');
+  assertInputHash('cc-by-nc', 'task3_numeric.jsonl', 'eb03d74d5d4brest');
+  assertInputHash('cc-by', 'final.jsonl', '8fa31935d224rest');
+  assert.throws(() => assertInputHash('cc-by', 'final.jsonl', 'wrong'), /接頭辞/);
 });

@@ -20,11 +20,22 @@ export function errorInfo(error: unknown): ErrorInfo {
 export type FailureKind = 'spend_cap' | 'auth' | 'retryable' | 'other';
 export function classifyFailure(info: ErrorInfo): FailureKind {
   if (info.status === 429 && /spending cap/i.test(info.responseBody ?? '')) return 'spend_cap';
-  if (info.status === 401 || info.status === 403) return 'auth';
+  if (info.status === 401 || info.status === 403 ||
+      (info.status === 400 && /API_KEY_INVALID|API key not valid/i.test(info.responseBody ?? ''))) return 'auth';
+  if (info.retryable === true) return 'retryable';
   if (info.failureKind === 'content_filter' || info.failureKind === 'malformed') return 'other';
   if (info.status === 429 || (info.status !== null && info.status >= 500) || info.failureKind === 'timeout' ||
-      info.failureKind === 'output_limit' || info.retryable === true || info.status === null) return 'retryable';
+      info.failureKind === 'output_limit' || info.status === null) return 'retryable';
   return 'other';
+}
+export type FailureClass = 'rate_limit' | 'server_error' | 'network' | 'timeout' | 'output_limit' | 'retryable_flag' | 'other';
+export function failureClass(info: ErrorInfo): FailureClass {
+  if (info.status === 429) return 'rate_limit';
+  if (info.status !== null && info.status >= 500) return 'server_error';
+  if (info.status === null && info.failureKind === null) return 'network';
+  if (info.failureKind === 'timeout') return 'timeout';
+  if (info.failureKind === 'output_limit') return 'output_limit';
+  return info.retryable === true ? 'retryable_flag' : 'other';
 }
 const RETRY_BACKOFF_MS = [15_000, 45_000, 90_000] as const;
 const RETRY_MAX_WAIT_MS = 120_000;

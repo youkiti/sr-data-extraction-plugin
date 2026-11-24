@@ -2,10 +2,11 @@ import path from 'node:path';
 import { EXPECTED_SHA256_PREFIX, selectedTiers, type Tier } from './config';
 import { fileHash, filesUnder, goldFile, refDir, sha256 } from './io';
 import type { EvalValue } from './evaluationSet';
+import { loadRecheck } from './recheck';
 
-export interface GoldLock { tiers: Tier[]; hashes: Record<string, string>; taskDigest: string }
+export interface GoldLock { tiers: Tier[]; hashes: Record<string, string>; taskDigest: string; recheckLabelsSha256: string | null }
 export function assertLabels(values: EvalValue[]): void {
-  const missing = values.filter((value) => value.label === null).length;
+  const missing = values.filter((value) => (value.upstreamLabel === undefined ? value.label : value.upstreamLabel) === null).length;
   if (missing) throw new Error(`未裁定の評価値が ${missing} 件あります。全ラベルの確定後に実行してください`);
 }
 export async function goldHashes(root: string, tiers = selectedTiers()): Promise<GoldLock> {
@@ -26,9 +27,11 @@ export async function goldHashes(root: string, tiers = selectedTiers()): Promise
       if (prefix && !hash.startsWith(prefix)) throw new Error(`gold の既定ハッシュ接頭辞と一致しません: ${tier}/${path.basename(file)}`);
     }
   }
-  return { tiers: [...tiers], hashes, taskDigest: sha256(tasks.sort().join('\n')) };
+  return { tiers: [...tiers], hashes, taskDigest: sha256(tasks.sort().join('\n')), recheckLabelsSha256: null };
 }
-export async function verifyGoldLock(root: string, lock: GoldLock): Promise<void> {
+export async function verifyGoldLock(root: string, lock: GoldLock, values: EvalValue[]): Promise<void> {
+  const recheck = await loadRecheck(values);
+  if (lock.recheckLabelsSha256 !== recheck.hash) throw new Error('gold-lock と再チェックラベルのハッシュが違います');
   const fresh = await goldHashes(root, lock.tiers);
   const keys = [...new Set([...Object.keys(lock.hashes), ...Object.keys(fresh.hashes)])];
   if (keys.some((key) => lock.hashes[key] !== fresh.hashes[key]) || lock.taskDigest !== fresh.taskDigest) throw new Error('gold-lock と現在の入力ハッシュが違います。採点を中断しました');

@@ -1,17 +1,24 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { classifyFailure, errorInfo, retryDecision } from './retry';
-import { costLimits, failureUsage, guardCostUsd, reportCostUsd, redactSecret } from './cost';
-import { parseLedger, ledgerWriter, type LedgerEntry } from './ledger';
-import { resumeDecision, parseRunState, checkManifest, type InputManifest } from './resume';
+import { classifyFailure, errorInfo, failureClass, retryDecision } from './retry';
+import { costLimits, failureUsage, guardCostUsd, reportCostUsd, redactSecret, otherSpend } from './cost';
+import { parseLedger, ledgerWriter, budgetSpend, readLedger, assertRunLedger, assertRunFilesLedger, type LedgerEntry } from './ledger';
+import { resumeDecision, parseRunState, checkManifest, assertManifestPresent, type InputManifest } from './resume';
 import { sha256 } from './io';
-import { anchorItems } from './runner';
+import { anchorItems, interruptedRecord } from './runner';
 import { parseExtractDataResponse } from '../../../src/features/extraction/skills/extractData';
 import { buildFields } from './schema';
-import { cochraneRoot, readSubset } from './config';
+import { cochraneRoot, readSubset, benchRoot } from './config';
+import type { Study } from './evaluationSet';
+
+async function temporary() {
+  const outputs = path.join(benchRoot, 'outputs');
+  await mkdir(outputs, { recursive: true });
+  return mkdtemp(path.join(outputs, '.test-tmp-'));
+}
 
 test('上流ルートと部分集合の入力検証', () => {
   const oldRoot = process.env.COCHRANE_BENCH_ROOT;
@@ -33,10 +40,14 @@ test('再試行分類の全状態と優先順位', () => {
   for (const [error, expected] of [
     [{ status: 429, responseBody: 'Spending CAP reached' }, 'spend_cap'],
     [{ status: 401, retryable: true }, 'auth'], [{ status: 403 }, 'auth'],
+    [{ status: 400, responseBody: '{"reason":"API_KEY_INVALID"}' }, 'auth'],
+    [{ status: 400, responseBody: 'API key not valid' }, 'auth'],
     [{ status: 429 }, 'retryable'], [{ status: 503 }, 'retryable'], [{}, 'retryable'],
     [{ status: 400, failureKind: 'timeout' }, 'retryable'], [{ failureKind: 'output_limit' }, 'retryable'],
     [{ status: 400, retryable: true }, 'retryable'], [{ status: 400 }, 'other'],
     [{ failureKind: 'content_filter' }, 'other'], [{ failureKind: 'malformed' }, 'other'],
+    [{ failureKind: 'malformed', retryable: true }, 'retryable'],
+    [{ failureKind: 'content_filter', retryable: true }, 'retryable'],
   ] as const) assert.equal(classifyFailure(errorInfo(error)), expected);
   assert.equal(errorInfo('offline').status, null);
   assert.equal(errorInfo({ status: '429', retryable: 'true' }).retryable, null);
@@ -71,12 +82,17 @@ const line: LedgerEntry = { runId: 'model__cc-by__REV1__S1', model: 'gemini-3.8-
   attempt: 1, attemptAt: '2026-11-24T00:00:00Z', outcome: 'ok', tokensIn: 1, tokensOut: 2,
   cachedTokensIn: 0, guardCostUsd: 0.1, costBasis: 'measured', elapsedMs: 100 };
 test('再開の五状態（確定失敗を含む）', () => {
-  assert.equal(resumeDecision({ kind: 'missing' }, [], 17), 'execute');
+  assert.deepEqual(resumeDecision({ kind: 'missing' }, [], 17), { kind: 'execute', attempt: 1 });
   for (const outcome of ['ok', 'request_failed', 'format_error'] as const) {
-    assert.equal(resumeDecision({ kind: 'parsed', outcome, promptVersion: 17 }, [], 17), 'skip');
+    assert.deepEqual(resumeDecision({ kind: 'parsed', outcome, promptVersion: 17 }, [], 17), { kind: 'skip' });
   }
-  assert.equal(resumeDecision(parseRunState('{'), [], 17), 'backup_execute');
-  assert.equal(resumeDecision({ kind: 'missing' }, [line], 17), 'execute');
+  assert.deepEqual(resumeDecision(parseRunState('{'), [], 17), { kind: 'backup_execute', attempt: 1 });
+  assert.deepEqual(resumeDecision({ kind: 'missing' }, [line], 17), { kind: 'execute', attempt: 2 });
+  const history = [1, 2, 3, 4].map((attempt) => ({ ...line, attempt }));
+  assert.deepEqual(resumeDecision({ kind: 'missing' }, history, 17), { kind: 'finalise', last: history[3] });
+  const record = interruptedRecord({ tier: 'cc-by', reviewId: 'REV1' } as Study, history[3]!);
+  assert.equal(record.outcome, 'request_failed'); assert.equal(record.attempts, 4);
+  assert.equal(record.error, '再試行の上限に達した後に中断されていました');
   assert.throws(() => resumeDecision({ kind: 'parsed', outcome: 'ok', promptVersion: 16 }, [], 17), /BENCH_RUN_LABEL/);
   assert.equal(parseRunState('{}').kind, 'corrupt');
 });
@@ -87,7 +103,7 @@ test('レジャの切れた最終行だけを許容し中間破損を拒否', as
   assert.equal(warnings.length, 1);
   assert.throws(() => parseLedger('{\n' + JSON.stringify(line)), /1 行目/);
   assert.throws(() => parseLedger('{\n'), /1 行目/);
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'numeric-ledger-'));
+  const dir = await temporary();
   try {
     const file = path.join(dir, 'ledger.jsonl');
     await writeFile(file, raw);
@@ -115,4 +131,42 @@ test('本番パーサーと本番アンカリングで文書番号を使う', ()
   ]);
   assert.equal(items[0]!.anchorStatus, 'exact');
   assert.throws(() => parseExtractDataResponse('invalid', fields, 1));
+});
+
+test('全ラベル台帳とその他支出の合算、manifest と採点台帳の必須検証', async () => {
+  assert.equal(otherSpend({}), 0); assert.equal(otherSpend({ BENCH_OTHER_SPEND_USD: '2.5' }), 2.5);
+  for (const raw of ['', ' ', '-1', 'NaN', 'Infinity', 'bad']) assert.throws(() => otherSpend({ BENCH_OTHER_SPEND_USD: raw }));
+  const dir = await temporary();
+  try {
+    for (const [label, cost] of [['smoke', 1], ['main', 2]] as const) {
+      const folder = path.join(dir, `runs-${label}`);
+      await mkdir(folder);
+      await writeFile(path.join(folder, '_ledger.jsonl'), JSON.stringify({ ...line, guardCostUsd: cost }) + '\n');
+    }
+    assert.deepEqual(await budgetSpend(dir, 2.5), { labels: { main: 2, smoke: 1 }, other: 2.5, total: 5.5 });
+    const file = path.join(dir, '_inputs.json');
+    assert.equal(await assertManifestPresent(file, false), null);
+    await assert.rejects(assertManifestPresent(file, true), /_inputs.json/);
+    await writeFile(path.join(dir, 'run.json'), '{}');
+    await assert.rejects(assertManifestPresent(file, false), /_inputs.json/);
+    await assert.rejects(assertRunFilesLedger(dir, [line]), /台帳/);
+    await writeFile(path.join(dir, 'run.json'), JSON.stringify({ runId: line.runId }));
+    await assertRunFilesLedger(dir, [line]);
+    await rm(path.join(dir, 'run.json'));
+    await writeFile(path.join(dir, '_ledger.jsonl'), '');
+    await assert.rejects(assertManifestPresent(file, false), /_inputs.json/);
+    await assert.rejects(readLedger(path.join(dir, 'missing.jsonl'), true), /_ledger.jsonl/);
+    assert.throws(() => assertRunLedger(['missing'], [line]), /台帳/);
+    assertRunLedger([line.runId], [line]);
+  } finally { await rm(dir, { recursive: true }); }
+});
+
+test('台帳の失敗分類と旧行の null 補完', () => {
+  for (const [info, expected] of [
+    [{ status: 429 }, 'rate_limit'], [{ status: 503 }, 'server_error'], [{}, 'network'],
+    [{ failureKind: 'timeout' }, 'timeout'], [{ failureKind: 'output_limit' }, 'output_limit'],
+    [{ failureKind: 'malformed', retryable: true }, 'retryable_flag'], [{ status: 400 }, 'other'],
+  ] as const) assert.equal(failureClass(errorInfo(info)), expected);
+  const old = parseLedger(JSON.stringify(line) + '\n')[0]!;
+  assert.equal(old.httpStatus, null); assert.equal(old.failureClass, null);
 });

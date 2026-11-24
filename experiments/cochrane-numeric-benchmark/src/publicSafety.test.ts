@@ -12,6 +12,8 @@ const safe = new Set([
   'buildExtractDataUserContent', 'extractDataResponseSchema', 'parseExtractDataResponse',
   'ExtractDataOutcomeListEntry', 'answerRateNotInDocuments', 'BENCH_COST_LIMIT_USD',
   'experimental_intervention',
+  'notReturnedNotInDocuments', 'elapsedMsSuccessfulRunMedian', 'elapsedMsSuccessfulRunMean',
+  'elapsedMsPerRequestMedian', 'recheck-labels.jsonl',
 ]);
 export function violations(text: string): string[] {
   const found: string[] = [];
