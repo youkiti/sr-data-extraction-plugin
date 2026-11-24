@@ -18,6 +18,7 @@ export const MODELS = [
   { id: 'gemini-3.1-flash-lite', keyEnv: 'GEMINI_API_KEY' },
   { id: 'gemini-3.8-flash', keyEnv: 'GEMINI_API_KEY' },
   { id: 'gemini-3.5-flash-lite', keyEnv: 'GEMINI_API_KEY' },
+  { id: 'claude-sonnet-5-5', keyEnv: 'ANTHROPIC_API_KEY' },
   // qwen は初回ベンチ（2026-07-06 REPORT.md）で「低精度 + 1 コール 2〜33 分 + truncation 2/10 = 非実用」と
   // 結論済みのため既定から除外（必要ならコメント解除）
   // { id: 'qwen/qwen3-235b-a22b-2507', keyEnv: 'OPENROUTER_API_KEY' },
@@ -32,6 +33,8 @@ export const MODELS = [
  */
 export const FALLBACK_PRICING: Readonly<Record<string, ModelPricing>> = {
   'gemini-3.8-flash': { inputPerMillion: 1.5, outputPerMillion: 7.5 },
+  // 評価計画書 docs/evaluation-plan.md §3.2。2026-11-23 に Anthropic の公式の料金ページで確認
+  'claude-sonnet-5-5': { inputPerMillion: 2, outputPerMillion: 10 },
 };
 
 /** issue #176 の比較軸として導入。過去の run 記録（v4〜v6）と metrics.test.ts が両方の値を使うため型は残す。 */
@@ -66,13 +69,17 @@ export function selectedModels(): typeof MODELS[number][] {
 
 /**
  * 反復回数。2026-09-21 ユーザー判断で各モデル 1 反復。反復間ばらつきを見るなら 3 に上げる。
- * 費用は usageMetadata の candidates + thoughts で数え、上限は BENCH_COST_LIMIT_USD。
+ * 費用は Gemini の usageMetadata の candidates + thoughts、Anthropic の usage.output_tokens（思考込み）で数える。
+ * 上限は BENCH_COST_LIMIT_USD。
  * 本番 tokensOut は途中から思考込みになったため計算に使わず、古い記録は採点時に数え直す。
  */
 export const REPEATS = 1;
 
-/** 実行ラベル。run/score の出力先ディレクトリ名に使う（過去の run と混ざらないよう版数を刻む）。 */
+/** 実行ラベル。run/score の出力先ディレクトリ名に使う（過去の run と混ざらないよう版数を刻む）。
+ * 評価 B の本走の例: v17-20261125（プロンプト版数 17・実行日）。
+ */
 export const RUN_LABEL = process.env.BENCH_RUN_LABEL?.trim() || 'v9-20260921';
+if (!/^[A-Za-z0-9_-]+$/.test(RUN_LABEL)) throw new Error('BENCH_RUN_LABEL は英数字・_・- で指定してください');
 
 /** run JSON の出力先（{runId}.json とコストレジャ _cost-ledger.jsonl を置く）。 */
 export function runsDir(): string {

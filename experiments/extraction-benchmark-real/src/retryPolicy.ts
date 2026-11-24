@@ -42,6 +42,8 @@ export type FailureClassification = 'spend_cap' | 'rate_limit' | 'server_error' 
  * - status 429 かつ responseBody に "spending cap" を含む（大文字小文字無視）→ spend_cap
  *   （Google プロジェクトの月間利用上限。再試行しても通らず、人が上限を変えるまで全 run が
  *   同じ理由で落ちる。レート制限とは別に扱う）
+ * - status 400 かつ responseBody に "credit balance is too low" を含む（大文字小文字無視）→ spend_cap
+ *   （Anthropic のクレジット切れ。人が残高を補充するまで再試行しても通らない）
  * - それ以外の status 429 → rate_limit
  * - status 500 以上 → server_error
  * - status 401 / 403 → auth
@@ -49,6 +51,9 @@ export type FailureClassification = 'spend_cap' | 'rate_limit' | 'server_error' 
  */
 export function classifyFailure(info: ErrorInfo): FailureClassification {
   const { status, responseBody } = info;
+  if (status === 400 && responseBody !== null && /credit balance is too low/i.test(responseBody)) {
+    return 'spend_cap';
+  }
   if (status === 429) {
     if (responseBody !== null && /spending cap/i.test(responseBody)) {
       return 'spend_cap';

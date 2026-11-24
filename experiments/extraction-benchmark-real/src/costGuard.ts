@@ -1,4 +1,5 @@
-// 費用の見張り。課金対象の出力は usageMetadata の candidates + thoughts から求める。
+// 費用の見張り。課金対象の出力は Gemini の usageMetadata の candidates + thoughts、
+// Anthropic の usage.output_tokens（思考込み）から求める。
 // 本番 GeminiProvider の tokensOut は途中から思考込みになったため、費用計算には使わない。
 // 古い run は採点時に、古いレジャは対応する run のトークン値が一致する場合だけ数え直す。
 import { appendFile, readFile } from 'node:fs/promises';
@@ -25,8 +26,9 @@ export interface BilledCostResult {
 
 /**
  * 課金対象の出力込みで概算コストを計算する。
- * - 課金対象の出力 = usageMetadata.candidatesTokenCount + thoughtsTokenCount（欠けた側は 0）
- * - usageMetadata が無ければ costUsd は null（tokensOut から推定しない）
+ * - 課金対象の出力 = Gemini の usageMetadata.candidatesTokenCount + thoughtsTokenCount（欠けた側は 0）、
+ *   Anthropic の usage.output_tokens（思考込み）
+ * - どちらの使用量も無ければ costUsd は null（tokensOut から推定しない）
  * - どちらの単価表が使われたかは「単価表にキーがあるか」で判定する（本番の estimateCostUsd の
  *   null は「モデル不明」と「トークン不明」の 2 つの意味を持つため、null で分岐しない）
  */
@@ -36,10 +38,7 @@ export function billedCostUsd(
   timestampMs: number = Date.now(),
 ): BilledCostResult {
   const { model, tokensIn, rawResponse, cachedTokensIn } = input;
-  const usage = extractUsageMetadata(rawResponse);
-  const billedTokensOut = usage === null ? null :
-    (finiteTokenCount(usage['candidatesTokenCount']) ?? 0) +
-    (finiteTokenCount(usage['thoughtsTokenCount']) ?? 0);
+  const billedTokensOut = extractBilledTokensOut(rawResponse);
   const hasProductionPricing = pricing.production[model] !== undefined;
   const costSource: CostSource = hasProductionPricing ? 'production_pricing' : 'bench_fallback';
 
@@ -127,6 +126,19 @@ function finiteTokenCount(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+/** raw レスポンスから課金対象の出力を取り出す。Gemini の使用量を優先し、無ければ Anthropic を読む。 */
+export function extractBilledTokensOut(raw: unknown): number | null {
+  const metadata = extractUsageMetadata(raw);
+  if (metadata !== null) {
+    return (finiteTokenCount(metadata['candidatesTokenCount']) ?? 0) +
+      (finiteTokenCount(metadata['thoughtsTokenCount']) ?? 0);
+  }
+  if (typeof raw !== 'object' || raw === null) return null;
+  const usage = (raw as Record<string, unknown>)['usage'];
+  if (typeof usage !== 'object' || usage === null || Array.isArray(usage)) return null;
+  return finiteTokenCount((usage as Record<string, unknown>)['output_tokens']);
+}
+
 /** raw レスポンスから usageMetadata.thoughtsTokenCount を取り出す（無ければ null）。 */
 export function extractThoughtsTokens(raw: unknown): number | null {
   return finiteTokenCount(extractUsageMetadata(raw)?.['thoughtsTokenCount']);
@@ -144,13 +156,19 @@ export interface RecordedCostRun {
   rawResponse?: unknown;
   costUsd: number | null;
   costBasis?: CostBasis;
+  /** cliRunner.ts の run は 'claude_cli_reported'（CLI が報告した total_cost_usd）を持つ。 */
+  costSource?: string;
 }
 
-/** 採点時の費用。実行日時か使用量が無い過去の記録は記録値を維持する。 */
+/**
+ * 採点時の費用。実行日時か使用量が無い過去の記録は記録値を維持する。
+ * CLI 経由の run（costSource = 'claude_cli_reported'）も raw に usage を持つが、費用は CLI の
+ * 報告値が正なので数え直さない。
+ */
 export function recalculateRunCost(run: RecordedCostRun): { costUsd: number | null; usedRecordedCost: boolean } {
   const timestampMs = Date.parse(run.executedAt ?? '');
   if (!Number.isFinite(timestampMs) || run.costBasis === 'measured_failure' || run.costBasis === 'estimated_output_limit' ||
-      extractUsageMetadata(run.rawResponse) === null) {
+      run.costSource === 'claude_cli_reported' || extractBilledTokensOut(run.rawResponse) === null) {
     return { costUsd: run.costUsd, usedRecordedCost: true };
   }
   return {
@@ -236,7 +254,7 @@ export function recalculateLedger(
     if (entry.costBasis !== 'measured_failure' && entry.costBasis !== 'estimated_output_limit' &&
         !Object.hasOwn(entry, 'billedTokensOut') && run !== undefined &&
         run.runId === entry.runId && run.tokensOut === entry.tokensOut &&
-        run.thoughtsTokens === entry.thoughtsTokens && extractUsageMetadata(run.rawResponse) !== null) {
+        run.thoughtsTokens === entry.thoughtsTokens && extractBilledTokensOut(run.rawResponse) !== null) {
       const cost = recalculateRunCost(run);
       if (cost.usedRecordedCost) {
         totalUsd += entry.costUsd ?? 0;

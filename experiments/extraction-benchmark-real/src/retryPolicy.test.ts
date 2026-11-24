@@ -38,6 +38,18 @@ test('classifyFailure: 429 + spending cap を含まない本文 → rate_limit',
   assert.equal(classifyFailure(info), 'rate_limit');
 });
 
+test('失敗分類: Anthropic のクレジット切れは利用上限として扱う', () => {
+  const responseBody = '{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}';
+  for (const body of [responseBody, responseBody.toUpperCase()]) {
+    assert.equal(classifyFailure(errorInfo({ status: 400, responseBody: body })), 'spend_cap');
+  }
+});
+
+test('失敗分類: クレジット切れ以外の 400 はその他の失敗として扱う', () => {
+  assert.equal(classifyFailure(errorInfo({ status: 400, responseBody: 'invalid request' })), 'other');
+  assert.equal(classifyFailure(errorInfo({ status: 400 })), 'other');
+});
+
 test('classifyFailure: 503 → server_error', () => {
   assert.equal(classifyFailure(errorInfo({ status: 503, responseBody: 'unavailable' })), 'server_error');
 });
