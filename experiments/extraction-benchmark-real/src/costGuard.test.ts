@@ -10,6 +10,7 @@ import {
   assertPricingAvailable,
   attemptCount,
   billedCostUsd,
+  extractBilledTokensOut,
   failedCostUsd,
   extractThoughtsTokens,
   readLedger,
@@ -30,6 +31,51 @@ import {
 const SAMPLE_TOKENS_IN = 28322;
 const SAMPLE_TOKENS_OUT = 10947;
 const SAMPLE_THOUGHTS = 17035;
+
+test('課金出力: Gemini を優先し、欠けた候補・思考は 0 とする', () => {
+  assert.equal(extractBilledTokensOut({ usageMetadata: {}, usage: { output_tokens: 2000 } }), 0);
+  assert.equal(extractBilledTokensOut({ usageMetadata: { thoughtsTokenCount: 25 } }), 25);
+});
+
+test('課金出力: Anthropic の使用量が無い・出力が有限の数でない場合は不明', () => {
+  for (const rawResponse of [null, {}, { usage: null }, { usage: [] }, { usage: {} },
+    { usage: { output_tokens: '2000' } }, { usage: { output_tokens: NaN } },
+    { usage: { output_tokens: Infinity } }]) {
+    assert.equal(extractBilledTokensOut(rawResponse), null);
+    const result = billedCostUsd({ model: 'claude-sonnet-5-5', tokensIn: 1000,
+      cachedTokensIn: 0, rawResponse });
+    assert.equal(result.billedTokensOut, null);
+    assert.equal(result.costUsd, null);
+  }
+  assert.equal(extractBilledTokensOut({ usage: { output_tokens: 0 } }), 0);
+});
+
+test('費用計算: Sonnet の思考込み出力を補助単価で数える', () => {
+  const result = billedCostUsd({ model: 'claude-sonnet-5-5', tokensIn: 1000, cachedTokensIn: 0,
+    rawResponse: { usage: { input_tokens: 1000, output_tokens: 2000 } } });
+  assert.equal(result.billedTokensOut, 2000);
+  assert.equal(result.costSource, 'bench_fallback');
+  assert.ok(Math.abs(result.costUsd! - 0.022) < 1e-12);
+});
+
+test('費用計算: Sonnet の総入力にはキャッシュ割引を見込まない', () => {
+  const result = billedCostUsd({ model: 'claude-sonnet-5-5', tokensIn: 1000, cachedTokensIn: 500,
+    rawResponse: { usage: { input_tokens: 300, cache_read_input_tokens: 500,
+      cache_creation_input_tokens: 200, output_tokens: 2000 } } });
+  assert.ok(Math.abs(result.costUsd! - 0.022) < 1e-12);
+});
+
+test('単価の確認: Gemini と Sonnet の組み合わせを受け入れる', () => {
+  assert.doesNotThrow(() => assertPricingAvailable(['gemini-3.8-flash', 'claude-sonnet-5-5']));
+});
+
+test('失敗費用: Sonnet の思考込み使用量を実測として数える', () => {
+  const result = failedCostUsd('claude-sonnet-5-5',
+    { usage: { tokensIn: 1000, tokensOut: 2000, cachedTokensIn: 0 } }, 4000, 32768);
+  assert.equal(result.costBasis, 'measured_failure');
+  assert.equal(result.billedTokensOut, 2000);
+  assert.ok(Math.abs(result.costUsd! - 0.022) < 1e-12);
+});
 
 test('billedCostUsd: 思考トークン込みの課金対象出力で、本番 estimateCostUsd と同じ式になる', () => {
   const expected = estimateCostUsd(
@@ -221,6 +267,29 @@ const costEntry: LedgerEntry = {
   attemptAt: '2026-10-04T00:00:00Z', pdfId: 'pdf', repeat: 1,
   outcome: 'ok', costSource: 'production_pricing', elapsedMs: 1000,
 };
+
+test('費用再計算: Sonnet の run と古いレジャを使用量から数え直す', () => {
+  const run: RecordedCostRun = { ...costRun, model: 'claude-sonnet-5-5', tokensIn: 1000,
+    tokensOut: 2000, thoughtsTokens: null, cachedTokensIn: 0, costUsd: null,
+    rawResponse: { usage: { input_tokens: 1000, output_tokens: 2000 } } };
+  const cost = recalculateRunCost(run);
+  assert.equal(cost.usedRecordedCost, false);
+  assert.ok(Math.abs(cost.costUsd! - 0.022) < 1e-12);
+  const entry: LedgerEntry = { ...costEntry, ...run, thoughtsTokens: null, cachedTokensIn: 0, costSource: 'bench_fallback' };
+  const ledger = recalculateLedger([entry], new Map([[run.runId, run]]));
+  assert.equal(ledger.recalculatedCount, 1);
+  assert.equal(ledger.recordedCount, 0);
+  assert.ok(Math.abs(ledger.totalUsd - 0.022) < 1e-12);
+  assert.equal(isCostLimitReached(ledger.totalUsd, 0.02), true);
+});
+
+test('費用再計算: CLI が報告した費用の run は usage があっても記録値を維持する', () => {
+  const run: RecordedCostRun = { ...costRun, model: 'claude-sonnet-5-5', tokensIn: 1000,
+    tokensOut: 2000, thoughtsTokens: null, cachedTokensIn: 0, costUsd: 0.1482,
+    costSource: 'claude_cli_reported',
+    rawResponse: { total_cost_usd: 0.1482, usage: { input_tokens: 1000, output_tokens: 2000 } } };
+  assert.deepEqual(recalculateRunCost(run), { costUsd: 0.1482, usedRecordedCost: true });
+});
 
 test('採点費用: 使用量があれば再計算し、無い場合だけ記録値を維持する', () => {
   const corrected = recalculateRunCost(costRun);

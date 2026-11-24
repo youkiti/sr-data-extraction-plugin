@@ -26,7 +26,7 @@ import {
 import { normalizeText } from '../../../src/features/anchoring/normalizeText';
 import { anchorQuote } from '../../../src/features/anchoring/anchorQuote';
 import type { AnchorResult, NormalizedPage } from '../../../src/domain/anchor';
-import { benchRoot, repoRoot, REPEATS, runsDir, selectedModels, selectedTargets, type BenchmarkInputMode } from './config';
+import { assertRunLabelAvailable, benchRoot, repoRoot, REPEATS, runsDir, selectedModels, selectedTargets, type BenchmarkInputMode } from './config';
 import { checkRunSchemas } from './runSchema';
 import { checkReaskFrom, loadReaskTargets, reaskFields, reaskFromName, type TargetCell } from './reask';
 import { loadBenchmarkSchema, schemaFileName } from './loadSchema';
@@ -89,6 +89,7 @@ interface RunRecord {
   rejected: RejectedAiItem[];
   items: AnchoredItem[];
   rawResponse: unknown;
+  sentSettings: unknown | null;
 }
 
 async function loadPages(pdfId: string): Promise<ExtractDataPage[]> {
@@ -220,6 +221,7 @@ async function main(): Promise<void> {
 
   // API を 1 回も呼ぶ前に、選択中の全モデルの単価が分かっているか確認する
   try {
+    assertRunLabelAvailable(models.map((m) => m.id), process.env.BENCH_RUN_LABEL);
     assertPricingAvailable(models.map((m) => m.id));
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
@@ -378,6 +380,7 @@ async function main(): Promise<void> {
 
     const t0 = Date.now();
     let res: ChatResponse | null = null;
+    let sentSettings: unknown | null = null;
     let failure: unknown = null;
     let transportError: string | null = null;
     let errorBody: string | null = null;
@@ -392,7 +395,12 @@ async function main(): Promise<void> {
         // プロバイダ既定では低すぎて JSON 途中切れ（FORMAT_ERROR）が頻発するため明示的に上げる。
         { temperature: 0, maxOutputTokens: MAX_OUTPUT_TOKENS, responseSchema: EXTRACT_DATA_RESPONSE_SCHEMA },
       );
+      sentSettings = res.sentSettings ?? null;
     } catch (error) {
+      if (typeof error === 'object' && error !== null && 'sentSettings' in error &&
+        typeof error.sentSettings === 'object') {
+        sentSettings = error.sentSettings;
+      }
       const info = errorInfo(error);
       const kind = classifyFailure(info);
       const apiKeyForRedact = process.env[p.model.keyEnv] ?? '';
@@ -503,6 +511,7 @@ async function main(): Promise<void> {
       rejected,
       items,
       rawResponse: res?.raw ?? null,
+      sentSettings,
     });
 
     executedCount += 1;
