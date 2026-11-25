@@ -32,6 +32,7 @@ export function bootstrap(models: string[], rowsByModel: Map<string, ScoredValue
   const random = mulberry32(options.seed);
   const samples = new Map(models.map((model) => [model, [] as number[]]));
   const differences: number[] = [];
+  const differenceSamples = new Map(models.slice(1).map((model) => [model, [] as number[]]));
   let omittedReviewDraws = 0;
   for (let replicate = 0; replicate < options.replicates; replicate++) {
     const sums = models.map(() => 0);
@@ -54,12 +55,20 @@ export function bootstrap(models: string[], rowsByModel: Map<string, ScoredValue
     if (used) {
       models.forEach((model, index) => samples.get(model)!.push(sums[index]! / used));
       if (models.length >= 2) differences.push((sums[1]! - sums[0]!) / used);
+      models.slice(1).forEach((model, index) => differenceSamples.get(model)!.push((sums[index + 1]! - sums[0]!) / used));
     }
   }
   const interval = (point: number | null, values: number[]) => ({ point, lower: quantile(values, 0.025), upper: quantile(values, 0.975) });
   const results = Object.fromEntries(models.map((model) => [model, interval(sensitivity(rowsByModel.get(model) ?? []).primary, samples.get(model)!)]));
   const first = results[models[0]!]?.point, second = results[models[1]!]?.point;
   const difference = models.length >= 2 ? interval(first != null && second != null ? second - first : null, differences) : null;
+  // 対応差は最初のモデル（既定の Gemini 3.8 Flash）を基準に、2番目以降の各モデルから引く（2026-11-25 本人の決定）。`difference` は従来どおり 2番目 − 最初.
+  const pairedDifferences = Object.fromEntries(models.slice(1).map((model) => {
+    const point = results[model]!.point;
+    const paired = interval(first != null && point != null ? point - first : null, differenceSamples.get(model)!);
+    return [model, { base: models[0]!, ...paired, crossesZero: paired.lower !== null && paired.upper !== null ? paired.lower <= 0 && paired.upper >= 0 : null }];
+  }));
   return { models: results, difference: difference ? { ...difference, crossesZero: difference.lower !== null && difference.upper !== null ? difference.lower <= 0 && difference.upper >= 0 : null } : null,
+    differences: pairedDifferences,
     omittedReviewDraws, emptyReplicates: options.replicates - (samples.get(models[0]!)?.length ?? 0), ...options };
 }
