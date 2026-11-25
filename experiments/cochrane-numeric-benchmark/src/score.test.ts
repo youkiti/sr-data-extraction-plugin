@@ -124,3 +124,24 @@ test('二段再抽出の決定性・ゼロ reported 除外・同じ抽出によ�
   const same = bootstrap(['first', 'second'], new Map([['first', rows], ['second', rows]]));
   assert.deepEqual(same.difference, { point: 0, lower: 0, upper: 0, crossesZero: true });
 });
+
+test('三モデルの対応差は最初を基準に同じ再抽出で求める', () => {
+  const { values, runs } = handFixture();
+  const rows = scoreValues([...values, value({ reviewId: 'REV3', studyKey: 'cc-by/REV3/S3', label: 'derivable' })], runs);
+  const allMatched = rows.map((row) => ({ ...row, answer: { ...row.answer, state: 'match' as const } }));
+  const allWrong = rows.map((row) => ({ ...row, answer: { ...row.answer, state: 'wrong_value' as const } }));
+  const map = new Map([['first', rows], ['second', allMatched], ['third', allWrong]]);
+  const options = { replicates: 200, seed: 20261122 };
+  const a = bootstrap(['first', 'second', 'third'], map, options);
+  assert.deepEqual(Object.keys(a.differences), ['second', 'third']);
+  assert.equal(a.differences.second!.base, 'first'); assert.equal(a.differences.third!.base, 'first');
+  assert.deepEqual(a.differences.second, { base: 'first', ...a.difference });
+  assert.equal(a.differences.third!.point, a.models.third!.point! - a.models.first!.point!);
+  assert.deepEqual(a.differences.third, { base: 'first', point: -0.625, lower: -1, upper: -0.25, crossesZero: false });
+  assert.deepEqual(a, bootstrap(['first', 'second', 'third'], map, options));
+  const two = bootstrap(['first', 'second'], map, options);
+  assert.deepEqual(a.models.first, two.models.first); assert.deepEqual(a.models.second, two.models.second);
+  assert.deepEqual(a.difference, two.difference);
+  assert.equal(a.omittedReviewDraws, two.omittedReviewDraws); assert.equal(a.emptyReplicates, two.emptyReplicates);
+  assert.deepEqual(bootstrap(['first'], map, options).differences, {});
+});
