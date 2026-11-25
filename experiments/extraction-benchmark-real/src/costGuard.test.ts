@@ -267,11 +267,47 @@ const costRun: RecordedCostRun = {
   tokensOut: 30_000, thoughtsTokens: 20_000, cachedTokensIn: 50_000, costUsd: 0.5325,
   rawResponse: { usageMetadata: { candidatesTokenCount: 10_000, thoughtsTokenCount: 20_000 } },
 };
+test('Haiku の報告は境界で全体を切り替え、監視は常に高い段で数える', () => {
+  assert.doesNotThrow(() => assertPricingAvailable(['claude-haiku-5-5']));
+  for (const pricing of [undefined, { production: {}, fallback: FALLBACK_PRICING, estimate: estimateCostUsd }]) {
+    for (const tokensIn of [100_000, 100_001]) {
+      const input = { model: 'claude-haiku-5-5', tokensIn, cachedTokensIn: 0,
+        rawResponse: { usage: { output_tokens: 2_000 } } };
+      const expected = tokensIn === 100_000
+        ? (tokensIn * 0.1 + 2_000 * 0.5) / 1e6 : (tokensIn * 0.5 + 2_000 * 2.5) / 1e6;
+      assert.ok(Math.abs(billedCostUsd(input, pricing).costUsd! - expected) < 1e-12);
+    }
+    const input = { model: 'claude-haiku-5-5', tokensIn: 50_000, cachedTokensIn: 10_000,
+      rawResponse: { usage: { output_tokens: 2_000 } } };
+    assert.ok(Math.abs(billedCostUsd(input, pricing, undefined, 'guard').costUsd! -
+      (40_000 * 0.5 + 10_000 * 0.05 + 2_000 * 2.5) / 1e6) < 1e-12);
+    const report = billedCostUsd(input, pricing).costUsd!;
+    const expectedReport = pricing === undefined
+      ? (40_000 * 0.1 + 10_000 * 0.01 + 2_000 * 0.5) / 1e6
+      : (50_000 * 0.1 + 2_000 * 0.5) / 1e6;
+    assert.ok(Math.abs(report - expectedReport) < 1e-12);
+  }
+  const expectedGuard = (50_000 * 0.5 + 2_000 * 2.5) / 1e6;
+  assert.ok(Math.abs(failedCostUsd('claude-haiku-5-5', { failureKind: 'output_limit' },
+    200_000, 2_000).costUsd! - expectedGuard) < 1e-12);
+});
+
 const costEntry: LedgerEntry = {
   ...costRun, thoughtsTokens: 20_000, cachedTokensIn: 50_000,
   attemptAt: '2026-10-04T00:00:00Z', pdfId: 'pdf', repeat: 1,
   outcome: 'ok', costSource: 'production_pricing', elapsedMs: 1000,
 };
+
+test('Haiku の古いレジャは報告用の低い段でなく監視用の高い段で再計算する', () => {
+  const run: RecordedCostRun = { ...costRun, model: 'claude-haiku-5-5', tokensIn: 50_000,
+    tokensOut: 2_000, thoughtsTokens: null, cachedTokensIn: 0,
+    rawResponse: { usage: { output_tokens: 2_000 } } };
+  const entry: LedgerEntry = { ...costEntry, ...run, thoughtsTokens: null, cachedTokensIn: 0,
+    costSource: 'production_pricing' };
+  assert.ok(Math.abs(recalculateRunCost(run).costUsd! - (50_000 * 0.1 + 2_000 * 0.5) / 1e6) < 1e-12);
+  assert.ok(Math.abs(recalculateLedger([entry], new Map([[run.runId, run]])).totalUsd -
+    (50_000 * 0.5 + 2_000 * 2.5) / 1e6) < 1e-12);
+});
 
 test('費用再計算: Sonnet の run と古いレジャを使用量から数え直す', () => {
   const run: RecordedCostRun = { ...costRun, model: 'claude-sonnet-5-5', tokensIn: 1000,

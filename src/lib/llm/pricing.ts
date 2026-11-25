@@ -19,6 +19,16 @@ export interface ModelPricing {
    * 「利用者に楽観的な数字を見せない」方針と衝突するため、既定を割引なしに倒している。
    */
   cachedInputPerMillion?: number;
+  /**
+   * キャッシュを含む総入力が thresholdTokensIn を超えると、依頼全体の全トークンに適用する単価。
+   * cachedInputPerMillion の省略時は、この段の inputPerMillion と同額で数える。
+   */
+  longContext?: {
+    thresholdTokensIn: number;
+    inputPerMillion: number;
+    outputPerMillion: number;
+    cachedInputPerMillion?: number;
+  };
 }
 
 /**
@@ -81,6 +91,14 @@ export const MODEL_PRICING: Readonly<Record<string, ModelPricing>> = {
   // 入力単価と同額（割引を見込まない安全側）で概算する。この拡張は cache_control を
   // 送らないため実際の影響はない。
   'claude-sonnet-5-5': { inputPerMillion: 2.0, outputPerMillion: 10.0 },
+  // 2026-11-25 に公式料金ページで確認
+  // （https://platform.claude.com/docs/en/about-claude/pricing）。キャッシュ読み出し・書き込みを
+  // 含む総入力が 100,000 トークンを超えると、出力を含む依頼全体を長い入力の単価で数える。
+  // この拡張は cache_control を送らないためキャッシュ書き込みは発生しない。
+  'claude-haiku-5-5': {
+    inputPerMillion: 0.1, outputPerMillion: 0.5, cachedInputPerMillion: 0.01,
+    longContext: { thresholdTokensIn: 100_000, inputPerMillion: 0.5, outputPerMillion: 2.5, cachedInputPerMillion: 0.05 },
+  },
   'claude-haiku-4-5': { inputPerMillion: 1.0, outputPerMillion: 5.0, cachedInputPerMillion: 0.1 },
 };
 
@@ -181,14 +199,16 @@ export function estimateCostUsd(
     return null;
   }
   const totalIn = tokensIn ?? 0;
+  const rates = pricing.longContext && totalIn > pricing.longContext.thresholdTokensIn
+    ? pricing.longContext : pricing;
   // キャッシュ分が総入力を超えるのは契約違反（provider 側の異常値）だが、負のコストを
   // 表示するよりは割引を諦めるほうが安全なので総入力で頭打ちにする
   const cachedIn = Math.min(Math.max(cachedTokensIn ?? 0, 0), totalIn);
   // キャッシュ単価が分かっていないモデルは入力単価で積む（割引を見込まない安全側）
-  const cachedRate = pricing.cachedInputPerMillion ?? pricing.inputPerMillion;
-  const inputCost = ((totalIn - cachedIn) / 1_000_000) * pricing.inputPerMillion;
+  const cachedRate = rates.cachedInputPerMillion ?? rates.inputPerMillion;
+  const inputCost = ((totalIn - cachedIn) / 1_000_000) * rates.inputPerMillion;
   const cachedCost = (cachedIn / 1_000_000) * cachedRate;
-  const outputCost = ((tokensOut ?? 0) / 1_000_000) * pricing.outputPerMillion;
+  const outputCost = ((tokensOut ?? 0) / 1_000_000) * rates.outputPerMillion;
   return inputCost + cachedCost + outputCost;
 }
 
@@ -229,6 +249,7 @@ export const MODEL_IMAGE_CAPABILITY: Readonly<Record<string, ModelImageCapabilit
   'claude-opus-5': { provider: 'anthropic', support: 'supported' },
   'claude-sonnet-5': { provider: 'anthropic', support: 'supported' },
   'claude-sonnet-5-5': { provider: 'anthropic', support: 'supported' },
+  'claude-haiku-5-5': { provider: 'anthropic', support: 'supported' },
   'claude-haiku-4-5': { provider: 'anthropic', support: 'supported' },
 };
 

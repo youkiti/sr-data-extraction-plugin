@@ -11,7 +11,7 @@ import { sha256 } from './io';
 import { anchorItems, interruptedRecord } from './runner';
 import { parseExtractDataResponse } from '../../../src/features/extraction/skills/extractData';
 import { buildFields } from './schema';
-import { cochraneRoot, readSubset, benchRoot } from './config';
+import { cochraneRoot, readSubset, benchRoot, selectedModels } from './config';
 import type { Study } from './evaluationSet';
 
 async function temporary() {
@@ -62,7 +62,24 @@ test('監視は定価、報告は日付別の本番単価と Sonnet 補助単価
   assert.equal(reportCostUsd('gemini-3.8-flash', 1000000, 1000000, 0, Date.parse('2026-12-31T00:00:00Z')), 4.5);
   assert.equal(reportCostUsd('gemini-3.8-flash', 1000000, 1000000, 0, Date.parse('2027-01-01T00:00:00Z')), 9);
   assert.equal(reportCostUsd('claude-sonnet-5-5', 1000000, 1000000, 0, 0), 12);
+  assert.ok(Math.abs(guardCostUsd('claude-haiku-5-5', 50_000, 2_000) - (50_000 * 0.5 + 2_000 * 2.5) / 1e6) < 1e-12);
+  assert.ok(Math.abs(reportCostUsd('claude-haiku-5-5', 100_000, 2_000, 0, 0) - (100_000 * 0.1 + 2_000 * 0.5) / 1e6) < 1e-12);
+  assert.ok(Math.abs(reportCostUsd('claude-haiku-5-5', 100_001, 2_000, 0, 0) - (100_001 * 0.5 + 2_000 * 2.5) / 1e6) < 1e-12);
   assert.throws(() => guardCostUsd('unknown', 1, 1), /単価/);
+});
+test('比較モデルに Gemini、Sonnet、Haiku を指定できる', () => {
+  const previous = process.env.BENCH_MODELS;
+  try {
+    process.env.BENCH_MODELS = 'gemini-3.8-flash,claude-sonnet-5-5,claude-haiku-5-5';
+    assert.deepEqual(selectedModels(), [
+      { id: 'gemini-3.8-flash', keyEnv: 'GEMINI_API_KEY' },
+      { id: 'claude-sonnet-5-5', keyEnv: 'ANTHROPIC_API_KEY' },
+      { id: 'claude-haiku-5-5', keyEnv: 'ANTHROPIC_API_KEY' },
+    ]);
+  } finally {
+    if (previous === undefined) delete process.env.BENCH_MODELS;
+    else process.env.BENCH_MODELS = previous;
+  }
 });
 test('失敗の三費用基準と思考内数を二重加算しないこと', () => {
   assert.deepEqual(failureUsage({ usage: { tokensIn: 10, tokensOut: 20, thoughtsTokensOut: 5 } }, 100),

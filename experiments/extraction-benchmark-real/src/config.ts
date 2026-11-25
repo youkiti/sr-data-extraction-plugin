@@ -19,6 +19,7 @@ export const MODELS = [
   { id: 'gemini-3.8-flash', keyEnv: 'GEMINI_API_KEY' },
   { id: 'gemini-3.5-flash-lite', keyEnv: 'GEMINI_API_KEY' },
   { id: 'claude-sonnet-5-5', keyEnv: 'ANTHROPIC_API_KEY' },
+  { id: 'claude-haiku-5-5', keyEnv: 'ANTHROPIC_API_KEY' },
   // qwen は初回ベンチ（2026-07-06 REPORT.md）で「低精度 + 1 コール 2〜33 分 + truncation 2/10 = 非実用」と
   // 結論済みのため既定から除外（必要ならコメント解除）
   // { id: 'qwen/qwen3-235b-a22b-2507', keyEnv: 'OPENROUTER_API_KEY' },
@@ -35,6 +36,11 @@ export const FALLBACK_PRICING: Readonly<Record<string, ModelPricing>> = {
   'gemini-3.8-flash': { inputPerMillion: 1.5, outputPerMillion: 7.5 },
   // 評価計画書 docs/evaluation-plan.md §3.2。2026-11-23 に Anthropic の公式の料金ページで確認
   'claude-sonnet-5-5': { inputPerMillion: 2, outputPerMillion: 10 },
+  // 2026-11-25 公式の料金ページで確認。本番の単価表にもあるので通常は使われない。
+  'claude-haiku-5-5': {
+    inputPerMillion: 0.1, outputPerMillion: 0.5, cachedInputPerMillion: 0.01,
+    longContext: { thresholdTokensIn: 100_000, inputPerMillion: 0.5, outputPerMillion: 2.5, cachedInputPerMillion: 0.05 },
+  },
 };
 
 /** issue #176 の比較軸として導入。過去の run 記録（v4〜v6）と metrics.test.ts が両方の値を使うため型は残す。 */
