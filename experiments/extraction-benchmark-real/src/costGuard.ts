@@ -183,6 +183,17 @@ export interface RecordedCostRun {
  */
 export function recalculateRunCost(run: RecordedCostRun, purpose: CostPurpose = 'report'): { costUsd: number | null; usedRecordedCost: boolean } {
   const timestampMs = Date.parse(run.executedAt ?? '');
+  const modelPricing = MODEL_PRICING[run.model] ?? FALLBACK_PRICING[run.model];
+  if (Number.isFinite(timestampMs) && purpose === 'report' && run.costBasis === 'measured_failure' &&
+      run.costSource !== 'claude_cli_reported' && modelPricing?.longContext &&
+      finiteTokenCount(run.tokensIn) !== null && finiteTokenCount(run.tokensOut) !== null) {
+    return {
+      costUsd: billedCostUsd({ model: run.model, tokensIn: run.tokensIn, cachedTokensIn: run.cachedTokensIn ?? null,
+        rawResponse: { usageMetadata: { candidatesTokenCount: run.tokensOut } },
+      }, undefined, timestampMs, 'report').costUsd,
+      usedRecordedCost: false,
+    };
+  }
   if (!Number.isFinite(timestampMs) || run.costBasis === 'measured_failure' || run.costBasis === 'estimated_output_limit' ||
       run.costSource === 'claude_cli_reported' || extractBilledTokensOut(run.rawResponse) === null) {
     return { costUsd: run.costUsd, usedRecordedCost: true };

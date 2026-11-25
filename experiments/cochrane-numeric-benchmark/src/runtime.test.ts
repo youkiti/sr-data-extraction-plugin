@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { classifyFailure, errorInfo, failureClass, retryDecision } from './retry';
-import { costLimits, failureUsage, guardCostUsd, reportCostUsd, redactSecret, otherSpend } from './cost';
+import { costLimits, failureUsage, guardCostUsd, listCostUsd, reportCostUsd, redactSecret, otherSpend } from './cost';
 import { parseLedger, ledgerWriter, budgetSpend, readLedger, assertRunLedger, assertRunFilesLedger, type LedgerEntry } from './ledger';
 import { resumeDecision, parseRunState, checkManifest, assertManifestPresent, type InputManifest } from './resume';
 import { sha256 } from './io';
@@ -67,6 +67,17 @@ test('監視は定価、報告は日付別の本番単価と Sonnet 補助単価
   assert.ok(Math.abs(reportCostUsd('claude-haiku-5-5', 100_001, 2_000, 0, 0) - (100_001 * 0.5 + 2_000 * 2.5) / 1e6) < 1e-12);
   assert.throws(() => guardCostUsd('unknown', 1, 1), /単価/);
 });
+test('定価はリクエストごとに段を選び、Gemini と Sonnet は監視単価と一致する', () => {
+  assert.equal(listCostUsd('claude-haiku-5-5', 18_000, 3_000), (18_000 * 0.1 + 3_000 * 0.5) / 1e6);
+  assert.equal(guardCostUsd('claude-haiku-5-5', 18_000, 3_000), (18_000 * 0.5 + 3_000 * 2.5) / 1e6);
+  assert.equal(listCostUsd('claude-haiku-5-5', 100_000, 3_000), (100_000 * 0.1 + 3_000 * 0.5) / 1e6);
+  assert.equal(listCostUsd('claude-haiku-5-5', 100_001, 3_000), guardCostUsd('claude-haiku-5-5', 100_001, 3_000));
+  for (const model of ['gemini-3.8-flash', 'claude-sonnet-5-5']) {
+    for (const tokensIn of [18_000, 150_000]) assert.equal(listCostUsd(model, tokensIn, 3_000), guardCostUsd(model, tokensIn, 3_000));
+  }
+  assert.throws(() => listCostUsd('unknown', 1, 1), /単価/);
+});
+
 test('比較モデルに Gemini、Sonnet、Haiku を指定できる', () => {
   const previous = process.env.BENCH_MODELS;
   try {

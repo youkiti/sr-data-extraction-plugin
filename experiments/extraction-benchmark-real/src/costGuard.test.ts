@@ -298,6 +298,26 @@ const costEntry: LedgerEntry = {
   outcome: 'ok', costSource: 'production_pricing', elapsedMs: 1000,
 };
 
+test('Haiku の実測失敗は報告だけ段を選び直し、監視は保存値を維持する', () => {
+  for (const tokensIn of [50_000, 150_000]) {
+    const guard = (tokensIn * 0.5 + 2_000 * 2.5) / 1e6;
+    const run: RecordedCostRun = { ...costRun, model: 'claude-haiku-5-5', tokensIn,
+      tokensOut: 2_000, cachedTokensIn: null, rawResponse: null, costBasis: 'measured_failure', costUsd: guard };
+    const result = recalculateRunCost(run);
+    assert.equal(result.usedRecordedCost, false);
+    assert.ok(Math.abs(result.costUsd! - (tokensIn === 50_000 ? 0.006 : guard)) < 1e-12);
+    assert.deepEqual(recalculateRunCost(run, 'guard'), { costUsd: guard, usedRecordedCost: true });
+    const entry: LedgerEntry = { ...costEntry, ...run, cachedTokensIn: null };
+    assert.equal(recalculateLedger([entry], new Map([[run.runId, run]])).totalUsd, guard);
+    for (const preserved of [
+      { ...run, executedAt: undefined }, { ...run, tokensIn: null }, { ...run, tokensOut: null },
+      { ...run, costBasis: 'estimated_output_limit' as const },
+    ]) assert.deepEqual(recalculateRunCost(preserved), { costUsd: guard, usedRecordedCost: true });
+  }
+  const gemini = { ...costRun, costBasis: 'measured_failure' as const, costUsd: 1 };
+  assert.deepEqual(recalculateRunCost(gemini), { costUsd: 1, usedRecordedCost: true });
+});
+
 test('Haiku の古いレジャは報告用の低い段でなく監視用の高い段で再計算する', () => {
   const run: RecordedCostRun = { ...costRun, model: 'claude-haiku-5-5', tokensIn: 50_000,
     tokensOut: 2_000, thoughtsTokens: null, cachedTokensIn: 0,

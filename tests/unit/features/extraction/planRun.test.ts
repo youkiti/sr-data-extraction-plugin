@@ -663,6 +663,27 @@ describe('planRun の画像文書のトークン概算（pdf_native）', () => {
 });
 
 describe('planRun のコスト概算と画像入力（pdf_native）の警告', () => {
+  it('Haiku の長い入力の段は合計でなくバッチごとに選ぶ', () => {
+    const input = { fields: [STUDY_FIELD], model: 'claude-haiku-5-5' };
+    const plan = planRun({ ...input, documents: [
+      makeDocument({ documentId: 'a', charCount: 240_000 }),
+      makeDocument({ documentId: 'b', charCount: 240_000 }),
+    ] });
+    expect(plan.batches).toHaveLength(2);
+    expect(plan.tokensInEstimate).toBeGreaterThan(100_000);
+    const baseCost = plan.batches.reduce((sum, batch) => {
+      expect(batch.tokensInEstimate).toBeLessThan(100_000);
+      return sum + (batch.tokensInEstimate * 0.1 + batch.tokensOutEstimate * plan.thinkingOutputMultiplier * 0.5) / 1e6;
+    }, 0);
+    expect(plan.costEstimateUsd).toBeCloseTo(baseCost, 12);
+    const long = planRun({ ...input, documents: [makeDocument({ documentId: 'a', charCount: 440_000 })] });
+    expect(long.batches).toHaveLength(1);
+    expect(long.tokensInEstimate).toBeGreaterThan(100_000);
+    expect(long.costEstimateUsd).toBeCloseTo(
+      (long.tokensInEstimate * 0.5 + long.tokensOutEstimate * long.thinkingOutputMultiplier * 2.5) / 1e6, 12,
+    );
+  });
+
   it('単価表にあるモデルは合計トークンからコストを概算する', () => {
     const plan = planRun({
       documents: [makeDocument({ documentId: 'd1' })],

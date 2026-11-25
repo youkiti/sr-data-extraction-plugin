@@ -20,6 +20,14 @@ export const GUARD_PRICING: Readonly<Record<string, ModelPricing>> = {
   // Haiku の差額は小さいので、上限を過少に数えないことを優先する。
   'claude-haiku-5-5': { inputPerMillion: 0.5, outputPerMillion: 2.5 },
 };
+// 定価はキャッシュ割引を適用せず、各リクエストの入力トークン数で段を選ぶ。
+export const LIST_PRICING: Readonly<Record<string, ModelPricing>> = {
+  ...GUARD_PRICING,
+  'claude-haiku-5-5': {
+    inputPerMillion: 0.1, outputPerMillion: 0.5,
+    longContext: { thresholdTokensIn: 100_000, inputPerMillion: 0.5, outputPerMillion: 2.5 },
+  },
+};
 export const REPORT_FALLBACK_PRICING: Readonly<Record<string, ModelPricing>> = {
   'claude-sonnet-5-5': { inputPerMillion: 2, outputPerMillion: 10 },
   // 2026-11-25 公式の料金ページで確認。本番の単価表に無い場合だけ使う。

@@ -402,14 +402,18 @@ export function planRun(input: PlanRunInput): RunPlan {
   const tokensInEstimate = batches.reduce((sum, batch) => sum + batch.tokensInEstimate, 0);
   const tokensOutEstimate = batches.reduce((sum, batch) => sum + batch.tokensOutEstimate, 0);
   const thinkingOutputMultiplier = resolveThinkingOutputMultiplier(input.model);
-  const costEstimateUsd = estimateCostUsd(
-    input.model,
-    tokensInEstimate,
-    tokensOutEstimate * thinkingOutputMultiplier,
-    null,
-    input.fallbackPricing,
-    Date.now(),
-  );
+  const now = Date.now();
+  const costEstimateUsd = batches.reduce<number | null>((sum, batch) => {
+    const cost = estimateCostUsd(
+      input.model,
+      batch.tokensInEstimate,
+      batch.tokensOutEstimate * thinkingOutputMultiplier,
+      null,
+      input.fallbackPricing,
+      now,
+    );
+    return sum === null || cost === null ? null : sum + cost;
+  }, estimateCostUsd(input.model, 0, 0, null, input.fallbackPricing, now));
   const inputMode: InputMode = augmentedImageDocumentIds.size > 0
     ? 'text_with_page_images'
     : imageDocumentIds.size > 0 ? 'pdf_native' : 'text_only';

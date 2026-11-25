@@ -13,7 +13,7 @@ import { benchRoot, repoRoot, runsDir, selectedModels } from './config';
 import { inputRoot, loadEvaluation, printCounts, writeJson } from './io';
 import { buildStudyRequest, promptCharacters } from './prompt';
 import { classifyFailure, errorInfo, failureClass, retryDecision, RETRY_MAX_ATTEMPTS } from './retry';
-import { costLimits, failureUsage, guardCostUsd, reportCostUsd, safeError, otherSpend, type CostBasis } from './cost';
+import { costLimits, failureUsage, guardCostUsd, listCostUsd, reportCostUsd, safeError, otherSpend, type CostBasis } from './cost';
 import { ledgerWriter, readLedger, budgetSpend, type LedgerEntry } from './ledger';
 import { harnessCommit, inputManifest, readRunState, resumeDecision, runIdFor } from './resume';
 import type { Study, UsableDocument } from './evaluationSet';
@@ -52,7 +52,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 export function interruptedRecord(study: Study, last: LedgerEntry): RunRecord {
   return { ...last, tier: study.tier, reviewId: study.reviewId, promptVersion: EXTRACT_DATA_PROMPT_VERSION,
     executedAt: last.attemptAt, attempts: last.attempt, thoughtsTokens: null, sentSettings: null, responseModel: null,
-    listCostUsd: last.guardCostUsd, attemptsGuardCostUsd: 0,
+    listCostUsd: listCostUsd(last.model, last.tokensIn, last.tokensOut), attemptsGuardCostUsd: 0,
     reportCostUsd: reportCostUsd(last.model, last.tokensIn, last.tokensOut, last.cachedTokensIn, Date.parse(last.attemptAt)),
     outcome: 'request_failed', error: '再試行の上限に達した後に中断されていました', items: [], rejected: [], rawText: null };
 }
@@ -159,7 +159,8 @@ export async function main(): Promise<void> {
             executedAt: attemptAt, attempts: attempt, elapsedMs, ...usage,
             thoughtsTokens: response?.thoughtsTokensOut ?? null, sentSettings: response?.sentSettings ??
               (typeof failure === 'object' && failure !== null ? (failure as Record<string, unknown>).sentSettings ?? null : null),
-            responseModel: response?.responseModel ?? null, guardCostUsd: guard, listCostUsd: guard, attemptsGuardCostUsd,
+            responseModel: response?.responseModel ?? null, guardCostUsd: guard,
+            listCostUsd: listCostUsd(plan.model.id, usage.tokensIn, usage.tokensOut), attemptsGuardCostUsd,
             reportCostUsd: reportCostUsd(plan.model.id, usage.tokensIn, usage.tokensOut, usage.cachedTokensIn, Date.parse(attemptAt)),
             outcome, error: failure === null ? null : safeError(failure), items, rejected, rawText: response?.text ?? null };
           await writeJson(plan.file, record);

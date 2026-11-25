@@ -17,8 +17,8 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 - Claude Sonnet 5.5（`claude-sonnet-5-5`）の単価を足し、費用の概算を表示するようにしました。これまで単価が不明で費用の集計から外れていた Sonnet 5.5 の呼び出しも、費用の合計に入ります（入力 2.00 / 出力 10.00 USD per 1M。キャッシュ読み出しは割り引かずに概算。2026-11-25、PR #570）。  
   Added pricing for Claude Sonnet 5.5 (`claude-sonnet-5-5`) so estimated costs are displayed. Sonnet 5.5 calls, previously left out of cost totals because the price was unknown, are now included (input 2.00 / output 10.00 USD per 1M; cache reads are estimated without a discount; 2026-11-25, PR #570).
-- Claude Haiku 5.5（`claude-haiku-5-5`）の単価を足し、モデルの選択肢に出して費用の概算を表示するようにしました。入力 0.10 / 出力 0.50 / キャッシュ読み出し 0.01 USD per 1M、入力が 10 万トークンを超える依頼は全体を 0.50 / 2.50 / 0.05 で数えます。費用の概算に、この長い入力の段を数える仕組みを足しました（2026-11-25）。  
-  Added Claude Haiku 5.5 (`claude-haiku-5-5`) pricing and model selection with estimated costs. Rates are input 0.10 / output 0.50 / cache read 0.01 USD per 1M; requests exceeding 100,000 input tokens use 0.50 / 2.50 / 0.05 for the whole request. Cost estimation now supports this long-context tier (2026-11-25).
+- Claude Haiku 5.5（`claude-haiku-5-5`）の単価を足し、モデルの選択肢に出して費用の概算を表示するようにしました。入力 0.10 / 出力 0.50 / キャッシュ読み出し 0.01 USD per 1M、入力が 10 万トークンを超える依頼は全体を 0.50 / 2.50 / 0.05 で数えます。費用の概算に、この長い入力の段を数える仕組みを足しました（2026-11-25、PR #572）。  
+  Added Claude Haiku 5.5 (`claude-haiku-5-5`) pricing and model selection with estimated costs. Rates are input 0.10 / output 0.50 / cache read 0.01 USD per 1M; requests exceeding 100,000 input tokens use 0.50 / 2.50 / 0.05 for the whole request. Cost estimation now supports this long-context tier (2026-11-25, PR #572).
 
 ## v0.36.2（2026-11-24）
 
