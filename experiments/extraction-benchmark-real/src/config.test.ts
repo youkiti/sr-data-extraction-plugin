@@ -69,3 +69,25 @@ test('補助単価: Sonnet 5.5 の入力は 2 ドル、出力は 10 ドル', () 
 test('プロバイダ解決: Sonnet 5.5 は本番の Anthropic 経路を使う', () => {
   assert.equal(resolveProviderId('claude-sonnet-5-5'), 'anthropic');
 });
+
+test('モデル選択: Gemini、Sonnet、Haiku を定義順と対応するキーで返す', () => {
+  const previous = process.env.BENCH_MODELS;
+  try {
+    process.env.BENCH_MODELS = 'gemini-3.8-flash,claude-sonnet-5-5,claude-haiku-5-5';
+    assert.deepEqual(selectedModels(), [
+      { id: 'gemini-3.8-flash', keyEnv: 'GEMINI_API_KEY' },
+      { id: 'claude-sonnet-5-5', keyEnv: 'ANTHROPIC_API_KEY' },
+      { id: 'claude-haiku-5-5', keyEnv: 'ANTHROPIC_API_KEY' },
+    ]);
+  } finally {
+    if (previous === undefined) delete process.env.BENCH_MODELS;
+    else process.env.BENCH_MODELS = previous;
+  }
+});
+
+test('補助単価: Haiku は長い入力の段を持つ', () => {
+  assert.deepEqual(FALLBACK_PRICING['claude-haiku-5-5'], {
+    inputPerMillion: 0.1, outputPerMillion: 0.5, cachedInputPerMillion: 0.01,
+    longContext: { thresholdTokensIn: 100_000, inputPerMillion: 0.5, outputPerMillion: 2.5, cachedInputPerMillion: 0.05 },
+  });
+});

@@ -267,11 +267,81 @@ const costRun: RecordedCostRun = {
   tokensOut: 30_000, thoughtsTokens: 20_000, cachedTokensIn: 50_000, costUsd: 0.5325,
   rawResponse: { usageMetadata: { candidatesTokenCount: 10_000, thoughtsTokenCount: 20_000 } },
 };
+test('Haiku の報告は境界で全体を切り替え、監視は常に高い段で数える', () => {
+  assert.doesNotThrow(() => assertPricingAvailable(['claude-haiku-5-5']));
+  for (const pricing of [undefined, { production: {}, fallback: FALLBACK_PRICING, estimate: estimateCostUsd }]) {
+    for (const tokensIn of [100_000, 100_001]) {
+      const input = { model: 'claude-haiku-5-5', tokensIn, cachedTokensIn: 0,
+        rawResponse: { usage: { output_tokens: 2_000 } } };
+      const expected = tokensIn === 100_000
+        ? (tokensIn * 0.1 + 2_000 * 0.5) / 1e6 : (tokensIn * 0.5 + 2_000 * 2.5) / 1e6;
+      assert.ok(Math.abs(billedCostUsd(input, pricing).costUsd! - expected) < 1e-12);
+    }
+    const input = { model: 'claude-haiku-5-5', tokensIn: 50_000, cachedTokensIn: 10_000,
+      rawResponse: { usage: { output_tokens: 2_000 } } };
+    assert.ok(Math.abs(billedCostUsd(input, pricing, undefined, 'guard').costUsd! -
+      (40_000 * 0.5 + 10_000 * 0.05 + 2_000 * 2.5) / 1e6) < 1e-12);
+    const report = billedCostUsd(input, pricing).costUsd!;
+    const expectedReport = pricing === undefined
+      ? (40_000 * 0.1 + 10_000 * 0.01 + 2_000 * 0.5) / 1e6
+      : (50_000 * 0.1 + 2_000 * 0.5) / 1e6;
+    assert.ok(Math.abs(report - expectedReport) < 1e-12);
+  }
+  const expectedGuard = (50_000 * 0.5 + 2_000 * 2.5) / 1e6;
+  assert.ok(Math.abs(failedCostUsd('claude-haiku-5-5', { failureKind: 'output_limit' },
+    200_000, 2_000).costUsd! - expectedGuard) < 1e-12);
+});
+
 const costEntry: LedgerEntry = {
   ...costRun, thoughtsTokens: 20_000, cachedTokensIn: 50_000,
   attemptAt: '2026-10-04T00:00:00Z', pdfId: 'pdf', repeat: 1,
   outcome: 'ok', costSource: 'production_pricing', elapsedMs: 1000,
 };
+
+test('Haiku の実測失敗は監視用と報告用の費用を計算する', () => {
+  for (const tokensIn of [50_000, 150_000]) {
+    const guard = (tokensIn * 0.5 + 2_000 * 2.5) / 1e6;
+    const result = failedCostUsd('claude-haiku-5-5', { usage: { tokensIn, tokensOut: 2_000 } }, 0, 1000);
+    assert.equal(result.costBasis, 'measured_failure');
+    assert.ok(Math.abs(result.costUsd! - guard) < 1e-12);
+    assert.ok(Math.abs(result.reportCostUsd! - (tokensIn === 50_000
+      ? (tokensIn * 0.1 + 2_000 * 0.5) / 1e6 : guard)) < 1e-12);
+  }
+  const estimated = failedCostUsd('claude-haiku-5-5', { failureKind: 'output_limit' }, 200_000, 2_000);
+  assert.equal(estimated.costBasis, 'estimated_output_limit');
+  assert.equal(estimated.reportCostUsd, estimated.costUsd);
+});
+
+test('実測失敗の報告は保存した報告用費用を使い、監視と旧記録は保存費用を維持する', () => {
+  for (const tokensIn of [50_000, 150_000]) {
+    const guard = (tokensIn * 0.5 + 2_000 * 2.5) / 1e6;
+    const reportCostUsd = tokensIn === 50_000 ? 0.006 : guard;
+    const oldRun: RecordedCostRun = { ...costRun, model: 'claude-haiku-5-5', tokensIn: null,
+      tokensOut: null, cachedTokensIn: null, rawResponse: null, costBasis: 'measured_failure', costUsd: guard };
+    const run = { ...oldRun, reportCostUsd };
+    assert.deepEqual(recalculateRunCost(run, 'report'), { costUsd: reportCostUsd, usedRecordedCost: true });
+    assert.deepEqual(recalculateRunCost(run, 'guard'), { costUsd: guard, usedRecordedCost: true });
+    const entry: LedgerEntry = { ...costEntry, ...run, cachedTokensIn: null, costSource: 'production_pricing' };
+    assert.equal(recalculateLedger([entry], new Map([[run.runId, run]])).totalUsd, guard);
+    for (const preserved of [
+      oldRun, { ...run, reportCostUsd: null },
+      { ...run, costBasis: 'estimated_output_limit' as const },
+    ]) assert.deepEqual(recalculateRunCost(preserved), { costUsd: guard, usedRecordedCost: true });
+  }
+  const gemini = { ...costRun, costBasis: 'measured_failure' as const, costUsd: 1 };
+  assert.deepEqual(recalculateRunCost(gemini), { costUsd: 1, usedRecordedCost: true });
+});
+
+test('Haiku の古いレジャは報告用の低い段でなく監視用の高い段で再計算する', () => {
+  const run: RecordedCostRun = { ...costRun, model: 'claude-haiku-5-5', tokensIn: 50_000,
+    tokensOut: 2_000, thoughtsTokens: null, cachedTokensIn: 0,
+    rawResponse: { usage: { output_tokens: 2_000 } } };
+  const entry: LedgerEntry = { ...costEntry, ...run, thoughtsTokens: null, cachedTokensIn: 0,
+    costSource: 'production_pricing' };
+  assert.ok(Math.abs(recalculateRunCost(run).costUsd! - (50_000 * 0.1 + 2_000 * 0.5) / 1e6) < 1e-12);
+  assert.ok(Math.abs(recalculateLedger([entry], new Map([[run.runId, run]])).totalUsd -
+    (50_000 * 0.5 + 2_000 * 2.5) / 1e6) < 1e-12);
+});
 
 test('費用再計算: Sonnet の run と古いレジャを使用量から数え直す', () => {
   const run: RecordedCostRun = { ...costRun, model: 'claude-sonnet-5-5', tokensIn: 1000,
@@ -405,11 +475,13 @@ test('失敗費用: 思考込みの実測・上限見積もり・不明を区別
     const estimated = failedCostUsd(model, { failureKind: 'output_limit', usage }, 101, 32768);
     assert.equal(estimated.costBasis, 'estimated_output_limit');
     assert.equal(estimated.costUsd, estimateCostUsd(model, 26, 32768, null));
+    assert.equal(estimated.reportCostUsd, estimated.costUsd);
   }
   for (const error of [null, new Error('network'), { status: 401 }, { status: 429 }, { status: 503 }]) {
     const unknown = failedCostUsd(model, error, 101, 32768);
     assert.equal(unknown.costBasis, 'unknown');
     assert.equal(unknown.costUsd, null);
+    assert.equal(unknown.reportCostUsd, unknown.costUsd);
   }
 });
 

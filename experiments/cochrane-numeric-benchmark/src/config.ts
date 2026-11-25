@@ -11,13 +11,30 @@ export const EVAL_DATA_TYPES = ['dichotomous', 'continuous'] as const;
 export const MODELS = [
   { id: 'gemini-3.8-flash', keyEnv: 'GEMINI_API_KEY' },
   { id: 'claude-sonnet-5-5', keyEnv: 'ANTHROPIC_API_KEY' },
+  { id: 'claude-haiku-5-5', keyEnv: 'ANTHROPIC_API_KEY' },
 ] as const;
 export const GUARD_PRICING: Readonly<Record<string, ModelPricing>> = {
   'gemini-3.8-flash': { inputPerMillion: 1.5, outputPerMillion: 7.5 },
   'claude-sonnet-5-5': { inputPerMillion: 2, outputPerMillion: 10 },
+  // 推定入力が実際より少なく境界を下回る可能性があるため、監視は常に高い段で数える。
+  // Haiku の差額は小さいので、上限を過少に数えないことを優先する。
+  'claude-haiku-5-5': { inputPerMillion: 0.5, outputPerMillion: 2.5 },
+};
+// 定価はキャッシュ割引を適用せず、各リクエストの入力トークン数で段を選ぶ。
+export const LIST_PRICING: Readonly<Record<string, ModelPricing>> = {
+  ...GUARD_PRICING,
+  'claude-haiku-5-5': {
+    inputPerMillion: 0.1, outputPerMillion: 0.5,
+    longContext: { thresholdTokensIn: 100_000, inputPerMillion: 0.5, outputPerMillion: 2.5 },
+  },
 };
 export const REPORT_FALLBACK_PRICING: Readonly<Record<string, ModelPricing>> = {
   'claude-sonnet-5-5': { inputPerMillion: 2, outputPerMillion: 10 },
+  // 2026-11-25 公式の料金ページで確認。本番の単価表に無い場合だけ使う。
+  'claude-haiku-5-5': {
+    inputPerMillion: 0.1, outputPerMillion: 0.5, cachedInputPerMillion: 0.01,
+    longContext: { thresholdTokensIn: 100_000, inputPerMillion: 0.5, outputPerMillion: 2.5, cachedInputPerMillion: 0.05 },
+  },
 };
 export const EXPECTED_SHA256_PREFIX: Record<Tier, Record<string, string>> = {
   'cc-by': { 'task3_numeric.jsonl': 'e28acce8f901', 'final.jsonl': '8fa31935d224' },

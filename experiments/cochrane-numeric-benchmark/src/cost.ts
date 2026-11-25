@@ -1,11 +1,17 @@
 import { estimateCostUsd } from '../../../src/lib/llm/pricing';
-import { GUARD_PRICING, REPORT_FALLBACK_PRICING } from './config';
+import { GUARD_PRICING, LIST_PRICING, REPORT_FALLBACK_PRICING } from './config';
 
 export type CostBasis = 'measured' | 'estimated_input_tokens' | 'measured_failure' | 'estimated_output_limit' | 'estimated_input_only';
 export function guardCostUsd(model: string, tokensIn: number, tokensOut: number): number {
   const price = GUARD_PRICING[model];
   if (!price) throw new Error(`監視単価がありません: ${model}`);
   return (tokensIn * price.inputPerMillion + tokensOut * price.outputPerMillion) / 1_000_000;
+}
+export function listCostUsd(model: string, tokensIn: number, tokensOut: number): number {
+  const price = LIST_PRICING[model];
+  if (!price) throw new Error(`定価の単価がありません: ${model}`);
+  const rates = price.longContext && tokensIn > price.longContext.thresholdTokensIn ? price.longContext : price;
+  return (tokensIn * rates.inputPerMillion + tokensOut * rates.outputPerMillion) / 1_000_000;
 }
 export function reportCostUsd(model: string, tokensIn: number, tokensOut: number, cachedTokensIn: number | null, timestampMs: number): number {
   const cost = estimateCostUsd(model, tokensIn, tokensOut, cachedTokensIn, REPORT_FALLBACK_PRICING[model], timestampMs);

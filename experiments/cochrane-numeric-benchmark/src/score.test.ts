@@ -95,6 +95,18 @@ test('二レビューの手計算による全副指標と層別、different_valu
   assert.equal(failedMetrics.failedRuns, 1); assert.equal(failedMetrics.failedRunRate, 0.5); assert.equal(failedMetrics.elapsedMsSuccessfulRunMean, 300);
   assertLabels(values); assert.throws(() => assertLabels([value({ label: null })]), /未裁定/);
 });
+test('Haiku の研究あたり定価は全試行のトークンから計算する', () => {
+  const record: RunRecord = { runId: 'haiku', studyKey: 'cc-by/REV1/S1', outcome: 'ok', items: [], elapsedMs: 100,
+    model: 'claude-haiku-5-5', tier: 'cc-by', reviewId: 'REV1', promptVersion: 1, executedAt: '2026-11-25T00:00:00Z',
+    attempts: 2, tokensIn: 18_000, tokensOut: 3_000, cachedTokensIn: 0, thoughtsTokens: null,
+    sentSettings: null, responseModel: null, guardCostUsd: 0.0165, listCostUsd: 0.0033, reportCostUsd: 0.0033,
+    costBasis: 'measured', attemptsGuardCostUsd: 0.033, error: null, rejected: [], rawText: null };
+  const ledger: LedgerEntry[] = [1, 2].map((attempt) => ({ runId: record.runId, studyKey: record.studyKey,
+    model: 'claude-haiku-5-5', attempt, attemptAt: '2026-11-25T00:00:00Z', outcome: 'ok',
+    tokensIn: 18_000, tokensOut: 3_000, cachedTokensIn: 0, guardCostUsd: 0.0165, costBasis: 'measured', elapsedMs: 100 }));
+  assert.equal(metrics([], [record], ledger).listCostPerStudy, 2 * (18_000 * 0.1 + 3_000 * 0.5) / 1e6);
+});
+
 test('ブートストラップ乱数の固定値と type 7 分位数', () => {
   const random = mulberry32(20261122);
   assert.deepEqual([random(), random(), random()], [0.8369944463483989, 0.10530598578043282, 0.0031693943310528994]);

@@ -10,6 +10,7 @@ import { FALLBACK_PRICING } from './config';
 export type CostBasis = 'measured' | 'measured_failure' | 'estimated_output_limit' | 'unknown';
 
 export type CostSource = 'production_pricing' | 'bench_fallback';
+export type CostPurpose = 'guard' | 'report';
 
 export interface BilledCostInput {
   model: string;
@@ -36,6 +37,7 @@ export function billedCostUsd(
   input: BilledCostInput,
   pricing = { production: MODEL_PRICING, fallback: FALLBACK_PRICING, estimate: estimateCostUsd },
   timestampMs: number = Date.now(),
+  purpose: CostPurpose = 'report',
 ): BilledCostResult {
   const { model, tokensIn, rawResponse, cachedTokensIn } = input;
   const billedTokensOut = extractBilledTokensOut(rawResponse);
@@ -44,6 +46,18 @@ export function billedCostUsd(
 
   if (billedTokensOut === null) {
     return { costUsd: null, costSource, billedTokensOut };
+  }
+
+  const modelPricing = pricing.production[model] ?? pricing.fallback[model];
+  // 監視は常に長い入力の高い単価で数える。失敗時の promptCharacters / 4 などの推定が
+  // 100,000 以下でも実入力は超える可能性があり、Haiku の差額は小さいため過少計上を避ける。
+  if (purpose === 'guard' && modelPricing?.longContext) {
+    const rates = modelPricing.longContext;
+    const totalIn = tokensIn ?? 0;
+    const cachedIn = Math.min(Math.max(cachedTokensIn ?? 0, 0), totalIn);
+    const cachedRate = rates.cachedInputPerMillion ?? rates.inputPerMillion;
+    return { costUsd: ((totalIn - cachedIn) * rates.inputPerMillion + cachedIn * cachedRate +
+      billedTokensOut * rates.outputPerMillion) / 1_000_000, costSource, billedTokensOut };
   }
 
   if (hasProductionPricing) {
@@ -58,10 +72,12 @@ export function billedCostUsd(
   if (fallback === undefined) {
     return { costUsd: null, costSource, billedTokensOut };
   }
-  // fallback 単価表にはキャッシュ単価が無い前提のため、キャッシュ割引は見込まず入力単価で積む
+  // 補助単価の報告は段を適用するが、キャッシュ割引は見込まず入力単価で積む。
   const totalIn = tokensIn ?? 0;
-  const inputCost = (totalIn / 1_000_000) * fallback.inputPerMillion;
-  const outputCost = (billedTokensOut / 1_000_000) * fallback.outputPerMillion;
+  const rates = fallback.longContext && totalIn > fallback.longContext.thresholdTokensIn
+    ? fallback.longContext : fallback;
+  const inputCost = (totalIn / 1_000_000) * rates.inputPerMillion;
+  const outputCost = (billedTokensOut / 1_000_000) * rates.outputPerMillion;
   return { costUsd: inputCost + outputCost, costSource, billedTokensOut };
 }
 
@@ -72,7 +88,7 @@ export function billedCostUsd(
  */
 export function failedCostUsd(
   model: string, error: unknown, promptCharacters: number, maxOutputTokens: number,
-): BilledCostResult & { costBasis: CostBasis } {
+): BilledCostResult & { costBasis: CostBasis; reportCostUsd: number | null } {
   const obj = typeof error === 'object' && error !== null ? error as Record<string, unknown> : {};
   const usage = typeof obj.usage === 'object' && obj.usage !== null
     ? obj.usage as Record<string, unknown> : {};
@@ -94,9 +110,13 @@ export function failedCostUsd(
   } else {
     tokensOut = null;
   }
-  return { ...billedCostUsd({ model, tokensIn, cachedTokensIn,
+  const input = { model, tokensIn, cachedTokensIn,
     rawResponse: tokensOut === null ? null : { usageMetadata: { candidatesTokenCount: tokensOut } },
-  }), costBasis };
+  };
+  const billed = billedCostUsd(input, undefined, undefined, 'guard');
+  const reportCostUsd = costBasis === 'measured_failure'
+    ? billedCostUsd(input, undefined, undefined, 'report').costUsd : billed.costUsd;
+  return { ...billed, costBasis, reportCostUsd };
 }
 
 /**
@@ -155,25 +175,30 @@ export interface RecordedCostRun {
   cachedTokensIn?: number | null;
   rawResponse?: unknown;
   costUsd: number | null;
+  reportCostUsd?: number | null;
   costBasis?: CostBasis;
   /** cliRunner.ts の run は 'claude_cli_reported'（CLI が報告した total_cost_usd）を持つ。 */
   costSource?: string;
 }
 
 /**
- * 採点時の費用。実行日時か使用量が無い過去の記録は記録値を維持する。
+ * 採点時の費用。実測失敗は保存済みの報告用費用を優先する。
+ * 実行日時か使用量が無い過去の記録は記録値を維持する。
  * CLI 経由の run（costSource = 'claude_cli_reported'）も raw に usage を持つが、費用は CLI の
  * 報告値が正なので数え直さない。
  */
-export function recalculateRunCost(run: RecordedCostRun): { costUsd: number | null; usedRecordedCost: boolean } {
+export function recalculateRunCost(run: RecordedCostRun, purpose: CostPurpose = 'report'): { costUsd: number | null; usedRecordedCost: boolean } {
   const timestampMs = Date.parse(run.executedAt ?? '');
+  if (purpose === 'report' && run.costBasis === 'measured_failure' && typeof run.reportCostUsd === 'number') {
+    return { costUsd: run.reportCostUsd, usedRecordedCost: true };
+  }
   if (!Number.isFinite(timestampMs) || run.costBasis === 'measured_failure' || run.costBasis === 'estimated_output_limit' ||
       run.costSource === 'claude_cli_reported' || extractBilledTokensOut(run.rawResponse) === null) {
     return { costUsd: run.costUsd, usedRecordedCost: true };
   }
   return {
     costUsd: billedCostUsd({ ...run, rawResponse: run.rawResponse, cachedTokensIn: run.cachedTokensIn ?? null },
-      undefined, timestampMs).costUsd,
+      undefined, timestampMs, purpose).costUsd,
     usedRecordedCost: false,
   };
 }
@@ -255,7 +280,7 @@ export function recalculateLedger(
         !Object.hasOwn(entry, 'billedTokensOut') && run !== undefined &&
         run.runId === entry.runId && run.tokensOut === entry.tokensOut &&
         run.thoughtsTokens === entry.thoughtsTokens && extractBilledTokensOut(run.rawResponse) !== null) {
-      const cost = recalculateRunCost(run);
+      const cost = recalculateRunCost(run, 'guard');
       if (cost.usedRecordedCost) {
         totalUsd += entry.costUsd ?? 0;
       } else {

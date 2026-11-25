@@ -80,6 +80,7 @@ interface RunRecord {
   thoughtsTokens: number | null;
   cachedTokensIn: number | null;
   costUsd: number | null;
+  reportCostUsd?: number | null;
   costSource: CostSource;
   costBasis: CostBasis;
   error: string | null;
@@ -277,7 +278,7 @@ async function main(): Promise<void> {
         tokensIn: 0,
         rawResponse: { usageMetadata: { candidatesTokenCount: 0 } },
         cachedTokensIn: null,
-      }).costSource;
+      }, undefined, undefined, 'guard').costSource;
       console.log(`  ${model.id}: ${source}`);
     }
     console.log(`費用上限: $${costLimitUsd} / レジャ累計: $${cumulativeCost.toFixed(4)}`);
@@ -453,7 +454,7 @@ async function main(): Promise<void> {
       ? userContent.length : userContent.reduce((sum, part) => sum + (part.type === 'text' ? part.text.length : 0), 0));
     const billed = res === null
       ? failedCostUsd(p.model.id, failure, promptCharacters, MAX_OUTPUT_TOKENS)
-      : { ...billedCostUsd({ model: p.model.id, tokensIn, rawResponse: res.raw, cachedTokensIn }),
+      : { ...billedCostUsd({ model: p.model.id, tokensIn, rawResponse: res.raw, cachedTokensIn }, undefined, undefined, 'guard'),
         costBasis: 'measured' as const };
     cumulativeCost += billed.costUsd ?? 0;
 
@@ -496,6 +497,7 @@ async function main(): Promise<void> {
       repeat: p.repeat,
       promptVersion: EXTRACT_DATA_PROMPT_VERSION,
       schemaFile: schemaFileName(),
+      ...(res === null && 'reportCostUsd' in billed ? { reportCostUsd: billed.reportCostUsd } : {}),
       executedAt: new Date().toISOString(),
       elapsedMs,
       tokensIn,

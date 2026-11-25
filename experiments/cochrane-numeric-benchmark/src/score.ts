@@ -3,7 +3,7 @@ import { parseEntityKey } from '../../../src/utils/entityKey';
 import type { EvalValue } from './evaluationSet';
 import type { ScoringItem, RunRecord } from './runner';
 import type { LedgerEntry } from './ledger';
-import { reportCostUsd } from './cost';
+import { listCostUsd, reportCostUsd } from './cost';
 
 // extraction-benchmark-real/src/metrics.ts の decimalText をそのまま移植。
 function decimalText(value: string | null): string | null {
@@ -108,7 +108,7 @@ export function metrics(rows: ScoredValue[], runs: RunRecord[], ledger: LedgerEn
     differentValueCount: rows.filter((row) => row.label === 'different_value').length,
     anchorSuccessRate: ratio([...quoted].filter((item) => item.anchorStatus !== null && item.anchorStatus !== 'failed').length, quoted.size),
     reportCostPerStudy: ratio(attempts.reduce((n, entry) => n + reportCostUsd(entry.model, entry.tokensIn, entry.tokensOut, entry.cachedTokensIn, Date.parse(entry.attemptAt)), 0), runs.length),
-    listCostPerStudy: ratio(attempts.reduce((n, entry) => n + entry.guardCostUsd, 0), runs.length),
+    listCostPerStudy: ratio(attempts.reduce((n, entry) => n + listCostUsd(entry.model, entry.tokensIn, entry.tokensOut), 0), runs.length),
     elapsedMsSuccessfulRunMean: mean(elapsed), elapsedMsSuccessfulRunMedian: median(elapsed),
     elapsedMsPerRequestMean: mean(elapsedRequests), elapsedMsPerRequestMedian: median(elapsedRequests),
     failureClasses, retries: attempts.filter((entry) => entry.attempt > 1).length,
