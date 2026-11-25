@@ -11,6 +11,7 @@
     "run": "tsx src/runner.ts",
     "lock-gold": "tsx src/lockGold.ts",
     "recheck-list": "tsx src/recheckList.ts",
+    "recheck-readers": "tsx src/recheckReadersCli.ts",
     "score": "tsx src/scoreCli.ts"
   },
   "devDependencies": {
