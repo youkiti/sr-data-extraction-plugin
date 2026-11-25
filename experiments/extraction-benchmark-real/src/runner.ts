@@ -80,6 +80,7 @@ interface RunRecord {
   thoughtsTokens: number | null;
   cachedTokensIn: number | null;
   costUsd: number | null;
+  reportCostUsd?: number | null;
   costSource: CostSource;
   costBasis: CostBasis;
   error: string | null;
@@ -496,6 +497,7 @@ async function main(): Promise<void> {
       repeat: p.repeat,
       promptVersion: EXTRACT_DATA_PROMPT_VERSION,
       schemaFile: schemaFileName(),
+      ...(res === null && 'reportCostUsd' in billed ? { reportCostUsd: billed.reportCostUsd } : {}),
       executedAt: new Date().toISOString(),
       elapsedMs,
       tokensIn,

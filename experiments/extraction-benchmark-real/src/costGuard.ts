@@ -88,7 +88,7 @@ export function billedCostUsd(
  */
 export function failedCostUsd(
   model: string, error: unknown, promptCharacters: number, maxOutputTokens: number,
-): BilledCostResult & { costBasis: CostBasis } {
+): BilledCostResult & { costBasis: CostBasis; reportCostUsd: number | null } {
   const obj = typeof error === 'object' && error !== null ? error as Record<string, unknown> : {};
   const usage = typeof obj.usage === 'object' && obj.usage !== null
     ? obj.usage as Record<string, unknown> : {};
@@ -110,9 +110,13 @@ export function failedCostUsd(
   } else {
     tokensOut = null;
   }
-  return { ...billedCostUsd({ model, tokensIn, cachedTokensIn,
+  const input = { model, tokensIn, cachedTokensIn,
     rawResponse: tokensOut === null ? null : { usageMetadata: { candidatesTokenCount: tokensOut } },
-  }, undefined, undefined, 'guard'), costBasis };
+  };
+  const billed = billedCostUsd(input, undefined, undefined, 'guard');
+  const reportCostUsd = costBasis === 'measured_failure'
+    ? billedCostUsd(input, undefined, undefined, 'report').costUsd : billed.costUsd;
+  return { ...billed, costBasis, reportCostUsd };
 }
 
 /**
@@ -171,28 +175,22 @@ export interface RecordedCostRun {
   cachedTokensIn?: number | null;
   rawResponse?: unknown;
   costUsd: number | null;
+  reportCostUsd?: number | null;
   costBasis?: CostBasis;
   /** cliRunner.ts の run は 'claude_cli_reported'（CLI が報告した total_cost_usd）を持つ。 */
   costSource?: string;
 }
 
 /**
- * 採点時の費用。実行日時か使用量が無い過去の記録は記録値を維持する。
+ * 採点時の費用。実測失敗は保存済みの報告用費用を優先する。
+ * 実行日時か使用量が無い過去の記録は記録値を維持する。
  * CLI 経由の run（costSource = 'claude_cli_reported'）も raw に usage を持つが、費用は CLI の
  * 報告値が正なので数え直さない。
  */
 export function recalculateRunCost(run: RecordedCostRun, purpose: CostPurpose = 'report'): { costUsd: number | null; usedRecordedCost: boolean } {
   const timestampMs = Date.parse(run.executedAt ?? '');
-  const modelPricing = MODEL_PRICING[run.model] ?? FALLBACK_PRICING[run.model];
-  if (Number.isFinite(timestampMs) && purpose === 'report' && run.costBasis === 'measured_failure' &&
-      run.costSource !== 'claude_cli_reported' && modelPricing?.longContext &&
-      finiteTokenCount(run.tokensIn) !== null && finiteTokenCount(run.tokensOut) !== null) {
-    return {
-      costUsd: billedCostUsd({ model: run.model, tokensIn: run.tokensIn, cachedTokensIn: run.cachedTokensIn ?? null,
-        rawResponse: { usageMetadata: { candidatesTokenCount: run.tokensOut } },
-      }, undefined, timestampMs, 'report').costUsd,
-      usedRecordedCost: false,
-    };
+  if (purpose === 'report' && run.costBasis === 'measured_failure' && typeof run.reportCostUsd === 'number') {
+    return { costUsd: run.reportCostUsd, usedRecordedCost: true };
   }
   if (!Number.isFinite(timestampMs) || run.costBasis === 'measured_failure' || run.costBasis === 'estimated_output_limit' ||
       run.costSource === 'claude_cli_reported' || extractBilledTokensOut(run.rawResponse) === null) {
