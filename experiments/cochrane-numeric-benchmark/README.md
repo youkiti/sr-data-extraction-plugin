@@ -39,7 +39,7 @@ task gold が trim 後に空の値は参照行の検索・整合性検査・採�
 
 利用可能な PDF または文字層がなく文書を一部省いた研究では、上流が reported / derivable で、同じラベルを付けた読み手の根拠文書が一つも依頼に含まれない値を再判定する。全資料を渡す研究は対象外。`npm run recheck-list` が解析名・比較・群・subgroup・清掃済み脚注・gold と文書 ID を `outputs/recheck-needed.jsonl` に書く。拡張の出力を見ない読み手が、渡した文書だけを読み、`outputs/recheck-labels.jsonl` に `{ "rowId": "行 ID", "field": "フィールド", "label": "not_in_documents" }` 形式で記録する。label は reported / derivable / different_value / not_in_documents。必要なラベルが揃うまで lock-gold と score は拒否し、確定時にはファイルの sha256 も固定する。run は再チェック前にも実行できる。
 
-2 人の独立の読み手（Opus と gpt-6-astra）に、拡張の出力を見せずに下読みさせる。`npm run recheck-readers -- freeze` で入力を固定し、読み手が `outputs/recheck-readers/responses/<名前>/<タスク ID>.json` に応答を書く。`ingest --reader <名前>` を各読み手に実行し、`summarize --reader-a <名前> --reader-b <名前>` で合議する。本人が `owner-queue.json` の値を判定し、`labels --adjudications <file>` で全値のラベルを書き出す（各コマンドは `npm run recheck-readers --` に続ける）。本人の判定は `{ rowId, field, label, note? }` の JSON 配列または JSONL とし、Artifact の `{key, value}` 形式も受け付ける。全コマンドで `--outputs <dir>` を指定できる。上流と異なり reported と derivable の割れと single_valid は自動で採らず、本人に回す。図は使わない。
+2 人の独立の読み手（Opus と gpt-6-astra）に、拡張の出力を見せずに下読みさせる。`npm run recheck-readers -- freeze` で入力を固定し、読み手が `outputs/recheck-readers/responses/<名前>/<タスク ID>.json` に応答を書く。`ingest --reader <名前>` を各読み手に実行し、`summarize --reader-a <名前> --reader-b <名前>` で合議する。本人が `owner-queue.json` の値を判定し、`labels --adjudications <file>` で全値のラベルを書き出す（各コマンドは `npm run recheck-readers --` に続ける）。本人の判定は `{ rowId, field, label, note? }` の JSON 配列または JSONL とし、Artifact の `{key, value}` 形式も受け付ける。全コマンドで `--outputs <dir>` を指定できる。上流と異なり reported と derivable の割れと single_valid は自動で採らず、引用に数がなく reported から derivable に読み替えた判定も、両者の照合後ラベルが一致していても本人に回す。図は使わない。
 
 ## 変換と採点の確定事項
 

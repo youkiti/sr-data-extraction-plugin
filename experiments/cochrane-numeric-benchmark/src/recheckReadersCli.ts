@@ -18,7 +18,7 @@ interface FrozenItem { item: number; rowId: string; fields: string[]; gold: Reco
 interface FrozenTask { id: string; studyKey: string; tier: Tier; files: Record<string, string>; items: FrozenItem[] }
 interface Frozen { tasks: FrozenTask[]; values: { taskId: string; item: number; rowId: string; field: string; gold: string; upstreamLabel: Label }[] }
 interface Judgment extends FieldJudge { taskId: string; item: number; rowId: string; frozenSha256: string }
-interface Final extends FinalValue { gold: string; singleValid: boolean; labelA: string | null; labelB: string | null; frozenSha256: string }
+interface Final extends FinalValue { gold: string; singleValid: boolean; labelA: string | null; labelB: string | null; frozenSha256: string; judgmentsSha256: Record<string, string> }
 interface Options { studies?: () => Promise<{ studyKey: string; context: ReviewContext | null }[]>; log?: (message: string) => void }
 const exists = async (file: string) => { try { await stat(file); return true; } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; } };
 const writeLines = async (file: string, rows: unknown[]) => { await mkdir(path.dirname(file), { recursive: true }); await writeFile(file, rows.map((row) => JSON.stringify(row) + '\n').join(''), 'utf8'); };
@@ -144,8 +144,11 @@ export async function runCli(args: string[], options: Options = {}): Promise<num
     return missing || unusable ? 1 : 0;
   }
   if (command === 'summarize') {
+    const judgmentsSha256: Record<string, string> = {};
     const readJudges = async (name: string) => {
-      const rows = await jsonLines<Judgment>(path.join(work, 'judgments', safeName(name) + '.jsonl'));
+      const raw = await readFile(path.join(work, 'judgments', safeName(name) + '.jsonl'), 'utf8');
+      judgmentsSha256[name] = sha256(raw);
+      const rows = raw.split('\n').filter((line) => line.trim()).map((line) => JSON.parse(line) as Judgment);
       const map = new Map<string, Judgment>();
       for (const row of rows) {
         if (row.frozenSha256 !== hash) throw new Error('判定と凍結のハッシュが一致しません');
@@ -156,7 +159,7 @@ export async function runCli(args: string[], options: Options = {}): Promise<num
       return map;
     };
     const nameA = required('--reader-a'), nameB = required('--reader-b');
-    if (nameA === nameB) throw new Error('異なる読み手を指定してください');
+    if (nameA.toLowerCase() === nameB.toLowerCase()) throw new Error('異なる読み手を指定してください');
     const a = await readJudges(nameA), b = await readJudges(nameB);
     const final: Final[] = [], queue: unknown[] = [], docTasks = new Set<string>(), pairs: [string, string][] = [];
     const countsA: FieldJudge[] = [], countsB: FieldJudge[] = [];
@@ -165,7 +168,7 @@ export async function runCli(args: string[], options: Options = {}): Promise<num
       const jb = b.get(valueKey(value)) ?? judgeField(value.field, value.gold, null, [], {});
       countsA.push(ja); countsB.push(jb);
       const result = consensus(ja, jb);
-      final.push({ rowId: value.rowId, field: value.field, gold: value.gold, ...result, labelA: ja.label, labelB: jb.label, frozenSha256: hash });
+      final.push({ rowId: value.rowId, field: value.field, gold: value.gold, ...result, labelA: ja.label, labelB: jb.label, frozenSha256: hash, judgmentsSha256 });
       if (ja.problem === null && jb.problem === null) pairs.push([ja.label_as_given!, jb.label_as_given!]);
       if (result.status !== 'agreed') {
         const check = checks.get(value.taskId)!, { gold: _gold, ...context } = check.items.find((i) => i.item === value.item)!;
@@ -190,6 +193,15 @@ export async function runCli(args: string[], options: Options = {}): Promise<num
     if (await exists(output) && !force) throw new Error('ラベルは既にあります。上書きには --force が必要です');
     const final = await jsonLines<Final>(path.join(work, 'final.jsonl'));
     if (final.length !== frozen.values.length || final.some((v, i) => v.frozenSha256 !== hash || valueKey(v) !== valueKey(frozen.values[i]!))) throw new Error('合議結果と凍結が一致しません');
+    const currentHashes = new Map<string, string>();
+    for (const row of final) {
+      const entries = Object.entries(row.judgmentsSha256 ?? {});
+      if (entries.length !== 2) throw new Error('判定が合議の後に変わっています。summarize をやり直してください');
+      for (const [name, expected] of entries) {
+        if (!currentHashes.has(name)) currentHashes.set(name, sha256(await readFile(path.join(work, 'judgments', safeName(name) + '.jsonl'), 'utf8')));
+        if (currentHashes.get(name) !== expected) throw new Error('判定が合議の後に変わっています。summarize をやり直してください');
+      }
+    }
     const result = makeLabels(final, readOwner(await readFile(required('--adjudications'), 'utf8')));
     await writeLines(output, result.labels);
     log(`自動 ${result.automatic}・本人 ${result.owner}・agreed 上書き ${result.overrides}・ラベル ${JSON.stringify(result.labelsByType)}`);

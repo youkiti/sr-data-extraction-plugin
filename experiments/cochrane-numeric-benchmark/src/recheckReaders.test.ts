@@ -3,6 +3,7 @@ import test from 'node:test';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { normalized, quoteInText, toDecimal, textNumbers, quoteNumbers, matches, buildPrompt, parseResponse, judgeField, consensus, kappa, readOwner, makeLabels } from './recheckReaders';
 import { runCli } from './recheckReadersCli';
 import { readJson, jsonLines } from './io';
@@ -46,6 +47,13 @@ test('値の検査は全問題と reported の再分類を区別する', () => {
   assert.equal(judge({ label: 'not_in_documents' }).document_value, null);
   assert.equal(judge({ label: 'different_value', document_value: '14', quote: 'Other value 14' }).problem, null);
 });
+test('ハーネスのページ番号は引用の数の根拠にしない', () => {
+  const field = 'experimental_cases', quote = '[PAGE 12] Participants were randomised';
+  const result = judgeField(field, '12', { fields: { [field]: { label: 'reported', document_value: '12', report_file: 'report_DOC1.txt', quote } } },
+    ['report_DOC1.txt'], { 'report_DOC1.txt': normalized(quote) });
+  assert.equal(result.quote_ok, true); assert.equal(result.quote, quote); assert.equal(result.problem, null);
+  assert.equal(result.label, 'derivable'); assert.equal(result.label_as_given, 'reported');
+});
 test('応答のフェンス、BOM、項目番号を検査する', () => {
   assert.ok(parseResponse('\uFEFF```json\n' + JSON.stringify({ answers: [{ item: '1' }] }) + '\n```', 1).has(1));
   for (const answers of [[{ item: 1 }, { item: '1' }], [{ item: 0 }], [{ item: 2 }], [{ item: '1.0' }], [{ item: 1.5 }]]) assert.throws(() => parseResponse(JSON.stringify({ answers }), 1));
@@ -62,7 +70,12 @@ test('合議は照合後ラベルと different_value の数を使い、元ラベ
   const different = judge({ label: 'different_value', document_value: '14', quote: 'Other value 14' });
   assert.equal(consensus(different, { ...different, document_value: '14.0' }).status, 'agreed');
   assert.equal(consensus(different, { ...different, document_value: '15' }).status, 'split');
-  assert.equal(consensus(judge({ quote: 'Derived from groups' }), derived).status, 'agreed');
+  const reclassified = judge({ quote: 'Derived from groups' });
+  assert.deepEqual(consensus(reclassified, reclassified), { status: 'split', label: null, singleValid: false });
+  assert.deepEqual(consensus(reclassified, derived), { status: 'split', label: null, singleValid: false });
+  assert.deepEqual(consensus(derived, reclassified), { status: 'split', label: null, singleValid: false });
+  assert.deepEqual(consensus(derived, derived), { status: 'agreed', label: 'derivable', singleValid: false });
+  assert.equal(consensus(reclassified).singleValid, true);
   assert.deepEqual(kappa([]), { agreement: null, kappa: null });
   assert.deepEqual(kappa([['reported', 'reported']]), { agreement: 1, kappa: null });
   assert.deepEqual(kappa([['reported', 'reported'], ['reported', 'derivable'], ['derivable', 'derivable'], ['derivable', 'reported']]), { agreement: 0.5, kappa: 0 });
@@ -115,7 +128,13 @@ test('合成ファイルで凍結から取り込み、合議、本人判定、�
       assert.equal(await run(['ingest', '--reader', reader]), 0);
     }
     await assert.rejects(run(['freeze', '--force']), /退避/);
+    await assert.rejects(run(['summarize', '--reader-a', 'a', '--reader-b', 'a']), /異なる読み手/);
+    await assert.rejects(run(['summarize', '--reader-a', 'a', '--reader-b', 'A']), /異なる読み手/);
     assert.equal(await run(['summarize', '--reader-a', 'a', '--reader-b', 'b']), 0);
+    const final = await jsonLines<{ judgmentsSha256: Record<string, string> }>(path.join(work, 'final.jsonl'));
+    const hashes = Object.fromEntries(await Promise.all(['a', 'b'].map(async (reader) => [reader,
+      createHash('sha256').update(await readFile(path.join(work, 'judgments', reader + '.jsonl'))).digest('hex')])));
+    for (const row of final) assert.deepEqual(row.judgmentsSha256, hashes);
     const summary = await readJson<{ total: number; owner: number; agreement: number }>(path.join(work, 'summary.json'));
     assert.equal(summary.total, 2); assert.equal(summary.owner, 1); assert.equal(summary.agreement, 0.5);
     const queue = await readJson<{ context: Record<string, unknown>; singleValid: boolean; readerA: { quote: string } }[]>(path.join(work, 'owner-queue.json'));
@@ -131,6 +150,13 @@ test('合成ファイルで凍結から取り込み、合議、本人判定、�
     assert.deepEqual(labels.map((r) => r.field), fields); assert.deepEqual(Object.keys(labels[0]!), ['rowId', 'field', 'label']);
     await assert.rejects(run(['labels', '--adjudications', owner]), /既に/);
     assert.equal(await run(['labels', '--adjudications', owner, '--force']), 0);
+    for (const reader of ['a', 'b']) {
+      const file = path.join(work, 'judgments', reader + '.jsonl'), original = await readFile(file, 'utf8');
+      await writeFile(file, original + '\n');
+      await assert.rejects(run(['labels', '--adjudications', owner, '--force']), /判定が合議の後に変わっています。summarize をやり直してください/);
+      assert.equal(await run(['summarize', '--reader-a', 'a', '--reader-b', 'b']), 0);
+      assert.equal(await run(['labels', '--adjudications', owner, '--force']), 0);
+    }
     const frozenFile = path.join(work, 'frozen.json'), original = await readFile(frozenFile, 'utf8');
     await writeFile(frozenFile, original + '\n');
     await assert.rejects(run(['summarize', '--reader-a', 'a', '--reader-b', 'b']), /ハッシュ/);

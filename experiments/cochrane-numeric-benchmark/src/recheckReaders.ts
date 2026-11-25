@@ -119,7 +119,7 @@ export function judgeField(field: string, goldText: string, answer: unknown, fil
   if (!row.quote_ok) return fail('quote_not_found');
   const document = toDecimal(entry.document_value);
   if (document === null) return fail('value_not_numeric');
-  if (['reported', 'different_value'].includes(row.label!) && !quoteNumbers(row.quote!).has(document.replace(/^-/, ''))) {
+  if (['reported', 'different_value'].includes(row.label!) && !quoteNumbers(row.quote!.replace(/\[PAGE \d+\]/g, '')).has(document.replace(/^-/, ''))) {
     if (row.label === 'different_value') return fail('value_not_in_quote');
     row.label = 'derivable';
   }
@@ -131,7 +131,7 @@ export function judgeField(field: string, goldText: string, answer: unknown, fil
 export function consensus(a?: FieldJudge, b?: FieldJudge) {
   const valid = (x?: FieldJudge) => !!x && x.problem === null;
   const both = valid(a) && valid(b);
-  const agreed = both && a!.label === b!.label && (a!.label !== 'different_value' || toDecimal(a!.document_value) === toDecimal(b!.document_value));
+  const agreed = both && a!.label === a!.label_as_given && b!.label === b!.label_as_given && a!.label === b!.label && (a!.label !== 'different_value' || toDecimal(a!.document_value) === toDecimal(b!.document_value));
   const status = agreed ? 'agreed' : both ? 'split' : 'incomplete';
   return { status, label: agreed ? a!.label as Label : null, singleValid: !agreed && [a, b].filter((x) => valid(x) && ['reported', 'derivable'].includes(x!.label!)).length === 1 };
 }
