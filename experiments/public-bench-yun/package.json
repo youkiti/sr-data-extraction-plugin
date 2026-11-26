@@ -1,0 +1,19 @@
+{
+  "name": "public-bench-yun",
+  "private": true,
+  "version": "0.1.0",
+  "description": "評価 C: Yun et al. 2024 公開ベンチの数値抽出ハーネス",
+  "type": "module",
+  "scripts": {
+    "test": "node --import tsx --test src/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "fetch-pdf": "node --import tsx src/fetchPdf.ts",
+    "extract-text": "node --import tsx src/extractText.ts",
+    "run": "node --import tsx src/runner.ts"
+  },
+  "devDependencies": {
+    "pdfjs-dist": "6.5.438",
+    "tsx": "^4.22.4",
+    "typescript": "~6.0.3"
+  }
+}
