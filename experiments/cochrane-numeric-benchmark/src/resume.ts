@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import { EXTRACT_DATA_PROMPT_VERSION } from '../../../src/features/extraction/skills/extractData';
-import { repoRoot, runsDir, TIERS, EXPECTED_SHA256_PREFIX, selectedModels, type Tier } from './config';
+import { repoRoot, runsDir, TIERS, EXPECTED_SHA256_PREFIX, selectedModels, codexEffort, type Tier } from './config';
 import type { LedgerEntry } from './ledger';
 import type { EvaluationSet } from './io';
 import { readOptional, writeJson, fileHash, goldFile, refDir, sha256 } from './io';
@@ -67,7 +67,9 @@ export function requestHashes(set: EvaluationSet): Record<string, string> {
   const hashes: Record<string, string> = {};
   for (const model of selectedModels()) for (const study of set.studies) {
     const { messages, chatOptions } = buildStudyRequest(study, set.documents.get(study.studyKey)!);
-    hashes[`request/${runIdFor(model.id, study.studyKey)}`] = sha256(JSON.stringify({ messages, chatOptions }));
+    hashes[`request/${runIdFor(model.id, study.studyKey)}`] = 'keyEnv' in model
+      ? sha256(JSON.stringify({ messages, chatOptions }))
+      : sha256(JSON.stringify({ messages, chatOptions, codex: { reasoningEffort: codexEffort() } }));
   }
   return hashes;
 }

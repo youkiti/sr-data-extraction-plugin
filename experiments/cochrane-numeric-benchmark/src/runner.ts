@@ -9,7 +9,8 @@ import type { ChatResponse } from '../../../src/lib/llm/LLMProvider';
 import { normalizeText } from '../../../src/features/anchoring/normalizeText';
 import { anchorQuote } from '../../../src/features/anchoring/anchorQuote';
 import { anchorQuoteSegments } from '../../../src/features/anchoring/anchorQuoteSegments';
-import { benchRoot, repoRoot, runsDir, selectedModels } from './config';
+import { benchRoot, repoRoot, runsDir, selectedModels, codexEffort, codexConcurrency, codexTimeoutMs } from './config';
+import { codexPreflight, createCodexProvider, type CodexResponse } from './codexProvider';
 import { inputRoot, loadEvaluation, printCounts, writeJson } from './io';
 import { buildStudyRequest, promptCharacters } from './prompt';
 import { classifyFailure, errorInfo, failureClass, retryDecision, RETRY_MAX_ATTEMPTS } from './retry';
@@ -63,9 +64,13 @@ export async function main(): Promise<void> {
     console.log(`harness commit: ${await harnessCommit()}, prompt version: ${EXTRACT_DATA_PROMPT_VERSION}`);
     const dry = process.env.BENCH_DRY_RUN === '1';
     if (!dry) dotenv.config({ path: [path.join(benchRoot, '.env'), path.join(repoRoot, '.env')], quiet: true });
+    const models = selectedModels();
+    const usesCodex = models.some((model) => !('keyEnv' in model));
+    const effort = usesCodex ? codexEffort() : null;
+    const concurrency = usesCodex ? codexConcurrency() : 1;
+    const timeoutMs = usesCodex ? codexTimeoutMs() : undefined;
     const root = await inputRoot();
     const limits = dry ? null : costLimits();
-    const models = selectedModels();
     for (const model of models) guardCostUsd(model.id, 0, 0);
     const set = await loadEvaluation(root);
     printCounts(set);
@@ -92,25 +97,32 @@ export async function main(): Promise<void> {
       console.log(`planned: ${plans.length - skipped}, skip: ${skipped}, items: ${plans.reduce((n, p) => n + p.study.items.length, 0)}, documents: ${plans.reduce((n, p) => n + p.docs.length, 0)}, user-prompt characters: ${userChars}`);
       return;
     }
+    // 依頼が残る全キーを呼び出し前に検査し、途中で別モデルだけが進むことを防ぐ。
+    const activeModels = models.filter((model) => plans.some((plan) => plan.model.id === model.id &&
+      (plan.action.kind === 'execute' || plan.action.kind === 'backup_execute')));
+    const codex = activeModels.some((model) => !('keyEnv' in model)) ? await codexPreflight() : null;
     for (const plan of plans) if (plan.action.kind === 'finalise') {
       await writeJson(plan.file, interruptedRecord(plan.study, plan.action.last));
       executed++; failed++;
     }
-    // 依頼が残る全キーを呼び出し前に検査し、途中で別モデルだけが進むことを防ぐ。
-    const activeModels = models.filter((model) => plans.some((plan) => plan.model.id === model.id &&
-      (plan.action.kind === 'execute' || plan.action.kind === 'backup_execute')));
-    for (const model of activeModels) if (!process.env[model.keyEnv]?.trim()) throw new Error(`${model.keyEnv} がありません`);
+    for (const model of activeModels) if ('keyEnv' in model && !process.env[model.keyEnv]?.trim()) throw new Error(`${model.keyEnv} がありません`);
     await mkdir(dir, { recursive: true });
     const append = ledgerWriter(ledgerFile);
     let stopped = false;
-    const workers = [...new Set(activeModels.map((model) => model.keyEnv))];
+    const workers = [...new Set(activeModels.flatMap((model) => 'keyEnv' in model ? [model.keyEnv] : [])),
+      ...Array.from({ length: activeModels.some((model) => !('keyEnv' in model)) ? concurrency : 0 }, () => 'codex')];
+    const codexPlans = plans.filter((entry) => !('keyEnv' in entry.model) && entry.action.kind !== 'skip');
+    function* takeCodexPlans() { while (codexPlans.length) yield codexPlans.shift()!; }
     const worker = async (keyEnv: string) => {
       let lastFinished = 0;
-      for (const plan of plans.filter((entry) => entry.model.keyEnv === keyEnv && entry.action.kind !== 'skip')) {
+      const queue = keyEnv === 'codex' ? takeCodexPlans() : plans.filter((entry) => 'keyEnv' in entry.model && entry.model.keyEnv === keyEnv && entry.action.kind !== 'skip');
+      for (const plan of queue) {
         if (stopped) return;
         if (plan.action.kind === 'skip' || plan.action.kind === 'finalise') continue;
         if (plan.action.kind === 'backup_execute') await rename(plan.file, path.join(dir, `_corrupt-${Date.now()}__${plan.runId}.json.bak`));
-        const provider = createProvider({ apiKey: process.env[keyEnv]!, model: plan.model.id, fetch: timeoutFetch });
+        const provider = 'keyEnv' in plan.model
+          ? createProvider({ apiKey: process.env[keyEnv]!, model: plan.model.id, fetch: timeoutFetch })
+          : createCodexProvider({ effort: effort!, codexVersion: codex!.codexVersion, timeoutMs });
         const chars = promptCharacters(plan.request.messages);
         let attemptsGuardCostUsd = 0;
         for (let attempt = plan.action.attempt; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
@@ -123,7 +135,7 @@ export async function main(): Promise<void> {
           }
           const attemptAt = new Date().toISOString();
           const start = Date.now();
-          let response: ChatResponse | null = null, failure: unknown = null;
+          let response: ChatResponse | CodexResponse | null = null, failure: unknown = null;
           try { response = await provider.chat(plan.request.messages, plan.request.chatOptions); } catch (error) { failure = error; }
           const elapsedMs = Date.now() - start;
           lastFinished = Date.now();

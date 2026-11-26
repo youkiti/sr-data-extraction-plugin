@@ -1,5 +1,5 @@
 import { estimateCostUsd } from '../../../src/lib/llm/pricing';
-import { GUARD_PRICING, LIST_PRICING, REPORT_FALLBACK_PRICING } from './config';
+import { GUARD_PRICING, LIST_PRICING, REPORT_FALLBACK_PRICING, MODELS } from './config';
 
 export type CostBasis = 'measured' | 'estimated_input_tokens' | 'measured_failure' | 'estimated_output_limit' | 'estimated_input_only';
 export function guardCostUsd(model: string, tokensIn: number, tokensOut: number): number {
@@ -14,6 +14,7 @@ export function listCostUsd(model: string, tokensIn: number, tokensOut: number):
   return (tokensIn * rates.inputPerMillion + tokensOut * rates.outputPerMillion) / 1_000_000;
 }
 export function reportCostUsd(model: string, tokensIn: number, tokensOut: number, cachedTokensIn: number | null, timestampMs: number): number {
+  if (MODELS.some((entry) => entry.id === model && !('keyEnv' in entry))) return 0;
   const cost = estimateCostUsd(model, tokensIn, tokensOut, cachedTokensIn, REPORT_FALLBACK_PRICING[model], timestampMs);
   if (cost === null) throw new Error(`報告単価がありません: ${model}`);
   return cost;

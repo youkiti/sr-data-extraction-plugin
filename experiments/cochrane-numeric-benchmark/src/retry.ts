@@ -19,6 +19,7 @@ export function errorInfo(error: unknown): ErrorInfo {
 }
 export type FailureKind = 'spend_cap' | 'auth' | 'retryable' | 'other';
 export function classifyFailure(info: ErrorInfo): FailureKind {
+  if (info.failureKind === 'codex_usage_limit') return 'spend_cap';
   if (info.status === 429 && /spending cap/i.test(info.responseBody ?? '')) return 'spend_cap';
   if (info.status === 401 || info.status === 403 ||
       (info.status === 400 && /API_KEY_INVALID|API key not valid/i.test(info.responseBody ?? ''))) return 'auth';

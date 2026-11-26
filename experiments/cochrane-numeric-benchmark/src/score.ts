@@ -4,6 +4,7 @@ import type { EvalValue } from './evaluationSet';
 import type { ScoringItem, RunRecord } from './runner';
 import type { LedgerEntry } from './ledger';
 import { listCostUsd, reportCostUsd } from './cost';
+import { MODELS } from './config';
 
 // extraction-benchmark-real/src/metrics.ts の decimalText をそのまま移植。
 function decimalText(value: string | null): string | null {
@@ -88,6 +89,8 @@ export function metrics(rows: ScoredValue[], runs: RunRecord[], ledger: LedgerEn
   const elapsed = runs.filter((run) => run.outcome !== 'request_failed').map((run) => run.elapsedMs).sort((a, b) => a - b);
   const runIds = new Set(runs.map((run) => run.runId));
   const attempts = ledger.filter((entry) => runIds.has(entry.runId));
+  const measured = attempts.filter((entry) => entry.costBasis === 'measured' || entry.costBasis === 'measured_failure');
+  const subscription = [...runs, ...attempts].some((run) => MODELS.some((model) => model.id === run.model && !('keyEnv' in model)));
   const elapsedRequests = attempts.map((entry) => entry.elapsedMs);
   const failureClasses = Object.fromEntries(['null', 'rate_limit', 'server_error', 'network', 'timeout', 'output_limit', 'retryable_flag', 'other'].map((kind) =>
     [kind, attempts.filter((entry) => String(entry.failureClass ?? null) === kind).length]));
@@ -107,8 +110,13 @@ export function metrics(rows: ScoredValue[], runs: RunRecord[], ledger: LedgerEn
     derivableMatch: ratio(count(derivable, ['match']), derivable.length), goldMatch: ratio(count(rows, ['match']), rows.length),
     differentValueCount: rows.filter((row) => row.label === 'different_value').length,
     anchorSuccessRate: ratio([...quoted].filter((item) => item.anchorStatus !== null && item.anchorStatus !== 'failed').length, quoted.size),
-    reportCostPerStudy: ratio(attempts.reduce((n, entry) => n + reportCostUsd(entry.model, entry.tokensIn, entry.tokensOut, entry.cachedTokensIn, Date.parse(entry.attemptAt)), 0), runs.length),
-    listCostPerStudy: ratio(attempts.reduce((n, entry) => n + listCostUsd(entry.model, entry.tokensIn, entry.tokensOut), 0), runs.length),
+    reportCostPerStudy: subscription ? null : ratio(attempts.reduce((n, entry) => n + reportCostUsd(entry.model, entry.tokensIn, entry.tokensOut, entry.cachedTokensIn, Date.parse(entry.attemptAt)), 0), runs.length),
+    listCostPerStudy: subscription ? null : ratio(attempts.reduce((n, entry) => n + listCostUsd(entry.model, entry.tokensIn, entry.tokensOut), 0), runs.length),
+    ...(subscription ? { costNote: 'subscription_not_computable' } : {}),
+    tokensInPerStudy: ratio(measured.reduce((n, entry) => n + entry.tokensIn, 0), runs.length),
+    tokensOutPerStudy: ratio(measured.reduce((n, entry) => n + entry.tokensOut, 0), runs.length),
+    tokensUnmeasuredAttempts: attempts.length - measured.length,
+    thoughtsTokensPerStudy: mean(runs.flatMap((run) => typeof run.thoughtsTokens === 'number' ? [run.thoughtsTokens] : [])),
     elapsedMsSuccessfulRunMean: mean(elapsed), elapsedMsSuccessfulRunMedian: median(elapsed),
     elapsedMsPerRequestMean: mean(elapsedRequests), elapsedMsPerRequestMedian: median(elapsedRequests),
     failureClasses, retries: attempts.filter((entry) => entry.attempt > 1).length,

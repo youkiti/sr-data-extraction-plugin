@@ -54,7 +54,7 @@ export const cachePath = (tier: Tier, docId: string) => {
   return path.join(textLayerDir(), `${tier}__${docId}.json`);
 };
 export interface TextCache { tier: Tier; docId: string; pdfSha256: string; pdfjsVersion: string; pageCount: number; pages: Page[] }
-export async function loadStudies(root: string, tiers = selectedTiers()): Promise<Study[]> {
+export async function loadStudies(root: string, tiers = selectedTiers(), { ignoreStudySubset = false } = {}): Promise<Study[]> {
   const studies: Study[] = [];
   for (const tier of tiers) {
     const taskRoot = path.join(root, 'data', 'processed', tier, 'numeric_tasks');
@@ -80,7 +80,7 @@ export async function loadStudies(root: string, tiers = selectedTiers()): Promis
     }
   }
   studies.sort((a, b) => a.studyKey.localeCompare(b.studyKey));
-  const selected = readSubset('BENCH_STUDIES', studies.map((study) => study.studyKey));
+  const selected = ignoreStudySubset ? studies.map((study) => study.studyKey) : readSubset('BENCH_STUDIES', studies.map((study) => study.studyKey));
   return studies.filter((study) => selected.includes(study.studyKey));
 }
 export interface EvaluationSet {
@@ -91,8 +91,8 @@ export interface EvaluationSet {
   hashes: Record<string, string>;
   emptyGold: Partial<Record<Tier, EmptyGoldCounts>>;
 }
-export async function loadEvaluation(root: string): Promise<EvaluationSet> {
-  const candidates = await loadStudies(root);
+export async function loadEvaluation(root: string, options: { ignoreStudySubset?: boolean } = {}): Promise<EvaluationSet> {
+  const candidates = await loadStudies(root, selectedTiers(), options);
   const result: EvaluationSet = { studies: [], values: [], documents: new Map(), excluded: [], hashes: {}, emptyGold: {} };
   const joins = new Map<Tier, { refs: Reference[]; prov: Provenance[]; judgments: Judgment[] }>();
   for (const tier of selectedTiers()) {
