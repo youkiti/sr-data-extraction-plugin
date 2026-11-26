@@ -47,4 +47,46 @@ spark-apikeys run --keys GEMINI_API_KEY,ANTHROPIC_API_KEY -- npm run run
 
 ## 採点
 
-原著形式への変換と Python による採点は次の段階で追加する。
+採点前に、変換・採点コードをレビューに回す。入力・run・採点 ICO の件数を突き合わせ、計画の条件 M（110 RCT・二値 171 / 連続 485 ICO）と条件 P（105 RCT・二値 164 / 連続 466 ICO）から違えば理由を記録してから数値を報告する。以下はこのフォルダから実行する。`PY` は上流依存を導入した venv の Python 3 とする（numpy、pyyaml、scikit-learn、statsmodels、jinja2、setuptools<81）。
+
+1. 最初に上流 GPT-4 出力を上流の前処理経由で読み、本採点の gold レコード構築を通して、公開 metrics 辞書全体との一致を確認する。二値 total は約 0.655、連続は約 0.487。`FAIL` または例外なら先へ進まない。
+
+   ```bash
+   PY=/home/youki/wt/public-bench-yun-data/venv/bin/python
+   "$PY" score/score_yun.py --yun-root "$YUN_ROOT" --selftest-gpt4
+   ```
+
+2. 実行時と同じ `BENCH_CONDITION`、`BENCH_RUN_LABEL`、`BENCH_MODELS`、codex 選択時は `BENCH_CODEX_EFFORT` を指定し、ラベルごとに `npm run convert`。smoke の部分集合なら実行時の `BENCH_PMCIDS` も合わせる。`_inputs.json` が存在し、現在の gold・本文・依頼・設定が一致し、全予定 run と各 run の台帳行が揃わなければ拒否する。`records-<label>/<model>.json` と `<model>.stats.json` を保存する。
+
+3. 集合ごとに抽出添字を作る。条件 M 全体、条件 P、条件 P と共通の RCT に絞った条件 M はそれぞれ別名にする。同じ seed `20261127` から各 2,000 回、数値昇順の PMCID を RCT 単位で復元抽出する。runs ディレクトリでは `_inputs.json` の依頼計画から RCT を読む。配列ファイルからも作成できる。
+
+   ```bash
+   npm run draws -- --name M --pmcids-from "$PUBLIC_BENCH_OUT/runs-main-md"
+   npm run draws -- --name P --pmcids-from "$PUBLIC_BENCH_OUT/runs-main-pdf"
+   npm run draws -- --name M-common --pmcids-from "$PUBLIC_BENCH_OUT/runs-main-pdf"
+   ```
+
+   共通集合の `--pmcids` 用 JSON 配列は P の抽出添字から保存する（実測件数を確認する）。
+
+   ```bash
+   "$PY" -c 'import json,os,pathlib; p=pathlib.Path(os.environ["PUBLIC_BENCH_OUT"]); (p/"pmcids-common.json").write_text(json.dumps(json.loads((p/"draws-P.json").read_text())["pmcids"])+"\n")'
+   ```
+
+4. モデルごと・集合ごとに上流の `MetricsCalculator` で採点する。`--records` は複数回指定して同じ集合のモデルをまとめてもよい。gold と ICO id 集合、RCT、課題、抽出添字の集合・順序を照合する。点推定・指標は上流関数、95% 区間は RCT 復元抽出の total の numpy quantile（既定の線形補間）を使う。課題の ICO がゼロの反復は省略数を記録する。
+
+   ```bash
+   MODEL=gemini-3.8-flash
+   "$PY" score/score_yun.py --yun-root "$YUN_ROOT" --records "$PUBLIC_BENCH_OUT/records-main-md/$MODEL.json" --draws "$PUBLIC_BENCH_OUT/draws-M.json" --out "$PUBLIC_BENCH_OUT/score-M-$MODEL.json"
+   "$PY" score/score_yun.py --yun-root "$YUN_ROOT" --records "$PUBLIC_BENCH_OUT/records-main-pdf/$MODEL.json" --draws "$PUBLIC_BENCH_OUT/draws-P.json" --out "$PUBLIC_BENCH_OUT/score-P-$MODEL.json"
+   "$PY" score/score_yun.py --yun-root "$YUN_ROOT" --records "$PUBLIC_BENCH_OUT/records-main-md/$MODEL.json" --pmcids "$PUBLIC_BENCH_OUT/pmcids-common.json" --draws "$PUBLIC_BENCH_OUT/draws-M-common.json" --out "$PUBLIC_BENCH_OUT/score-M-common-$MODEL.json"
+   ```
+
+   105 RCT の M 部分集合は **M の records を `--pmcids` で絞って**採点する。M を再実行・再変換して部分集合のラベルを作らない。
+
+変換は前後の空白を除き、先頭の Unicode / 全角マイナスと正しい桁区切りカンマを直して、十進表記だけを JSON 数値にする。単位換算・丸め・指数表記の解釈はしない。複数候補は変換後の数値／文字列で重複を除き、異なる値が残れば `__multiple_values__`。失敗 run はその RCT の全 ICO・全フィールドを `__run_failed__` にする。両方とも不一致用であり、gold の `x` と一致させない。候補に値がなければ `x` とし、明示の未報告 `not_reported` と未返却 `not_returned` は状態別に残す。
+
+通常採点は gold の空文字と null だけを `x` にし、`"1,525"` のような非空文字列をそのまま残す。感度分析は同じ採点コマンドに `--gold-comma-normalized` を加え、出力ファイル名を別にする。このときだけ gold の正しい桁区切り文字列を数値にする。状態数、`x_answers`、カンマ除去に依存した一致数をフィールド別・全体で記録する。`valueNoComma` はカンマを除かなかった場合の候補全体の判定で、競合すれば `__multiple_values__` となる。
+
+副指標は stats に保存する。run 失敗率、全台帳試行・再試行・失敗分類、成功 run の最終応答時間の平均・中央値、台帳全試行の時間・トークン・報告単価と定価による費用の合計および RCT 平均、引用の照合状態数と成功率を記録する。引用あり・未報告以外の候補を分母とし、`nonFailedRate` は failed 以外の割合、`successRate` は評価 A に合わせ null と failed を成功に含めない割合とする。codex の費用は null、`costNote` は `subscription_not_computable`。
+
+検証コマンドは `npm run typecheck`、`npm test`、`"$PY" -m unittest score/test_score_yun.py`。Python の上流依存テストは `YUN_ROOT` 未設定なら省略し、純粋関数の検査だけを行う。実 API は呼ばない。

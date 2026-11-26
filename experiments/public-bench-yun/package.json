@@ -9,7 +9,9 @@
     "typecheck": "tsc --noEmit",
     "fetch-pdf": "node --import tsx src/fetchPdf.ts",
     "extract-text": "node --import tsx src/extractText.ts",
-    "run": "node --import tsx src/runner.ts"
+    "run": "node --import tsx src/runner.ts",
+    "convert": "node --import tsx src/convertCli.ts",
+    "draws": "node --import tsx src/draws.ts"
   },
   "devDependencies": {
     "pdfjs-dist": "6.5.438",
