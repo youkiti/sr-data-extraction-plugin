@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ledgerWriter, type LedgerEntry } from '../../cochrane-numeric-benchmark/src/ledger';
+import { spendBeforeAttempt } from './runner';
 import { readJson } from '../../cochrane-numeric-benchmark/src/io';
 import { condition, runLabel, outputRoot, yunRoot, selectedModels, selectedPmcids } from './config';
 import { checkInputs, inputManifest, requestHashes, type Manifest } from './manifest';
@@ -66,4 +68,23 @@ test('dry run はディレクトリも作らず、初回のみマニフェスト
     await inputManifest(set, plans, 'md', runs, false, null);
     await assert.rejects(inputManifest(set, [{ ...plans[0]!, request: { ...request, chatOptions: { ...request.chatOptions, temperature: 0.9 } } }], 'md', runs, false, null), /ハッシュ/);
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('各試行前の費用は別プロセスの台帳と後から追記された費用も含む', async () => {
+  const out = await mkdtemp(path.join(os.tmpdir(), 'yun-budget-'));
+  const entry: LedgerEntry = { runId: 'model__PMC2', attempt: 1, attemptAt: '2026-11-27T00:00:00Z',
+    model: 'gemini-3.8-flash', studyKey: 'PMC2', outcome: 'ok', tokensIn: 10, tokensOut: 2,
+    cachedTokensIn: null, guardCostUsd: 1, costBasis: 'measured', elapsedMs: 30 };
+  try {
+    for (const label of ['model-a', 'model-b']) await mkdir(path.join(out, `runs-${label}`));
+    const own = ledgerWriter(path.join(out, 'runs-model-a/_ledger.jsonl'));
+    const other = ledgerWriter(path.join(out, 'runs-model-b/_ledger.jsonl'));
+    await own(entry);
+    await other({ ...entry, guardCostUsd: 2 });
+    assert.equal(await spendBeforeAttempt(out), 3);
+    await other({ ...entry, attempt: 2, guardCostUsd: 4 });
+    assert.equal(await spendBeforeAttempt(out), 7);
+    await own({ ...entry, attempt: 2, guardCostUsd: 8 });
+    assert.equal(await spendBeforeAttempt(out), 15);
+  } finally { await rm(out, { recursive: true, force: true }); }
 });

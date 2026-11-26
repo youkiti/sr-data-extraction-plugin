@@ -5,12 +5,13 @@ import { readJson, writeJson } from '../../cochrane-numeric-benchmark/src/io';
 import { assertRunFilesLedger, readLedger } from '../../cochrane-numeric-benchmark/src/ledger';
 import { assertManifestPresent, runIdFor } from '../../cochrane-numeric-benchmark/src/resume';
 import { codexEffort, condition, outputRoot, runLabel, runsDir, selectedModels, yunRoot } from './config';
-import { loadEvaluation } from './dataset';
+import { assertYunCheckout, loadEvaluation } from './dataset';
 import { inputManifest, type Manifest } from './manifest';
 import { buildStudyRequest } from './prompt';
 import { convertStudies, loadRuns, secondaryMetrics } from './convert';
 
 export async function main(): Promise<void> {
+  await assertYunCheckout(yunRoot());
   const dir = runsDir();
   await assertManifestPresent(path.join(dir, '_inputs.json'), true);
   const models = selectedModels(), inputCondition = condition();

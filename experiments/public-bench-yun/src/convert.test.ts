@@ -83,9 +83,34 @@ test('副指標は全試行を合算し、codex の費用を null にする', ()
   assert.equal(stats.attempts.total, 2); assert.equal(stats.attempts.retries, 1);
   assert.equal(stats.attempts.byFailureClass.timeout, 1);
   assert.equal(stats.tokens.tokensIn.total, 20); assert.equal(stats.tokens.tokensOut.perRctMean, 4);
-  assert.equal(stats.elapsed.mean, 50); assert.equal(stats.elapsed.median, 50); assert.equal(stats.elapsed.totalLedger, 60);
+  assert.deepEqual(stats.elapsed.elapsedRunsWithResponse, { mean: 50, median: 50 });
+  assert.deepEqual(stats.elapsed.elapsedAllAttempts, { mean: 30, median: 30 });
+  assert.equal(stats.elapsed.totalLedger, 60);
   assert.equal(stats.quotes.total, 3); assert.equal(stats.quotes.successRate, 1 / 3);
   assert.equal(stats.quotes.nonFailedRate, 2 / 3);
   assert.equal(stats.cost.reportCostUsd, null); assert.equal(stats.cost.listCostUsd, null);
   assert.equal(stats.cost.costNote, 'subscription_not_computable');
+});
+
+test('時間は形式エラーを応答ありに含め、失敗と再試行は全試行に含める', () => {
+  const runs = [
+    { runId: 'ok', studyKey: 'PMC2', outcome: 'ok', elapsedMs: 50, items: [] },
+    { runId: 'format', studyKey: 'PMC3', outcome: 'format_error', elapsedMs: 10, items: [] },
+    { runId: 'failed', studyKey: 'PMC4', outcome: 'request_failed', elapsedMs: 900, items: [] },
+  ] as unknown as RunRecord[];
+  const ledger = [
+    { runId: 'ok', attempt: 1, elapsedMs: 100 },
+    { runId: 'ok', attempt: 2, elapsedMs: 50 },
+    { runId: 'format', attempt: 1, elapsedMs: 10 },
+    { runId: 'failed', attempt: 1, elapsedMs: 900 },
+    { runId: 'other', attempt: 1, elapsedMs: 9999 },
+  ].map((entry) => ({ ...entry, tokensIn: 0, tokensOut: 0, cachedTokensIn: null })) as LedgerEntry[];
+  const stats = secondaryMetrics('gpt-6.2-sol', [], runs, ledger);
+  assert.deepEqual(stats.elapsed, {
+    elapsedRunsWithResponse: { mean: 30, median: 30 },
+    elapsedAllAttempts: { mean: 265, median: 75 }, totalLedger: 1060,
+  });
+  const empty = secondaryMetrics('gpt-6.2-sol', [], [], []);
+  assert.deepEqual(empty.elapsed, { elapsedRunsWithResponse: { mean: null, median: null },
+    elapsedAllAttempts: { mean: null, median: null }, totalLedger: 0 });
 });

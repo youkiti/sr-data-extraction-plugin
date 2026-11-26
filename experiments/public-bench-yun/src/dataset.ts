@@ -1,3 +1,5 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileHash, readOptional, sha256 } from '../../cochrane-numeric-benchmark/src/io';
@@ -6,6 +8,19 @@ import type { PdfManifest } from './fetchPdf';
 
 export const GOLD_SHA256 = '21e67aefb54a8d45009a602854faf0992daa9e8195b88845e00a2a84df127129';
 export const YUN_COMMIT = '1bc768d4d098c727c9866eeff909297c38a3e84c';
+const execFileAsync = promisify(execFile);
+type GitRunner = (file: string, args: string[], options: { shell: false }) => Promise<{ stdout: string }>;
+export async function assertYunCheckout(root: string, git: GitRunner = execFileAsync): Promise<void> {
+  let head: string, status: string;
+  try {
+    head = (await git('git', ['-C', root, 'rev-parse', 'HEAD'], { shell: false })).stdout.trim();
+    status = (await git('git', ['-C', root, 'status', '--porcelain', '--untracked-files=no'], { shell: false })).stdout.trim();
+  } catch {
+    throw new Error('YUN_ROOT の上流チェックアウトを git で検証できません');
+  }
+  if (head !== YUN_COMMIT) throw new Error(`YUN_ROOT の上流 commit が一致しません。${YUN_COMMIT} が必要です`);
+  if (status) throw new Error('YUN_ROOT の上流チェックアウトに追跡対象ファイルの変更があります。変更のない状態が必要です');
+}
 export interface Ico { id: number; outcome: string; intervention: string; comparator: string; outcome_type: 'binary' | 'continuous'; outcomeId: string }
 export interface Study { pmcid: number; studyKey: string; icos: Ico[] }
 export interface Page { page: number; text: string }

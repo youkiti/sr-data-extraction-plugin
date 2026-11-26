@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { sha256, writeJson } from '../../cochrane-numeric-benchmark/src/io';
-import { loadDocuments, parseGold, type Study } from './dataset';
+import { assertYunCheckout, YUN_COMMIT, loadDocuments, parseGold, type Study } from './dataset';
 import { buildFields, buildOutcomeList, buildStudyRequest, FIELD_ORDER } from './prompt';
 import type { PdfEntry } from './fetchPdf';
 
@@ -68,4 +68,21 @@ test('P 文書と no_oa・no_pdf・fetch_failed・text_failed・empty_text の�
     assert.deepEqual(set.documents.get('PMC6'), [{ role: 'article', filename: 'PMC6.pdf', mode: 'text', pages: [{ page: 1, text: '本文' }] }]);
     assert.equal(set.hashes['pdf/PMC6'], sha256('pdf'));
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('上流は固定 commit と追跡対象の変更がない状態だけを許可する', async () => {
+  const root = '/上流 clone';
+  const calls: string[][] = [];
+  await assertYunCheckout(root, async (file, args, options) => {
+    assert.equal(file, 'git'); assert.deepEqual(options, { shell: false });
+    calls.push(args);
+    return { stdout: args.includes('rev-parse') ? `${YUN_COMMIT}\n` : '' };
+  });
+  assert.deepEqual(calls, [['-C', root, 'rev-parse', 'HEAD'],
+    ['-C', root, 'status', '--porcelain', '--untracked-files=no']]);
+  await assert.rejects(assertYunCheckout(root, async () => ({ stdout: '別の commit\n' })), /commit が一致しません/);
+  await assert.rejects(assertYunCheckout(root, async (_file, args) => ({
+    stdout: args.includes('rev-parse') ? YUN_COMMIT : ' M evaluation/metrics.py\n',
+  })), /追跡対象ファイルの変更/);
+  await assert.rejects(assertYunCheckout(root, async () => { throw new Error('git 失敗'); }), /git で検証できません/);
 });

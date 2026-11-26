@@ -71,7 +71,9 @@ export function secondaryMetrics(model: string, studies: Study[], runs: RunRecor
   const ids = new Set(runs.map((run) => run.runId));
   const attempts = ledger.filter((line) => ids.has(line.runId));
   const sum = (get: (line: LedgerEntry) => number) => attempts.reduce((n, line) => n + get(line), 0);
-  const elapsed = runs.filter((run) => run.outcome === 'ok').map((run) => run.elapsedMs);
+  const elapsed = runs.filter((run) => run.outcome !== 'request_failed').map((run) => run.elapsedMs).sort((a, b) => a - b);
+  const elapsedRequests = attempts.map((entry) => entry.elapsedMs);
+  const timing = (values: number[]) => ({ mean: ratio(values.reduce((n, ms) => n + ms, 0), values.length), median: quantile(values, 0.5) });
   const quoted = new Set(studies.flatMap((study) => {
     const run = runs.find((entry) => entry.studyKey === study.studyKey)!;
     return study.icos.flatMap((ico) => TASK_FIELDS[ico.outcome_type].flatMap((field) =>
@@ -93,7 +95,7 @@ export function secondaryMetrics(model: string, studies: Study[], runs: RunRecor
       failureRate: ratio(runs.filter((r) => r.outcome !== 'ok').length, runs.length) },
     attempts: { total: attempts.length, retries: attempts.filter((line) => line.attempt > 1).length,
       byFailureClass: Object.fromEntries(['null', 'rate_limit', 'server_error', 'network', 'timeout', 'output_limit', 'retryable_flag', 'other'].map((kind) => [kind, attempts.filter((line) => String(line.failureClass ?? null) === kind).length])) },
-    elapsed: { mean: ratio(elapsed.reduce((n, ms) => n + ms, 0), elapsed.length), median: quantile(elapsed, 0.5), totalLedger: sum((line) => line.elapsedMs) },
+    elapsed: { elapsedRunsWithResponse: timing(elapsed), elapsedAllAttempts: timing(elapsedRequests), totalLedger: sum((line) => line.elapsedMs) },
     tokens: { tokensIn: tokens('tokensIn'), tokensOut: tokens('tokensOut') },
     cost: { reportCostUsd: costs((line) => reportCostUsd(model, line.tokensIn, line.tokensOut, line.cachedTokensIn, Date.parse(line.attemptAt))),
       listCostUsd: costs((line) => listCostUsd(model, line.tokensIn, line.tokensOut)), ...(subscription ? { costNote: 'subscription_not_computable' } : {}) },

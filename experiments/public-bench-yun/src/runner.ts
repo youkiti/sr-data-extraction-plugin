@@ -13,7 +13,7 @@ import { ledgerWriter, readLedger, budgetSpend, type LedgerEntry } from '../../c
 import { harnessCommit, readRunState, resumeDecision, runIdFor } from '../../cochrane-numeric-benchmark/src/resume';
 import { writeJson } from '../../cochrane-numeric-benchmark/src/io';
 import { MODELS, condition, runLabel, outputRoot, yunRoot, runsDir, selectedModels, codexEffort, codexConcurrency, codexTimeoutMs } from './config';
-import { loadEvaluation, type Study, type Document } from './dataset';
+import { assertYunCheckout, loadEvaluation, type Study, type Document } from './dataset';
 import { buildStudyRequest, promptCharacters } from './prompt';
 import { inputManifest } from './manifest';
 export type { RunRecord, ScoringItem } from '../../cochrane-numeric-benchmark/src/runner';
@@ -28,6 +28,10 @@ export function interruptedRecord(study: RunStudy, last: LedgerEntry): RunRecord
     outcome: 'request_failed', error: '再試行の上限に達した後に中断されていました', items: [], rejected: [], rawText: null };
 }
 
+export async function spendBeforeAttempt(out: string): Promise<number> {
+  return (await budgetSpend(out, 0)).total;
+}
+
 export async function main(): Promise<void> {
   let executed = 0, skipped = 0, failed = 0, cumulative = 0;
   try {
@@ -39,6 +43,7 @@ export async function main(): Promise<void> {
     const concurrency = usesCodex ? codexConcurrency() : 1;
     const timeoutMs = usesCodex ? codexTimeoutMs() : undefined;
     const root = yunRoot();
+    if (!dry) await assertYunCheckout(root);
     const inputCondition = condition();
     const label = runLabel();
     const out = outputRoot();
@@ -103,6 +108,7 @@ export async function main(): Promise<void> {
         for (let attempt = plan.action.attempt; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
           await sleep(Math.max(0, lastFinished + 2000 - Date.now()));
           if (stopped) return;
+          cumulative = await spendBeforeAttempt(out);
           if (cumulative >= limits!.pause) {
             stopped = true; process.exitCode = 1;
             console.error(`費用の見張りで停止しました（累計 $${cumulative.toFixed(6)} / 停止 $${limits!.pause} / 上限 $${limits!.limit}）。本人に確認してから BENCH_COST_PAUSE_USD を上げて再開してください`);

@@ -10,6 +10,8 @@ import re
 import subprocess
 import sys
 
+YUN_COMMIT = "1bc768d4d098c727c9866eeff909297c38a3e84c"
+
 FIELDS = {
     "binary_outcomes": ("intervention_events", "intervention_group_size",
                         "comparator_events", "comparator_group_size"),
@@ -20,6 +22,20 @@ FIELDS = {
 TYPES = {"binary_outcomes": "binary", "continuous_outcomes": "continuous"}
 COMMA_NUMBER = re.compile(r"\d{1,3}(,\d{3})+(\.\d+)?", re.ASCII)
 STATES = ("value", "multiple_values", "not_reported", "not_returned", "run_failed")
+
+
+def assert_yun_checkout(root):
+    try:
+        head = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
+                              check=True, capture_output=True, text=True).stdout.strip()
+        status = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "--untracked-files=no"],
+                                check=True, capture_output=True, text=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise ValueError("YUN_ROOT の上流チェックアウトを git で検証できません") from error
+    if head != YUN_COMMIT:
+        raise ValueError(f"YUN_ROOT の上流 commit が一致しません。{YUN_COMMIT} が必要です")
+    if status:
+        raise ValueError("YUN_ROOT の上流チェックアウトに追跡対象ファイルの変更があります。変更のない状態が必要です")
 
 
 def load_json(file):
@@ -231,6 +247,7 @@ def main(argv=None):
     parser.add_argument("--selftest-gpt4", action="store_true")
     args = parser.parse_args(argv)
     root = args.yun_root.resolve()
+    assert_yun_checkout(root)
     calculator_class, utils = upstream(root)
     if args.selftest_gpt4:
         return 0 if selftest(root, calculator_class, utils) else 1
@@ -246,7 +263,7 @@ def main(argv=None):
         sets.extend(score_file(document, gold, pmcids, draws, calculator_class, utils, args.gold_comma_normalized))
     def single_or_list(values):
         return values[0] if len(values) == 1 else values
-    result = {"yunCommit": subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip(),
+    result = {"yunCommit": YUN_COMMIT,
               "goldSha256": sha256(gold_file),
               "recordsFile": single_or_list([str(file) for file in args.records]),
               "recordsSha256": single_or_list([sha256(file) for file in args.records]),

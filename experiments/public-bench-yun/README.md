@@ -41,7 +41,7 @@
 spark-apikeys run --keys GEMINI_API_KEY,ANTHROPIC_API_KEY -- npm run run
 ```
 
-同じラベルで再開する場合、`_inputs.json` の gold・本文・依頼ハッシュ、版数、除外一覧、条件、モデル、推論設定、ハーネス commit を照合する。入力や RCT 部分集合を変える場合は新しいラベルを使う。本文全体の改変を検出するため、依頼ハッシュも固定する。条件 P は取得不能・抽出不能・全ページ空白の RCT を理由付きで除外する。M と P の比較には後で共通 RCT の M の結果も併記する。
+同じラベルで再開する場合、`_inputs.json` の gold・本文・依頼ハッシュ、版数、除外一覧、条件、モデル、推論設定を照合する。ハーネス commit は記録するが比較しない（依頼内容は依頼ハッシュで固定するため）。通常実行・変換・採点（`--selftest-gpt4` を含む）では、上流チェックアウトが上記の固定 commit にあり、追跡対象ファイルに変更がないことを必須とする。入力や RCT 部分集合を変える場合は新しいラベルを使う。本文全体の改変を検出するため、依頼ハッシュも固定する。条件 P は取得不能・抽出不能・全ページ空白の RCT を理由付きで除外する。M と P の比較には後で共通 RCT の M の結果も併記する。
 
 ローカル検証は `npm run typecheck` と `npm test`。テストは合成データと偽 fetch のみを使う。
 
@@ -87,6 +87,6 @@ spark-apikeys run --keys GEMINI_API_KEY,ANTHROPIC_API_KEY -- npm run run
 
 通常採点は gold の空文字と null だけを `x` にし、`"1,525"` のような非空文字列をそのまま残す。感度分析は同じ採点コマンドに `--gold-comma-normalized` を加え、出力ファイル名を別にする。このときだけ gold の正しい桁区切り文字列を数値にする。状態数、`x_answers`、カンマ除去に依存した一致数をフィールド別・全体で記録する。`valueNoComma` はカンマを除かなかった場合の候補全体の判定で、競合すれば `__multiple_values__` となる。
 
-副指標は stats に保存する。run 失敗率、全台帳試行・再試行・失敗分類、成功 run の最終応答時間の平均・中央値、台帳全試行の時間・トークン・報告単価と定価による費用の合計および RCT 平均、引用の照合状態数と成功率を記録する。引用あり・未報告以外の候補を分母とし、`nonFailedRate` は failed 以外の割合、`successRate` は評価 A に合わせ null と failed を成功に含めない割合とする。codex の費用は null、`costNote` は `subscription_not_computable`。
+副指標は stats に保存する。run 失敗率、全台帳試行・再試行・失敗分類、応答のある run（`format_error` を含む）の最終応答時間と台帳全試行の時間それぞれの平均・中央値、台帳全試行の時間・トークン・報告単価と定価による費用の合計および RCT 平均、引用の照合状態数と成功率を記録する。引用あり・未報告以外の候補を分母とし、`nonFailedRate` は failed 以外の割合、`successRate` は評価 A に合わせ null と failed を成功に含めない割合とする。codex の費用は null、`costNote` は `subscription_not_computable`。
 
 検証コマンドは `npm run typecheck`、`npm test`、`"$PY" -m unittest score/test_score_yun.py`。Python の上流依存テストは `YUN_ROOT` 未設定なら省略し、純粋関数の検査だけを行う。実 API は呼ばない。
