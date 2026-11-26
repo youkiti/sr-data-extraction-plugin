@@ -10,7 +10,7 @@ import { normalizeText } from '../../../src/features/anchoring/normalizeText';
 import { anchorQuote } from '../../../src/features/anchoring/anchorQuote';
 import { anchorQuoteSegments } from '../../../src/features/anchoring/anchorQuoteSegments';
 import { benchRoot, repoRoot, runsDir, selectedModels, codexEffort, codexConcurrency, codexTimeoutMs } from './config';
-import { createCodexProvider, type CodexResponse } from './codexProvider';
+import { codexPreflight, createCodexProvider, type CodexResponse } from './codexProvider';
 import { inputRoot, loadEvaluation, printCounts, writeJson } from './io';
 import { buildStudyRequest, promptCharacters } from './prompt';
 import { classifyFailure, errorInfo, failureClass, retryDecision, RETRY_MAX_ATTEMPTS } from './retry';
@@ -97,13 +97,14 @@ export async function main(): Promise<void> {
       console.log(`planned: ${plans.length - skipped}, skip: ${skipped}, items: ${plans.reduce((n, p) => n + p.study.items.length, 0)}, documents: ${plans.reduce((n, p) => n + p.docs.length, 0)}, user-prompt characters: ${userChars}`);
       return;
     }
+    // 依頼が残る全キーを呼び出し前に検査し、途中で別モデルだけが進むことを防ぐ。
+    const activeModels = models.filter((model) => plans.some((plan) => plan.model.id === model.id &&
+      (plan.action.kind === 'execute' || plan.action.kind === 'backup_execute')));
+    const codex = activeModels.some((model) => !('keyEnv' in model)) ? await codexPreflight() : null;
     for (const plan of plans) if (plan.action.kind === 'finalise') {
       await writeJson(plan.file, interruptedRecord(plan.study, plan.action.last));
       executed++; failed++;
     }
-    // 依頼が残る全キーを呼び出し前に検査し、途中で別モデルだけが進むことを防ぐ。
-    const activeModels = models.filter((model) => plans.some((plan) => plan.model.id === model.id &&
-      (plan.action.kind === 'execute' || plan.action.kind === 'backup_execute')));
     for (const model of activeModels) if ('keyEnv' in model && !process.env[model.keyEnv]?.trim()) throw new Error(`${model.keyEnv} がありません`);
     await mkdir(dir, { recursive: true });
     const append = ledgerWriter(ledgerFile);
@@ -121,7 +122,7 @@ export async function main(): Promise<void> {
         if (plan.action.kind === 'backup_execute') await rename(plan.file, path.join(dir, `_corrupt-${Date.now()}__${plan.runId}.json.bak`));
         const provider = 'keyEnv' in plan.model
           ? createProvider({ apiKey: process.env[keyEnv]!, model: plan.model.id, fetch: timeoutFetch })
-          : createCodexProvider({ effort: effort!, timeoutMs });
+          : createCodexProvider({ effort: effort!, codexVersion: codex!.codexVersion, timeoutMs });
         const chars = promptCharacters(plan.request.messages);
         let attemptsGuardCostUsd = 0;
         for (let attempt = plan.action.attempt; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {

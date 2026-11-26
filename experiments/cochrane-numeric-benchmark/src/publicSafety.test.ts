@@ -15,6 +15,7 @@ const safe = new Set([
   'notReturnedNotInDocuments', 'elapsedMsSuccessfulRunMedian', 'elapsedMsSuccessfulRunMean',
   'elapsedMsPerRequestMedian', 'recheck-labels.jsonl',
   'ChildProcessWithoutNullStreams', 'subscription_not_computable',
+  'tokensUnmeasuredAttempts',
 ]);
 export function violations(text: string): string[] {
   const found: string[] = [];

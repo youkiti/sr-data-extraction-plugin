@@ -89,6 +89,7 @@ export function metrics(rows: ScoredValue[], runs: RunRecord[], ledger: LedgerEn
   const elapsed = runs.filter((run) => run.outcome !== 'request_failed').map((run) => run.elapsedMs).sort((a, b) => a - b);
   const runIds = new Set(runs.map((run) => run.runId));
   const attempts = ledger.filter((entry) => runIds.has(entry.runId));
+  const measured = attempts.filter((entry) => entry.costBasis === 'measured' || entry.costBasis === 'measured_failure');
   const subscription = [...runs, ...attempts].some((run) => MODELS.some((model) => model.id === run.model && !('keyEnv' in model)));
   const elapsedRequests = attempts.map((entry) => entry.elapsedMs);
   const failureClasses = Object.fromEntries(['null', 'rate_limit', 'server_error', 'network', 'timeout', 'output_limit', 'retryable_flag', 'other'].map((kind) =>
@@ -112,8 +113,9 @@ export function metrics(rows: ScoredValue[], runs: RunRecord[], ledger: LedgerEn
     reportCostPerStudy: subscription ? null : ratio(attempts.reduce((n, entry) => n + reportCostUsd(entry.model, entry.tokensIn, entry.tokensOut, entry.cachedTokensIn, Date.parse(entry.attemptAt)), 0), runs.length),
     listCostPerStudy: subscription ? null : ratio(attempts.reduce((n, entry) => n + listCostUsd(entry.model, entry.tokensIn, entry.tokensOut), 0), runs.length),
     ...(subscription ? { costNote: 'subscription_not_computable' } : {}),
-    tokensInPerStudy: ratio(attempts.reduce((n, entry) => n + entry.tokensIn, 0), runs.length),
-    tokensOutPerStudy: ratio(attempts.reduce((n, entry) => n + entry.tokensOut, 0), runs.length),
+    tokensInPerStudy: ratio(measured.reduce((n, entry) => n + entry.tokensIn, 0), runs.length),
+    tokensOutPerStudy: ratio(measured.reduce((n, entry) => n + entry.tokensOut, 0), runs.length),
+    tokensUnmeasuredAttempts: attempts.length - measured.length,
     thoughtsTokensPerStudy: mean(runs.flatMap((run) => typeof run.thoughtsTokens === 'number' ? [run.thoughtsTokens] : [])),
     elapsedMsSuccessfulRunMean: mean(elapsed), elapsedMsSuccessfulRunMedian: median(elapsed),
     elapsedMsPerRequestMean: mean(elapsedRequests), elapsedMsPerRequestMedian: median(elapsedRequests),

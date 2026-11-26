@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { EXPECTED_SHA256_PREFIX, selectedTiers, type Tier } from './config';
-import { fileHash, filesUnder, goldFile, refDir, sha256 } from './io';
+import { fileHash, filesUnder, goldFile, loadEvaluation, refDir, sha256 } from './io';
 import type { EvalValue } from './evaluationSet';
 import { loadRecheck } from './recheck';
 
@@ -30,7 +30,8 @@ export async function goldHashes(root: string, tiers = selectedTiers()): Promise
   return { tiers: [...tiers], hashes, taskDigest: sha256(tasks.sort().join('\n')), recheckLabelsSha256: null };
 }
 export async function verifyGoldLock(root: string, lock: GoldLock, values: EvalValue[]): Promise<void> {
-  const recheck = await loadRecheck(values);
+  const allValues = process.env.BENCH_STUDIES ? (await loadEvaluation(root, { ignoreStudySubset: true })).values : values;
+  const recheck = await loadRecheck(values, allValues);
   if (lock.recheckLabelsSha256 !== recheck.hash) throw new Error('gold-lock と再チェックラベルのハッシュが違います');
   const fresh = await goldHashes(root, lock.tiers);
   const keys = [...new Set([...Object.keys(lock.hashes), ...Object.keys(fresh.hashes)])];

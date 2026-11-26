@@ -19,7 +19,7 @@ test('codex の費用は算出不能で全試行のトークン平均と run の
   const records = [1, 2, 3].map((id) => ({ runId: `codex${id}`, model: 'gpt-6.2-sol', outcome: 'ok', items: [],
     elapsedMs: 100, thoughtsTokens: id === 3 ? null : id * 10 } as unknown as RunRecord));
   const ledger = records.flatMap((record) => [1, 2].map((attempt) => ({ runId: record.runId, model: record.model,
-    attempt, tokensIn: 100, tokensOut: 20, cachedTokensIn: 0, attemptAt: '2026-11-26T00:00:00Z', elapsedMs: 100 } as LedgerEntry)));
+    attempt, tokensIn: 100, tokensOut: 20, costBasis: 'measured', cachedTokensIn: 0, attemptAt: '2026-11-26T00:00:00Z', elapsedMs: 100 } as LedgerEntry)));
   const result = metrics([], records, ledger);
   assert.equal(result.reportCostPerStudy, null); assert.equal(result.listCostPerStudy, null);
   assert.equal(result.costNote, 'subscription_not_computable');
@@ -35,6 +35,18 @@ test('codex の費用は算出不能で全試行のトークン平均と run の
   ]);
   assert.equal(api.reportCostPerStudy, 2); assert.equal(api.listCostPerStudy, 2);
   assert.equal(api.costNote, undefined);
+});
+
+test('トークン平均は実測と実測失敗だけを合算して推定試行を数える', () => {
+  const records = [{ runId: 'codex', model: 'gpt-6.2-sol', outcome: 'ok', items: [], elapsedMs: 100,
+    thoughtsTokens: 15 } as unknown as RunRecord];
+  const ledger = ['measured', 'measured_failure', 'estimated_input_tokens', 'estimated_output_limit', 'estimated_input_only']
+    .map((costBasis, i) => ({ runId: 'codex', model: 'gpt-6.2-sol', attempt: i + 1, tokensIn: 100, tokensOut: 20,
+      cachedTokensIn: 0, costBasis, elapsedMs: 100, attemptAt: '2026-11-26T00:00:00Z' } as LedgerEntry));
+  const result = metrics([], records, ledger);
+  assert.equal(result.tokensInPerStudy, 200); assert.equal(result.tokensOutPerStudy, 40);
+  assert.equal(result.tokensUnmeasuredAttempts, 3); assert.equal(result.thoughtsTokensPerStudy, 15);
+  assert.equal(metrics([], records, ledger.slice(0, 2)).tokensUnmeasuredAttempts, 0);
 });
 
 test('数値一致は表記差を許容し単位差と丸めを許容しない', () => {

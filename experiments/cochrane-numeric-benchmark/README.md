@@ -43,6 +43,8 @@ task gold が trim 後に空の値は参照行の検索・整合性検査・採�
 
 利用可能な PDF または文字層がなく文書を一部省いた研究では、上流が reported / derivable で、同じラベルを付けた読み手の根拠文書が一つも依頼に含まれない値を再判定する。全資料を渡す研究は対象外。`npm run recheck-list` が解析名・比較・群・subgroup・清掃済み脚注・gold と文書 ID を `outputs/recheck-needed.jsonl` に書く。拡張の出力を見ない読み手が、渡した文書だけを読み、`outputs/recheck-labels.jsonl` に `{ "rowId": "行 ID", "field": "フィールド", "label": "not_in_documents" }` 形式で記録する。label は reported / derivable / different_value / not_in_documents。必要なラベルが揃うまで lock-gold と score は拒否し、確定時にはファイルの sha256 も固定する。run は再チェック前にも実行できる。
 
+`BENCH_STUDIES` で採点対象を絞っても、ラベルの検証は選択 tier の全研究で行い、選択研究の値だけに適用する。再チェック完了の確認は選択研究だけが対象で、ラベルファイルの sha256 は研究の絞り込みに依存しない。
+
 2 人の独立の読み手（Opus と gpt-6-astra）に、拡張の出力を見せずに下読みさせる。`npm run recheck-readers -- freeze` で入力を固定し、読み手が `outputs/recheck-readers/responses/<名前>/<タスク ID>.json` に応答を書く。`ingest --reader <名前>` を各読み手に実行し、`summarize --reader-a <名前> --reader-b <名前>` で合議する。本人が `owner-queue.json` の値を判定し、`labels --adjudications <file>` で全値のラベルを書き出す（各コマンドは `npm run recheck-readers --` に続ける）。本人の判定は `{ rowId, field, label, note? }` の JSON 配列または JSONL とし、Artifact の `{key, value}` 形式も受け付ける。全コマンドで `--outputs <dir>` を指定できる。上流と異なり reported と derivable の割れと single_valid は自動で採らず、引用に数がなく reported から derivable に読み替えた判定も、両者の照合後ラベルが一致していても本人に回す。図は使わない。
 
 ## 変換と採点の確定事項
@@ -82,16 +84,18 @@ task gold が trim 後に空の値は参照行の検索・整合性検査・採�
 
 事前登録に無い追加解析として、片岡本人が 2026-11-26 に依頼した。既定の選択は従来の 3 モデルのままで、`BENCH_MODELS=gpt-6.2-sol` と明示したときに codex CLI を使う。`BENCH_CODEX_EFFORT=low` または `medium` を指定し、それぞれ別の `BENCH_RUN_LABEL` で比較する（high も指定可能）。同じラベルで effort を変えると入力ハッシュの検査で停止する。codex はログイン済みの動作確認済み版を用意する。0.162.1 はシェル準備処理の不具合のため拒否する。
 
-`BENCH_CODEX_CONCURRENCY` は既定 1、最大 4。`BENCH_CODEX_TIMEOUT_MS` は既定 30 分で、超過時はプロセスを終了して既存の再試行処理へ渡す。`BENCH_CODEX_JS` で起動する codex.js を指定できる。使用量の上限と認証失敗では台帳に追加せず全体を停止し、同じコマンドで再開できる。API キーは不要だが、費用の見張りの `BENCH_COST_LIMIT_USD` は引き続き必須。
+`BENCH_CODEX_CONCURRENCY` は既定 1、最大 4。`BENCH_CODEX_TIMEOUT_MS` は既定 30 分で、超過時はプロセスを終了して既存の再試行処理へ渡す。`BENCH_CODEX_JS` で起動する codex.js を指定できる。実行対象の codex 依頼があるときだけ、試行前に一度、版と `codex login status` の ChatGPT ログインを検査する。検査失敗時は run・台帳を追加せず停止する。dry run では検査しない。起動環境から `CODEX_API_KEY` と `OPENAI_API_KEY` を除き、サブスクリプション認証に限定する。使用量の上限と認証失敗では台帳に追加せず全体を停止し、同じコマンドで再開できる。一時的な 429・rate limit は既存の待機付き再試行を使う。費用の見張りの `BENCH_COST_LIMIT_USD` は引き続き必須。
 
 `npm run pick-pilot` は、評価集合からレビューを非復元に 10 件選び、各レビューから 1 研究を選ぶ。レビューは reviewId 順、研究は studyKey 順に並べ、mulberry32 を使う。既定の種は 20261126。`npm run pick-pilot -- --seed 20261126 --n 10` で変更できる。`BENCH_TIERS` は有効、`BENCH_STUDIES` は無視する。標準出力の最初の行を `BENCH_STUDIES` に貼り付けられ、内訳と抽出方法は `outputs/pilot-seed<seed>-n<n>.json` にも保存する。
 
 本番との差:
 
 - codex の固定の上乗せがある。道具を切った状態の短い依頼で入力 6,347 トークンを実測した。本番の API 呼び出しには無い。
-- システムプロンプトは `model_instructions_file` で codex 自身の指示文と置き換える。user 本文は標準入力で渡す。依頼ごとに空の一時作業フォルダを使い、道具・アプリ・プラグイン等を無効化する。
+- システムプロンプトは `model_instructions_file` で codex 自身の指示文と置き換える。user 本文は標準入力で渡す。依頼ごとに空の一時作業フォルダを使い、画像閲覧（`view_image`）を含む道具・アプリ・プラグイン等を無効化する。
 - 応答スキーマは根を object の `items` に包み、受け取り後に剥がして本番と同じ応答検証へ渡す。
 - temperature は codex では渡せないので送らない。本番は `EXTRACT_DATA_TEMPERATURE` を使う。
 - 出力上限は本番と同じく上書きしない。
 - reasoning effort は既存の 3 モデルと違い明示的に指定する。low と medium の比較のためである。
-- 費用はサブスクリプション経由で算出できず、トークン数だけを記録する。監視単価は 0、採点の費用 2 欄は null とし、`costNote: subscription_not_computable` を付ける。台帳の全試行の入出力トークン数を研究あたりで集計し、取得できた run の思考トークン数も平均する。
+- 費用はサブスクリプション経由で算出できず、トークン数だけを記録する。監視単価は 0、採点の費用 2 欄は null とし、`costNote: subscription_not_computable` を付ける。全経路で台帳の `measured`・`measured_failure` の試行だけの入出力トークン数を研究あたりで集計し、推定試行数は `tokensUnmeasuredAttempts` に分ける。取得できた run の思考トークン数も平均する。
+
+終了コード 0・時間切れなし・失敗ターンなし・最後のターン終了イベントが `turn.completed`・最終メッセージが空でない場合に成功とする。回復した途中の error イベント数は `sentSettings.codexRecoveredErrors` に保存する。

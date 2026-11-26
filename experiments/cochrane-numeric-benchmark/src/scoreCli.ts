@@ -21,7 +21,8 @@ try {
   const set = await loadEvaluation(root);
   printCounts(set);
   assertLabels(set.values);
-  set.values = (await loadRecheck(set.values)).values;
+  const allValues = process.env.BENCH_STUDIES ? (await loadEvaluation(root, { ignoreStudySubset: true })).values : set.values;
+  set.values = (await loadRecheck(set.values, allValues)).values;
   await verifyGoldLock(root, lock, set.values);
   await inputManifest(set, true, root, true);
   const models = selectedModels();

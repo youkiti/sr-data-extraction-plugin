@@ -54,6 +54,26 @@ test('API 経路の依頼ハッシュを保ち codex だけ effort を固定す�
   }
 });
 
+test('研究を絞っても全研究で再チェックラベルを検証して選択分だけに適用する', () => {
+  const { study, refs, provenance } = fixture();
+  study.task.documents.push({ pmcid: 'DOC2', pdf_path: null });
+  const first = evaluationValues(study, refs, provenance, [], ['DOC1']);
+  const second = first.map((value) => ({ ...value, rowId: value.rowId.replace(':r:', ':s:'), studyKey: 'cc-by/REV1/S2' }));
+  const all = [...first, ...second];
+  const labels = all.map((value) => ({ rowId: value.rowId, field: value.field, label: 'not_in_documents' as const }));
+  const selected = applyRecheckLabels(first, labels, all);
+  assertRechecked(selected);
+  assert.equal(selected.length, first.length);
+  assert.ok(selected.every((value) => value.studyKey === study.studyKey && value.relabelled));
+  const full = applyRecheckLabels(all, labels);
+  assert.deepEqual(full, applyRecheckLabels(all, labels, all));
+  assert.deepEqual(selected, full.filter((value) => value.studyKey === study.studyKey));
+  assertRechecked(applyRecheckLabels(first, labels.slice(0, first.length), all));
+  assert.throws(() => applyRecheckLabels(first, [...labels, { ...labels[0]!, rowId: 'REV1:unknown:9' }], all), /不要/);
+  assert.throws(() => applyRecheckLabels(first, [...labels, labels.at(-1)!], all), /重複/);
+  assert.throws(() => applyRecheckLabels(first, labels, [...first, ...second.map((value) => ({ ...value, needsRecheck: false }))]), /不要/);
+});
+
 test('評価項目の型フィルターと PDF・文字層による除外', () => {
   const { study } = fixture();
   assert.equal(filterItems([...study.items, { row_id: 'x', fields: [], data_type: 'giv' }]).length, 1);

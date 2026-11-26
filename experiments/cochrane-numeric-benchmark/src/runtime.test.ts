@@ -11,14 +11,12 @@ import { sha256 } from './io';
 import { anchorItems, interruptedRecord } from './runner';
 import { parseExtractDataResponse } from '../../../src/features/extraction/skills/extractData';
 import { buildFields } from './schema';
-import { cochraneRoot, readSubset, benchRoot, selectedModels, codexEffort, codexConcurrency, codexTimeoutMs } from './config';
+import { cochraneRoot, readSubset, selectedModels, codexEffort, codexConcurrency, codexTimeoutMs } from './config';
 import { pickPilot, pilotArgs } from './pickPilot';
 import type { Study } from './evaluationSet';
 
 async function temporary() {
-  const outputs = path.join(benchRoot, 'outputs');
-  await mkdir(outputs, { recursive: true });
-  return mkdtemp(path.join(outputs, '.test-tmp-'));
+  return mkdtemp(path.join(os.tmpdir(), 'cochrane-test-'));
 }
 
 test('codex は明示選択のみで effort は必須、並列数と時間上限を検査する', () => {

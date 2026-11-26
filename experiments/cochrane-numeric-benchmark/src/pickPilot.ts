@@ -30,14 +30,7 @@ export function pilotArgs(args: readonly string[]) {
 }
 export async function main(): Promise<void> {
   const { seed, n } = pilotArgs(process.argv.slice(2));
-  const previous = process.env.BENCH_STUDIES;
-  let set;
-  try {
-    delete process.env.BENCH_STUDIES;
-    set = await loadEvaluation(await inputRoot());
-  } finally {
-    if (previous === undefined) delete process.env.BENCH_STUDIES; else process.env.BENCH_STUDIES = previous;
-  }
+  const set = await loadEvaluation(await inputRoot(), { ignoreStudySubset: true });
   const result = pickPilot(set.studies, seed, n);
   await writeJson(path.join(benchRoot, 'outputs', `pilot-seed${seed}-n${n}.json`), result);
   console.log(result.selected.map((study) => study.studyKey).join(','));
