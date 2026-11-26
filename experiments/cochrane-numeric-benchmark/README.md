@@ -24,6 +24,10 @@ task gold が trim 後に空の値は参照行の検索・整合性検査・採�
 |---|---|
 | `COCHRANE_BENCH_ROOT` | 必須。上流ルートの絶対パス |
 | `BENCH_MODELS` | モデル ID の部分集合で限定できる。既定は `MODELS` の全件（gemini-3.8-flash、claude-sonnet-5-5、claude-haiku-5-5） |
+| `BENCH_CODEX_EFFORT` | codex 選択時は dry run でも必須。low / medium / high。既定値なし |
+| `BENCH_CODEX_CONCURRENCY` | codex の並列数。1〜4 の整数、既定 1 |
+| `BENCH_CODEX_TIMEOUT_MS` | codex の時間上限（ミリ秒）。正の整数、既定 1800000（30 分） |
+| `BENCH_CODEX_JS` | codex.js のパス。指定時は Node 経由で起動。未指定の Windows は APPDATA 配下の npm の導入先、他の OS は PATH の codex |
 | `BENCH_TIERS` | cc-by / cc-by-nc の部分集合。既定は両方 |
 | `BENCH_STUDIES` | `cc-by/REV1/S1` 形式の研究キーの部分集合 |
 | `BENCH_RUN_LABEL` | 出力の版。既定 a-v1。英数字・_・- のみ |
@@ -73,3 +77,21 @@ task gold が trim 後に空の値は参照行の検索・整合性検査・採�
 ## ローカル検証
 
 `npm run typecheck` と `npm test` は上流データ・ネットワーク不要。合成入力で結合、変換、再試行、費用、台帳、再開、採点、ブートストラップ、公開安全性を確認する。dry run は実データの文字層キャッシュを用意してから行う。
+
+## codex 経路（gpt-6.2-sol、計画外の追加解析）
+
+事前登録に無い追加解析として、片岡本人が 2026-11-26 に依頼した。既定の選択は従来の 3 モデルのままで、`BENCH_MODELS=gpt-6.2-sol` と明示したときに codex CLI を使う。`BENCH_CODEX_EFFORT=low` または `medium` を指定し、それぞれ別の `BENCH_RUN_LABEL` で比較する（high も指定可能）。同じラベルで effort を変えると入力ハッシュの検査で停止する。codex はログイン済みの動作確認済み版を用意する。0.162.1 はシェル準備処理の不具合のため拒否する。
+
+`BENCH_CODEX_CONCURRENCY` は既定 1、最大 4。`BENCH_CODEX_TIMEOUT_MS` は既定 30 分で、超過時はプロセスを終了して既存の再試行処理へ渡す。`BENCH_CODEX_JS` で起動する codex.js を指定できる。使用量の上限と認証失敗では台帳に追加せず全体を停止し、同じコマンドで再開できる。API キーは不要だが、費用の見張りの `BENCH_COST_LIMIT_USD` は引き続き必須。
+
+`npm run pick-pilot` は、評価集合からレビューを非復元に 10 件選び、各レビューから 1 研究を選ぶ。レビューは reviewId 順、研究は studyKey 順に並べ、mulberry32 を使う。既定の種は 20261126。`npm run pick-pilot -- --seed 20261126 --n 10` で変更できる。`BENCH_TIERS` は有効、`BENCH_STUDIES` は無視する。標準出力の最初の行を `BENCH_STUDIES` に貼り付けられ、内訳と抽出方法は `outputs/pilot-seed<seed>-n<n>.json` にも保存する。
+
+本番との差:
+
+- codex の固定の上乗せがある。道具を切った状態の短い依頼で入力 6,347 トークンを実測した。本番の API 呼び出しには無い。
+- システムプロンプトは `model_instructions_file` で codex 自身の指示文と置き換える。user 本文は標準入力で渡す。依頼ごとに空の一時作業フォルダを使い、道具・アプリ・プラグイン等を無効化する。
+- 応答スキーマは根を object の `items` に包み、受け取り後に剥がして本番と同じ応答検証へ渡す。
+- temperature は codex では渡せないので送らない。本番は `EXTRACT_DATA_TEMPERATURE` を使う。
+- 出力上限は本番と同じく上書きしない。
+- reasoning effort は既存の 3 モデルと違い明示的に指定する。low と medium の比較のためである。
+- 費用はサブスクリプション経由で算出できず、トークン数だけを記録する。監視単価は 0、採点の費用 2 欄は null とし、`costNote: subscription_not_computable` を付ける。台帳の全試行の入出力トークン数を研究あたりで集計し、取得できた run の思考トークン数も平均する。

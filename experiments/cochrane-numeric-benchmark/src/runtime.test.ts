@@ -11,7 +11,8 @@ import { sha256 } from './io';
 import { anchorItems, interruptedRecord } from './runner';
 import { parseExtractDataResponse } from '../../../src/features/extraction/skills/extractData';
 import { buildFields } from './schema';
-import { cochraneRoot, readSubset, benchRoot, selectedModels } from './config';
+import { cochraneRoot, readSubset, benchRoot, selectedModels, codexEffort, codexConcurrency, codexTimeoutMs } from './config';
+import { pickPilot, pilotArgs } from './pickPilot';
 import type { Study } from './evaluationSet';
 
 async function temporary() {
@@ -19,6 +20,38 @@ async function temporary() {
   await mkdir(outputs, { recursive: true });
   return mkdtemp(path.join(outputs, '.test-tmp-'));
 }
+
+test('codex は明示選択のみで effort は必須、並列数と時間上限を検査する', () => {
+  const previous = process.env.BENCH_MODELS;
+  try {
+    delete process.env.BENCH_MODELS;
+    assert.deepEqual(selectedModels().map((model) => model.id), ['gemini-3.8-flash', 'claude-sonnet-5-5', 'claude-haiku-5-5']);
+    process.env.BENCH_MODELS = 'gpt-6.2-sol';
+    assert.deepEqual(selectedModels(), [{ id: 'gpt-6.2-sol', route: 'codex' }]);
+    for (const value of [undefined, '', 'LOW', 'invalid']) assert.throws(() => codexEffort({ BENCH_CODEX_EFFORT: value }), /必須/);
+    for (const value of ['low', 'medium', 'high']) assert.equal(codexEffort({ BENCH_CODEX_EFFORT: value }), value);
+    assert.equal(codexConcurrency({}), 1); assert.equal(codexConcurrency({ BENCH_CODEX_CONCURRENCY: '4' }), 4);
+    for (const value of ['', '0', '5', '1.5', 'NaN']) assert.throws(() => codexConcurrency({ BENCH_CODEX_CONCURRENCY: value }));
+    assert.equal(codexTimeoutMs({}), 1800000);
+    for (const value of ['', '0', '-1', 'Infinity']) assert.throws(() => codexTimeoutMs({ BENCH_CODEX_TIMEOUT_MS: value }));
+  } finally {
+    if (previous === undefined) delete process.env.BENCH_MODELS; else process.env.BENCH_MODELS = previous;
+  }
+});
+
+test('パイロット抽出は同じ種で再現し、レビュー非復元で各研究を一つ選ぶ', () => {
+  const studies = ['R3', 'R1', 'R2'].flatMap((reviewId) => ['S2', 'S1'].map((id) => ({ reviewId, studyKey: `${reviewId}/${id}` })));
+  const result = pickPilot(studies, 20261126, 3);
+  assert.deepEqual(result, pickPilot([...studies].reverse(), 20261126, 3));
+  assert.equal(new Set(result.selected.map((study) => study.reviewId)).size, 3);
+  assert.equal(result.selected.length, 3); assert.equal(result.reviewsTotal, 3); assert.equal(result.studiesTotal, 6);
+  for (const study of result.selected) assert.ok(studies.some((candidate) => candidate.reviewId === study.reviewId && candidate.studyKey === study.studyKey));
+  assert.throws(() => pickPilot(studies, 1, 4), /レビュー数/);
+  assert.throws(() => pickPilot(studies, 1, 0), /整数/);
+  assert.deepEqual(pilotArgs([]), { seed: 20261126, n: 10 });
+  assert.deepEqual(pilotArgs(['--n', '2', '--seed', '42']), { seed: 42, n: 2 });
+  for (const args of [['--seed'], ['--n', '1.5'], ['--other', '2']]) assert.throws(() => pilotArgs(args));
+});
 
 test('上流ルートと部分集合の入力検証', () => {
   const oldRoot = process.env.COCHRANE_BENCH_ROOT;

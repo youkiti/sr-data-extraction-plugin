@@ -12,8 +12,10 @@ export const MODELS = [
   { id: 'gemini-3.8-flash', keyEnv: 'GEMINI_API_KEY' },
   { id: 'claude-sonnet-5-5', keyEnv: 'ANTHROPIC_API_KEY' },
   { id: 'claude-haiku-5-5', keyEnv: 'ANTHROPIC_API_KEY' },
+  { id: 'gpt-6.2-sol', route: 'codex' },
 ] as const;
 export const GUARD_PRICING: Readonly<Record<string, ModelPricing>> = {
+  'gpt-6.2-sol': { inputPerMillion: 0, outputPerMillion: 0 },
   'gemini-3.8-flash': { inputPerMillion: 1.5, outputPerMillion: 7.5 },
   'claude-sonnet-5-5': { inputPerMillion: 2, outputPerMillion: 10 },
   // 推定入力が実際より少なく境界を下回る可能性があるため、監視は常に高い段で数える。
@@ -61,5 +63,22 @@ export function readSubset<T extends string>(envName: string, allowed: readonly 
   if (unknown.length) throw new Error(`${envName} に未対応の値があります: ${unknown.join(', ')}`);
   return requested as T[];
 }
-export const selectedModels = () => MODELS.filter((model) => readSubset('BENCH_MODELS', MODELS.map((m) => m.id)).includes(model.id));
+export const selectedModels = () => MODELS.filter((model) => process.env.BENCH_MODELS?.trim()
+  ? readSubset('BENCH_MODELS', MODELS.map((m) => m.id)).includes(model.id) : 'keyEnv' in model);
+export type CodexEffort = 'low' | 'medium' | 'high';
+export function codexEffort(env: NodeJS.ProcessEnv = process.env): CodexEffort {
+  const value = env.BENCH_CODEX_EFFORT;
+  if (value !== 'low' && value !== 'medium' && value !== 'high') throw new Error('BENCH_CODEX_EFFORT は low / medium / high の指定が必須です');
+  return value;
+}
+export function codexConcurrency(env: NodeJS.ProcessEnv = process.env): number {
+  const value = env.BENCH_CODEX_CONCURRENCY === undefined ? 1 : Number(env.BENCH_CODEX_CONCURRENCY);
+  if (!Number.isInteger(value) || value < 1 || value > 4) throw new Error('BENCH_CODEX_CONCURRENCY は 1〜4 の整数で指定してください');
+  return value;
+}
+export function codexTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+  const value = env.BENCH_CODEX_TIMEOUT_MS === undefined ? 1_800_000 : Number(env.BENCH_CODEX_TIMEOUT_MS);
+  if (!Number.isSafeInteger(value) || value <= 0) throw new Error('BENCH_CODEX_TIMEOUT_MS は正の整数で指定してください');
+  return value;
+}
 export const selectedTiers = () => readSubset('BENCH_TIERS', TIERS);

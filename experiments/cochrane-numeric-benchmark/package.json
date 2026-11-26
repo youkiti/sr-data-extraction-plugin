@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "extract-text": "tsx src/extractText.ts",
     "run": "tsx src/runner.ts",
+    "pick-pilot": "tsx src/pickPilot.ts",
     "lock-gold": "tsx src/lockGold.ts",
     "recheck-list": "tsx src/recheckList.ts",
     "recheck-readers": "tsx src/recheckReadersCli.ts",

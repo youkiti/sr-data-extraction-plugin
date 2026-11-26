@@ -6,6 +6,7 @@ import type { EvalValue, Label } from './evaluationSet';
 import type { RunRecord, ScoringItem } from './runner';
 import type { LedgerEntry } from './ledger';
 import { assertLabels } from './goldLock';
+import { guardCostUsd, listCostUsd, reportCostUsd } from './cost';
 
 const value = (overrides: Partial<EvalValue> = {}): EvalValue => ({ tier: 'cc-by', reviewId: 'REV1', studyKey: 'cc-by/REV1/S1',
   rowId: 'REV1:r:1', itemIndex: 1, field: 'experimental_mean', group: 'experimental', valueKind: 'mean', dataType: 'continuous',
@@ -13,6 +14,28 @@ const value = (overrides: Partial<EvalValue> = {}): EvalValue => ({ tier: 'cc-by
 const item = (text: string | null = '2', overrides: Partial<ScoringItem> = {}): ScoringItem => ({ fieldId: 'experimental_mean',
   entityKey: 'outcome:o1|arm:1|time:1d', value: text, notReported: false, quote: 'Synthetic quote', anchorStatus: 'exact', ...overrides });
 const run = (items: ScoringItem[], outcome: ScoreRun['outcome'] = 'ok'): ScoreRun => ({ items, outcome });
+
+test('codex の費用は算出不能で全試行のトークン平均と run の思考平均を記録する', () => {
+  const records = [1, 2, 3].map((id) => ({ runId: `codex${id}`, model: 'gpt-6.2-sol', outcome: 'ok', items: [],
+    elapsedMs: 100, thoughtsTokens: id === 3 ? null : id * 10 } as unknown as RunRecord));
+  const ledger = records.flatMap((record) => [1, 2].map((attempt) => ({ runId: record.runId, model: record.model,
+    attempt, tokensIn: 100, tokensOut: 20, cachedTokensIn: 0, attemptAt: '2026-11-26T00:00:00Z', elapsedMs: 100 } as LedgerEntry)));
+  const result = metrics([], records, ledger);
+  assert.equal(result.reportCostPerStudy, null); assert.equal(result.listCostPerStudy, null);
+  assert.equal(result.costNote, 'subscription_not_computable');
+  assert.equal(result.tokensInPerStudy, 200); assert.equal(result.tokensOutPerStudy, 40);
+  assert.equal(result.thoughtsTokensPerStudy, 15);
+  assert.equal(metrics([], [{ ...records[0]!, thoughtsTokens: null }], []).thoughtsTokensPerStudy, null);
+  assert.equal(metrics([], [], []).tokensInPerStudy, null);
+  assert.equal(guardCostUsd('gpt-6.2-sol', 100, 20), 0);
+  assert.equal(listCostUsd('gpt-6.2-sol', 100, 20), 0);
+  assert.equal(reportCostUsd('gpt-6.2-sol', 100, 20, 0, 0), 0);
+  const api = metrics([], [{ ...records[0]!, model: 'claude-sonnet-5-5' }], [
+    { ...ledger[0]!, model: 'claude-sonnet-5-5', tokensIn: 1000000, tokensOut: 0 },
+  ]);
+  assert.equal(api.reportCostPerStudy, 2); assert.equal(api.listCostPerStudy, 2);
+  assert.equal(api.costNote, undefined);
+});
 
 test('数値一致は表記差を許容し単位差と丸めを許容しない', () => {
   for (const [a, b] of [['78.0', '78'], ['1,234', '1234'], ['0·5', '0.5'], ['−2', '-2'], [' 2 ', '2'], ['０', '0']]) assert.ok(matchesGold(a!, b!));

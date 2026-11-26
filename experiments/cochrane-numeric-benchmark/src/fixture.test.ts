@@ -9,6 +9,7 @@ import { assertLabels } from './goldLock';
 import { evaluationCounts, sha256 } from './io';
 import { requestHashes, checkManifest, assertInputHash } from './resume';
 import type { EvaluationSet } from './io';
+import { MODELS } from './config';
 
 export function fixture() {
   const item = { row_id: 'REV1:r:1', data_type: 'continuous', fields: ['experimental_mean', 'control_mean'],
@@ -22,6 +23,36 @@ export function fixture() {
   const provenance: Provenance[] = [{ row_id: item.row_id, values: study.task.gold[item.row_id]!, provenance: 'unknown' }];
   return { study, refs, provenance };
 }
+
+test('API 経路の依頼ハッシュを保ち codex だけ effort を固定する', () => {
+  const { study } = fixture();
+  const set: EvaluationSet = { studies: [study], values: [], documents: new Map([[study.studyKey,
+    [{ ...study.task.documents[0]!, pages: [{ page: 1, text: 'Synthetic' }] }]]]), hashes: {}, excluded: [], emptyGold: {} };
+  const previousModels = process.env.BENCH_MODELS, previousEffort = process.env.BENCH_CODEX_EFFORT;
+  try {
+    process.env.BENCH_MODELS = MODELS.map((model) => model.id).join(',');
+    process.env.BENCH_CODEX_EFFORT = 'low';
+    const low = requestHashes(set);
+    process.env.BENCH_CODEX_EFFORT = 'medium';
+    const medium = requestHashes(set);
+    const { messages, chatOptions } = buildStudyRequest(study, set.documents.get(study.studyKey)!);
+    for (const model of MODELS) {
+      const key = `request/${model.id}__${study.studyKey.replace(/\//g, '__')}`;
+      if ('keyEnv' in model) {
+        assert.equal(low[key], sha256(JSON.stringify({ messages, chatOptions })));
+        assert.equal(low[key], medium[key]);
+      } else {
+        assert.equal(low[key], sha256(JSON.stringify({ messages, chatOptions, codex: { reasoningEffort: 'low' } })));
+        assert.notEqual(low[key], medium[key]);
+      }
+    }
+    const manifest = { hashes: low, promptVersion: 17, harnessCommit: null, excluded: [], emptyGold: {} };
+    assert.throws(() => checkManifest(manifest, { ...manifest, hashes: medium }), /入力のハッシュが違います/);
+  } finally {
+    if (previousModels === undefined) delete process.env.BENCH_MODELS; else process.env.BENCH_MODELS = previousModels;
+    if (previousEffort === undefined) delete process.env.BENCH_CODEX_EFFORT; else process.env.BENCH_CODEX_EFFORT = previousEffort;
+  }
+});
 
 test('評価項目の型フィルターと PDF・文字層による除外', () => {
   const { study } = fixture();
