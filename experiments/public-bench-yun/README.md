@@ -35,6 +35,8 @@
 6. `BENCH_PMCIDS` に TEST の 3〜5 RCT を指定し、専用ラベル（例 `smoke-md`）で smoke run を行う。
 7. `BENCH_PMCIDS` を解除し、新しい条件別ラベル（例 `main-md` / `main-pdf`）で本実行。codex を含めるときはモデルを明示し `BENCH_CODEX_EFFORT=medium` とする。
 
+`BENCH_PROMPT_VARIANT=allow-calc` は、2026-11-27 に所有者が決定した条件 M の感度分析用で、主結果は変更しない。ハーネス内でシステムプロンプトの `Never infer, compute, or guess values that are not explicitly stated.` だけを `Never infer or guess values that are not explicitly stated.` に置換し、他の依頼内容は変えない。未設定または `default` は従来どおり。本実行とは別の専用ラベルを使い、再開・変換時も同じ値を指定する。
+
 キーは環境変数から渡す。DGX Spark では、例えば次のように実行する（他の必須変数は事前に設定する）。`.env` は読み込まない。
 
 ```bash

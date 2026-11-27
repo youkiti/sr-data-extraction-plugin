@@ -12,7 +12,7 @@ import { costLimits, failureUsage, guardCostUsd, listCostUsd, reportCostUsd, saf
 import { ledgerWriter, readLedger, budgetSpend, type LedgerEntry } from '../../cochrane-numeric-benchmark/src/ledger';
 import { harnessCommit, readRunState, resumeDecision, runIdFor } from '../../cochrane-numeric-benchmark/src/resume';
 import { writeJson } from '../../cochrane-numeric-benchmark/src/io';
-import { MODELS, condition, runLabel, outputRoot, yunRoot, runsDir, selectedModels, codexEffort, codexConcurrency, codexTimeoutMs } from './config';
+import { MODELS, condition, promptVariant, runLabel, outputRoot, yunRoot, runsDir, selectedModels, codexEffort, codexConcurrency, codexTimeoutMs } from './config';
 import { assertYunCheckout, loadEvaluation, type Study, type Document } from './dataset';
 import { buildStudyRequest, promptCharacters } from './prompt';
 import { inputManifest } from './manifest';
@@ -47,7 +47,7 @@ export async function main(): Promise<void> {
     const inputCondition = condition();
     const label = runLabel();
     const out = outputRoot();
-    console.log(`条件: ${inputCondition}, ラベル: ${label}, モデル: ${models.map((m) => m.id).join(', ')}`);
+    console.log(`条件: ${inputCondition}, プロンプト変種: ${promptVariant()}, ラベル: ${label}, モデル: ${models.map((m) => m.id).join(', ')}`);
     for (const model of MODELS) if ('keyEnv' in model) console.log(`${model.keyEnv}: ${process.env[model.keyEnv]?.trim() ? '設定あり' : '未設定'}`);
     const limits = dry ? null : costLimits();
     for (const model of models) guardCostUsd(model.id, 0, 0);
