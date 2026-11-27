@@ -70,3 +70,14 @@ video/scripts/_*.mjs
 # OS / エディタ
 .DS_Store
 Thumbs.db
+
+# Yun 公開ベンチはコード・手順だけを公開する。
+experiments/public-bench-yun/*
+!experiments/public-bench-yun/src/
+!experiments/public-bench-yun/score/
+!experiments/public-bench-yun/package.json
+!experiments/public-bench-yun/package-lock.json
+!experiments/public-bench-yun/tsconfig.json
+!experiments/public-bench-yun/README.md
+!experiments/public-bench-yun/REPORT.md
+experiments/public-bench-yun/score/__pycache__/
