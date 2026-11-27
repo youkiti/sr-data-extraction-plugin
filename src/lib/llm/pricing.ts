@@ -19,6 +19,16 @@ export interface ModelPricing {
    * 「利用者に楽観的な数字を見せない」方針と衝突するため、既定を割引なしに倒している。
    */
   cachedInputPerMillion?: number;
+  /**
+   * キャッシュを含む総入力が thresholdTokensIn を超えると、依頼全体の全トークンに適用する単価。
+   * cachedInputPerMillion の省略時は、この段の inputPerMillion と同額で数える。
+   */
+  longContext?: {
+    thresholdTokensIn: number;
+    inputPerMillion: number;
+    outputPerMillion: number;
+    cachedInputPerMillion?: number;
+  };
 }
 
 /**
@@ -64,17 +74,31 @@ export const MODEL_PRICING: Readonly<Record<string, ModelPricing>> = {
   // 実行前と費用未報告時の概算用。実行後は応答の usage.cost を優先する。
   'qwen/qwen3-235b-a22b-2507': { inputPerMillion: 0.0875, outputPerMillion: 0.35, cachedInputPerMillion: 0.0175 },
   'deepseek/deepseek-v4-flash': { inputPerMillion: 0.14, outputPerMillion: 0.28, cachedInputPerMillion: 0.028 },
-  // Anthropic 3 モデル。issue #127 PR2 で Options 配線とあわせて追加。
+  // Anthropic のモデル。
   // **2026-08-31 に公式料金ページで再確認**（https://platform.claude.com/docs/en/about-claude/pricing）:
   // claude-sonnet-5 の $2/$10 は「2026-08-31 までの導入価格」ではなく**標準価格として恒久化**され、
   // 予定されていた $3/$15 への改定は行われないと明記された。旧コメントは「導入価格の期限切れで
   // 過小表示になるのを避けるため通常価格 $3/$15 を採る」という判断だったが、その前提が失効し、
   // 逆に 1.5 倍の過大表示になっていたため実価格へ修正した。
-  // キャッシュ read は 3 モデルとも入力単価の 0.1 倍（同ページの Prompt caching 表）。
+  // キャッシュ read は opus-5 / sonnet-5 / haiku-4-5 の 3 モデルで入力単価の 0.1 倍（同ページの Prompt caching 表）。
   // cache write（5 分 TTL で 1.25 倍）は現状この拡張が cache_control を送らないため発生しない。
-  // claude-haiku-4-5 のみコンテキスト長 200K（他の 2 モデルは 1M）
+  // claude-haiku-4-5 はコンテキスト長 200K（claude-opus-5 / claude-sonnet-5 は 1M）
   'claude-opus-5': { inputPerMillion: 5.0, outputPerMillion: 25.0, cachedInputPerMillion: 0.5 },
   'claude-sonnet-5': { inputPerMillion: 2.0, outputPerMillion: 10.0, cachedInputPerMillion: 0.2 },
+  // 入力 $2.00 / 出力 $10.00 per 1M は 2026-11-23 に公式料金ページで確認した値
+  // （https://platform.claude.com/docs/en/about-claude/pricing、docs/evaluation-plan.md §3.2）。
+  // キャッシュ読み出し単価は確認に含まれないため省略し、ModelPricing の既定どおり
+  // 入力単価と同額（割引を見込まない安全側）で概算する。この拡張は cache_control を
+  // 送らないため実際の影響はない。
+  'claude-sonnet-5-5': { inputPerMillion: 2.0, outputPerMillion: 10.0 },
+  // 2026-11-25 に公式料金ページで確認
+  // （https://platform.claude.com/docs/en/about-claude/pricing）。キャッシュ読み出し・書き込みを
+  // 含む総入力が 100,000 トークンを超えると、出力を含む依頼全体を長い入力の単価で数える。
+  // この拡張は cache_control を送らないためキャッシュ書き込みは発生しない。
+  'claude-haiku-5-5': {
+    inputPerMillion: 0.1, outputPerMillion: 0.5, cachedInputPerMillion: 0.01,
+    longContext: { thresholdTokensIn: 100_000, inputPerMillion: 0.5, outputPerMillion: 2.5, cachedInputPerMillion: 0.05 },
+  },
   'claude-haiku-4-5': { inputPerMillion: 1.0, outputPerMillion: 5.0, cachedInputPerMillion: 0.1 },
 };
 
@@ -175,14 +199,16 @@ export function estimateCostUsd(
     return null;
   }
   const totalIn = tokensIn ?? 0;
+  const rates = pricing.longContext && totalIn > pricing.longContext.thresholdTokensIn
+    ? pricing.longContext : pricing;
   // キャッシュ分が総入力を超えるのは契約違反（provider 側の異常値）だが、負のコストを
   // 表示するよりは割引を諦めるほうが安全なので総入力で頭打ちにする
   const cachedIn = Math.min(Math.max(cachedTokensIn ?? 0, 0), totalIn);
   // キャッシュ単価が分かっていないモデルは入力単価で積む（割引を見込まない安全側）
-  const cachedRate = pricing.cachedInputPerMillion ?? pricing.inputPerMillion;
-  const inputCost = ((totalIn - cachedIn) / 1_000_000) * pricing.inputPerMillion;
+  const cachedRate = rates.cachedInputPerMillion ?? rates.inputPerMillion;
+  const inputCost = ((totalIn - cachedIn) / 1_000_000) * rates.inputPerMillion;
   const cachedCost = (cachedIn / 1_000_000) * cachedRate;
-  const outputCost = ((tokensOut ?? 0) / 1_000_000) * pricing.outputPerMillion;
+  const outputCost = ((tokensOut ?? 0) / 1_000_000) * rates.outputPerMillion;
   return inputCost + cachedCost + outputCost;
 }
 
@@ -219,9 +245,11 @@ export const MODEL_IMAGE_CAPABILITY: Readonly<Record<string, ModelImageCapabilit
   'gemini-3.5-flash-lite': { provider: 'gemini', support: 'supported' },
   'qwen/qwen3-235b-a22b-2507': { provider: 'openrouter', support: 'unsupported' },
   'deepseek/deepseek-v4-flash': { provider: 'openrouter', support: 'unsupported' },
-  // Anthropic 3 モデルはネイティブ base64 画像入力に対応（docs/requirements.md §10 Q11）
+  // Anthropic のモデルはネイティブ base64 画像入力に対応（docs/requirements.md §10 Q11）
   'claude-opus-5': { provider: 'anthropic', support: 'supported' },
   'claude-sonnet-5': { provider: 'anthropic', support: 'supported' },
+  'claude-sonnet-5-5': { provider: 'anthropic', support: 'supported' },
+  'claude-haiku-5-5': { provider: 'anthropic', support: 'supported' },
   'claude-haiku-4-5': { provider: 'anthropic', support: 'supported' },
 };
 

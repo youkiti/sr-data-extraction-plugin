@@ -74,7 +74,7 @@ async function loadRuns(): Promise<Map<string, ModelBundle>> {
     bundle.inputs.push({ metrics, promptVersion, thoughtsTokens, cachedTokensIn });
     byModel.set(run.model, bundle);
   }
-  console.log(`費用再計算: usageMetadata が無いため記録値を使用 ${recordedCostCount} 件`);
+  console.log(`費用再計算: 使用量（usageMetadata / usage）が無いため記録値を使用 ${recordedCostCount} 件`);
   const ledger = await readLedger(path.join(dir, '_cost-ledger.jsonl'));
   console.log(ledgerCostSummary(recalculateLedger(ledger, await readLedgerRuns(dir, ledger))));
   return byModel;

@@ -48,7 +48,7 @@ export function emptyCriteriaDraft(): CriteriaDraft {
     max_fabrication_rate: '', max_omission_rate: '', max_wrong_value_rate: '', min_compared_cells: '', note: '' };
 }
 
-/** 現行版を引き継ぎ、版が無ければ CESAR の参考値を入力する。 */
+/** 現行版を引き継ぎ、版が無ければ CESAR のデータ抽出の中止境界（点推定）を流用した初期値を入れる。 */
 export function initialCriteriaDraft(current: AcceptanceCriteria | null): CriteriaDraft {
   if (current === null) {
     return { ...emptyCriteriaDraft(), min_accuracy: '92', max_fabrication_rate: '3' };

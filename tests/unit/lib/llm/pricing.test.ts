@@ -95,6 +95,35 @@ describe('estimateCostUsd', () => {
     expect(estimateCostUsd('claude-sonnet-5', 1_000_000, 1_000_000)).toBeCloseTo(12.0, 10);
   });
 
+  it('claude-sonnet-5-5 は入力 $2.00 / 出力 $10.00 per 1M で概算し、キャッシュは割り引かない', () => {
+    expect(MODEL_PRICING['claude-sonnet-5-5']).toEqual({
+      inputPerMillion: 2.0,
+      outputPerMillion: 10.0,
+    });
+    expect(estimateCostUsd('claude-sonnet-5-5', 1_000_000, 1_000_000)).toBeCloseTo(12.0, 10);
+    expect(estimateCostUsd('claude-sonnet-5-5', 1_000_000, 1_000_000, 800_000)).toBeCloseTo(12.0, 10);
+  });
+
+  it('claude-haiku-5-5 は総入力の境界で依頼全体の単価を切り替える', () => {
+    expect(MODEL_PRICING['claude-haiku-5-5']).toEqual({
+      inputPerMillion: 0.1, outputPerMillion: 0.5, cachedInputPerMillion: 0.01,
+      longContext: { thresholdTokensIn: 100_000, inputPerMillion: 0.5, outputPerMillion: 2.5, cachedInputPerMillion: 0.05 },
+    });
+    expect(estimateCostUsd('claude-haiku-5-5', 100_000, 2_000)).toBeCloseTo((100_000 * 0.1 + 2_000 * 0.5) / 1e6, 12);
+    expect(estimateCostUsd('claude-haiku-5-5', 100_001, 2_000)).toBeCloseTo((100_001 * 0.5 + 2_000 * 2.5) / 1e6, 12);
+    expect(estimateCostUsd('claude-haiku-5-5', 60_000, 0, 0)).toBeCloseTo(60_000 * 0.1 / 1e6, 12);
+    expect(estimateCostUsd('claude-haiku-5-5', 60_000, 0, 50_000)).toBeCloseTo((10_000 * 0.1 + 50_000 * 0.01) / 1e6, 12);
+    expect(estimateCostUsd('claude-haiku-5-5', 110_000, 2_000, 50_000)).toBeCloseTo((60_000 * 0.5 + 50_000 * 0.05 + 2_000 * 2.5) / 1e6, 12);
+    expect(estimateCostUsd('claude-sonnet-5-5', 200_000, 2_000)).toBeCloseTo((200_000 * 2 + 2_000 * 10) / 1e6, 12);
+  });
+
+  it('長い入力のキャッシュ単価が省略された補完単価は、その段の入力単価で数える', () => {
+    expect(estimateCostUsd('custom-tier', 100_001, 2_000, 50_000, {
+      inputPerMillion: 0.1, outputPerMillion: 0.5,
+      longContext: { thresholdTokensIn: 100_000, inputPerMillion: 0.5, outputPerMillion: 2.5 },
+    })).toBeCloseTo((100_001 * 0.5 + 2_000 * 2.5) / 1e6, 12);
+  });
+
   it('claude-haiku-4-5 は入力 $1.00 / 出力 $5.00 / キャッシュ $0.10 per 1M で概算する', () => {
     expect(MODEL_PRICING['claude-haiku-4-5']).toEqual({
       inputPerMillion: 1.0,
@@ -128,9 +157,11 @@ describe('resolveModelImageInputSupport（画像非対応モデルの実行ブ�
     );
   });
 
-  it('Anthropic 3 モデルは anthropic provider で supported（issue #127 PR2）', () => {
+  it('Anthropic のモデルは anthropic provider で supported', () => {
     expect(resolveModelImageInputSupport('anthropic', 'claude-opus-5')).toBe('supported');
     expect(resolveModelImageInputSupport('anthropic', 'claude-sonnet-5')).toBe('supported');
+    expect(resolveModelImageInputSupport('anthropic', 'claude-sonnet-5-5')).toBe('supported');
+    expect(resolveModelImageInputSupport('anthropic', 'claude-haiku-5-5')).toBe('supported');
     expect(resolveModelImageInputSupport('anthropic', 'claude-haiku-4-5')).toBe('supported');
   });
 
@@ -205,6 +236,8 @@ describe('resolveThinkingOutputMultiplier', () => {
     'gemini-3.7-flash',
     'claude-opus-5',
     'claude-sonnet-5',
+    'claude-sonnet-5-5',
+    'claude-haiku-5-5',
     'deepseek/deepseek-v4-flash',
     'unknown-model',
   ])('未測定の %s は最大実測倍率を使う', (model) => {

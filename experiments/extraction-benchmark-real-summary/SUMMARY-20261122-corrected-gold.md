@@ -3,7 +3,7 @@
 不眠治療の SR に含まれる RCT 10 本で、AI 単独の抽出を人手の正解（gold）と比べた結果の**集計だけ**を公開するファイルです。群の重複を直した gold（2026-10-04、1,230 行）で、保存済みの run を採点し直した値です。LLM は呼び直していません。
 
 - 原論文の PDF・gold・個々の抽出結果は公開していません（`experiments/extraction-benchmark-real/` は `.gitignore` 対象）。
-- 論文（片岡ら、準備中）の Table 2・3・4 の元データはこのファイルです。[SUMMARY-20260921-prompt-v9.md](SUMMARY-20260921-prompt-v9.md) は修正前の gold（1,340 行）での値で、論文の値とは一致しません。
+- 論文（片岡ら、準備中）の補足表 S1〜S3（v0.2 までは本文の Table 2・3・4）の元データはこのファイルです。現在のプロンプト（版数 17）での結果は [SUMMARY-20261125-prompt-v17.md](SUMMARY-20261125-prompt-v17.md) にあります。[SUMMARY-20260921-prompt-v9.md](SUMMARY-20260921-prompt-v9.md) は修正前の gold（1,340 行）での値で、論文の値とは一致しません。
 - 指標の定義は、公開している事前登録ベンチ `experiments/extraction-benchmark/README.md` §4 と同じです。ただし群の突き合わせは違います。事前登録ベンチは、AI と gold で群の番号がずれたとき群の名前で人が対応を付けますが、このベンチの主指標は群の番号のまま突き合わせます。対応を取り直した値は、事後の感度分析として別に載せています（1 節）。
 - 項目の区分ごとの集計は [SUMMARY-20261018-entity-level.md](SUMMARY-20261018-entity-level.md) にあります（同じ gold・同じ run）。
 

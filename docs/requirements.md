@@ -1,4 +1,10 @@
-# sr-data-extraction-plugin 要件定義書（v0.52）
+# sr-data-extraction-plugin 要件定義書（v0.55）
+
+- **更新**: 2026-11-25（v0.55: 単価表に claude-haiku-5-5 を段付きで足した〔入力 0.10 / 出力 0.50 / キャッシュ読み出し 0.01 USD per 1M、総入力が 10 万トークンを超える依頼は全体を 0.50 / 2.50 / 0.05 で計算〕。画像入力対応表にも追加した）
+
+- **更新**: 2026-11-25（v0.54: 単価表に claude-sonnet-5-5 を足した〔入力 2.00 / 出力 10.00 USD、キャッシュ読み出しの単価は未確認のため書かない〕。画像入力対応表にも追加した）
+
+- **更新**: 2026-11-24（v0.53: 合格基準の初期値〔正確度 92%・偽陽性の割合 3%〕を、CESAR のデータ抽出の中止境界〔点推定〕の流用と書き直し、`AcceptanceCriteria` の節の「自動入力しない」を実装に合わせた。Q8 参考の表に原文の脚注を足した。issue #557）
 
 - **更新**: 2026-11-23（v0.52: study_wide.csv でも、キー列 study_label と重なる既存の study 項目の見出しを `<名前>_field` にする。issue #561）
 
@@ -622,8 +628,8 @@ owner だけが確定できる。旧プロジェクトでは初回確定時に�
 | pilot_runs_before | 確定した時点で ExtractionRuns にあったパイロット run の数（状態を問わない、重複する run_id は 1 つ）。0 はパイロット前、1 以上は開始後の確定 |
 | note | 任意の自由記述 |
 
-率の 4 項目のうち 1 つ以上を必須とする。入力初期値は空欄、対象レベルは全選択。
-CESAR の感度 92%・重大な誤り 3%（Q8）は参考として表示し、自動入力しない。
+率の 4 項目のうち 1 つ以上を必須とする。入力初期値は、現行版があればその値を引き継ぎ、なければ正確度 92%・偽陽性の割合 3%（他の数値は空欄）とし、対象レベルは全選択にする（詳細は「合格基準の事前登録」の節）。
+この 2 値は、CESAR のデータ抽出の中止境界（感度 92%、重大エラー割合 3%、いずれも点推定。Q8 参考）を、正確度と偽陽性の割合の出発点に流用したもの。CESAR では中止の基準（最低ライン）で、合格の目標ではない。画面にはこの出所を参考として表示する。
 
 ### 3.3 エンティティモデル（entity_level）
 
@@ -1026,7 +1032,7 @@ summarizeComparison の研究集合・entity_levels 絞り込み後の comparato
 結果表は基準 / 設定値 / パイロットの値 / 判定 / 数え方の 5 列。行名は正確度・偽陽性の割合・偽陰性の割合・誤分類の割合・比べられたセル数とする。
 設定値に「97% 以上」「3% 以下」「50 件以上」（英語は at least 97%、at most 3%、at least 50）と方向を示す。未設定は「設定なし」。入力ラベルの ≥ (%) / ≤ (%) は維持する。
 数え方は正確度「人と AI の値が一致したセルの割合」、偽陽性「人が『報告なし』なのに AI が値を出した、または値が違い AI の引用が本文に無い」、偽陰性「人は値を入れたのに AI が報告なし・値なし」、誤分類「人と AI の値が違う（引用は本文にある）」、セル数「割合の分母。人が未判定・AI 未抽出のセルは除く」とする。
-読込時に下書きが空の初期状態と一致する場合だけ、現行版の比較相手・対象レベル・4 つの割合・最小セル数を引き継ぎ、メモは空にする。数値は文字列、未設定は空欄。現行版がなければ正確度 92%、偽陽性の割合 3% を参考値として入れ、他は空欄、全レベルを選択する。編集済み下書きは上書きしない。
+読込時に下書きが空の初期状態と一致する場合だけ、現行版の比較相手・対象レベル・4 つの割合・最小セル数を引き継ぎ、メモは空にする。数値は文字列、未設定は空欄。現行版がなければ、CESAR のデータ抽出の中止境界（感度 92%、重大エラー割合 3%、いずれも点推定）を出発点に流用して正確度 92%、偽陽性の割合 3% を入れ、他は空欄、全レベルを選択する。編集済み下書きは上書きしない。
 保存済みの版を読むため、Sheets と下書きの保存名 `max_fabrication_rate` / `max_omission_rate` / `max_wrong_value_rate` は維持する。表示名は偽陽性 / 偽陰性 / 誤分類。
 判定・CSV・Methods には同じ純粋関数を使う。R セットは各版の結果を出し、Methods は現行版のみを出す。
 
@@ -1062,26 +1068,36 @@ summarizeComparison の研究集合・entity_levels 絞り込み後の comparato
 
 ### Q8 参考: CESAR プロジェクトの中止境界と判断ルール（中間解析）
 
-| Performance metrics | Futility boundaries (point estimate) | Non-inferiority margins (Upper limit of 95% CI) | Decision rules |
+| Performance metrics | Futility boundaries (point estimate) | Non-inferiority margins (Upper limit of 95% CI)* | Decision rules |
 | --- | --- | --- | --- |
 | **Screening** | | | |
 | Sensitivity | <80% | <95% | Stop if either boundary is crossed |
 | Specificity (for full-text screening only) | <50% | <60% | Stop if either boundary is crossed |
 | **Data extraction** | | | |
 | Sensitivity | <92% | <97% | Stop if either boundary is crossed |
-| Major error proportion | >3% | >2% | Stop if either boundary is crossed |
+| Major error proportion | >3% | >2%†† | Stop if either boundary is crossed |
+
+\* 原文の脚注: 中止境界（futility boundaries）は 25 パーセンタイルに基づく「最低ライン（minimum bar）」、非劣性マージンは 75 パーセンタイルに基づく「高いライン（high bar）」。
+
+†† 原文の脚注: このマージンは 95%CI の上限ではなく下限に掛ける（Gartlehner らの先行研究に基づく）。
+
+出典: CESAR のプロトコルのプレプリント Table 2（p.7）と脚注（p.8）。https://www.medrxiv.org/content/medrxiv/early/2026/04/15/2026.04.13.26350802.full.pdf （2026-11-22 に照合。issue #557）
 
 本拡張のベンチマーク（§8）ではデータ抽出側の行（Sensitivity futility <92% / NI margin <97%、Major error futility >3% / NI margin >2%）を採用基準の出発点とする。
 
-### Q11 参考: `MODEL_PRICING` / `MODEL_IMAGE_CAPABILITY` の Anthropic 3 モデルの数値（PR2 で転記済み）
+合格基準（`AcceptanceCriteria`）の初期値は、データ抽出の行の中止境界（点推定）だけを流用し、感度 92% を正確度の下限 92% の、重大エラー割合 3% を偽陽性の割合の上限 3% の出発点にした。指標は同じではない（CESAR の感度は、報告のある項目のうち正しく抽出された割合。重大エラーは結論を誤らせうる誤り）。どれも中止の基準で、合格の目標ではない。非劣性マージン（97%、2%）は 95%CI に掛ける値なので、初期値には使わない。
 
-issue #127 PR1 時点では `createProvider()` / `settingsStore.LLM_PROVIDERS` が `'anthropic'` を解決できず、モデルセレクタに出しても選択すると誤って Gemini へ送信されてしまうため、単価表への追加を見送っていた。**PR2 で `src/lib/llm/pricing.ts` の `MODEL_PRICING` / `MODEL_IMAGE_CAPABILITY` へ以下の数値をそのまま転記済み**（再調査は行っていない）。
+### Q11 参考: `MODEL_PRICING` / `MODEL_IMAGE_CAPABILITY` の Anthropic のモデルの数値
+
+issue #127 PR1 時点では `createProvider()` / `settingsStore.LLM_PROVIDERS` が `'anthropic'` を解決できず、モデルセレクタに出しても選択すると誤って Gemini へ送信されてしまうため、単価表への追加を見送っていた。**PR2 で `src/lib/llm/pricing.ts` の `MODEL_PRICING` / `MODEL_IMAGE_CAPABILITY` へ opus-5 / sonnet-5 / haiku-4-5 の数値をそのまま転記済み**（転記時の再調査は行っていない）。sonnet-5-5 は 2026-11-23 の確認値をもとに追加した。
 
 | モデル ID | 入力 USD/1M | 出力 USD/1M | 画像入力 | 備考 |
 | --- | --- | --- | --- | --- |
 | `claude-opus-5` | 5.00 | 25.00 | 対応（ネイティブ base64） | コンテキスト長 1M |
 | `claude-sonnet-5` | 2.00 | 10.00 | 対応（ネイティブ base64） | コンテキスト長 1M。**2026-08-31 に公式料金ページで再確認し $2.00 / $10.00 へ修正**。当初「2026-08-31 までの導入価格」とされていた $2/$10 は**標準価格として恒久化**され、予定されていた $3/$15 への改定は行われないと明記された。旧記述は「導入価格終了後に単価表を直さずに済むよう通常価格 $3/$15 を載せる」という判断だったが前提が失効し、逆に 1.5 倍の過大表示になっていた |
-| `claude-haiku-4-5` | 1.00 | 5.00 | 対応（ネイティブ base64） | **コンテキスト長 200K**（他の 2 モデルは 1M）。全文 PDF 抽出という本用途では長尺文書で haiku だけ収まらないケースが起こりうる点に注意 |
+| `claude-sonnet-5-5` | 2.00 | 10.00 | 対応（ネイティブ base64） | 2026-11-23 に公式料金ページ（https://platform.claude.com/docs/en/about-claude/pricing）で確認した値（docs/evaluation-plan.md §3.2）。キャッシュ読み出しの単価は未確認のため設定せず、入力単価と同額で割引なしに概算する |
+| `claude-haiku-5-5` | 0.10 | 0.50 | 対応（ネイティブ base64） | コンテキスト長 1M。入力が 10 万トークンを超える依頼は全体が 0.50 / 2.50（キャッシュ読み出し 0.01、超えると 0.05）。2026-11-25 に公式料金ページで確認 |
+| `claude-haiku-4-5` | 1.00 | 5.00 | 対応（ネイティブ base64） | **コンテキスト長 200K**（claude-opus-5 / claude-sonnet-5 は 1M）。全文 PDF 抽出という本用途では長尺文書で haiku だけ収まらないケースが起こりうる点に注意 |
 
 ---
 

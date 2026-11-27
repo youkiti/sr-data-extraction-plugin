@@ -5,11 +5,11 @@
 
 | 項目 | 値 | 正の場所 |
 |---|---|---|
-| リポジトリの版 | v0.36.1 | `package.json` の `version` |
-| ストアの公開版 | v0.36.1（掲載ページの更新日 2026-11-17。2026-11-18 に確認） | `docs/store/store-status.json`（手で更新する） |
+| リポジトリの版 | v0.36.2 | `package.json` の `version` |
+| ストアの公開版 | v0.36.2（掲載ページの更新日 2026-11-24。2026-11-26 に確認） | `docs/store/store-status.json`（手で更新する） |
 | 工場出荷の既定モデル | `gemini-3.8-flash` | `src/lib/storage/settingsStore.ts` の `FACTORY_DEFAULT_MODEL` |
 | extract-data プロンプトの版数 | 17 | `src/features/extraction/skills/extractData.ts` の `EXTRACT_DATA_PROMPT_VERSION` |
-| 要件定義書の版 | v0.52 | `docs/requirements.md` の見出し |
+| 要件定義書の版 | v0.55 | `docs/requirements.md` の見出し |
 
 リポジトリの版がストアの公開版より新しいとき、その差は「zip 作成済み・ストア未反映」を意味する。
 ストアへ提出・反映されたら `docs/store/store-status.json` を手で更新し、`npm run facts` を実行する。

@@ -15,6 +15,15 @@ This is the public changelog of this extension. Any change that can alter AI out
 
 ### AI の結果に影響する変更 / Changes that affect AI output
 
+- Claude Sonnet 5.5（`claude-sonnet-5-5`）の単価を足し、費用の概算を表示するようにしました。これまで単価が不明で費用の集計から外れていた Sonnet 5.5 の呼び出しも、費用の合計に入ります（入力 2.00 / 出力 10.00 USD per 1M。キャッシュ読み出しは割り引かずに概算。2026-11-25、PR #570）。  
+  Added pricing for Claude Sonnet 5.5 (`claude-sonnet-5-5`) so estimated costs are displayed. Sonnet 5.5 calls, previously left out of cost totals because the price was unknown, are now included (input 2.00 / output 10.00 USD per 1M; cache reads are estimated without a discount; 2026-11-25, PR #570).
+- Claude Haiku 5.5（`claude-haiku-5-5`）の単価を足し、モデルの選択肢に出して費用の概算を表示するようにしました。入力 0.10 / 出力 0.50 / キャッシュ読み出し 0.01 USD per 1M、入力が 10 万トークンを超える依頼は全体を 0.50 / 2.50 / 0.05 で数えます。費用の概算に、この長い入力の段を数える仕組みを足しました（2026-11-25、PR #572）。  
+  Added Claude Haiku 5.5 (`claude-haiku-5-5`) pricing and model selection with estimated costs. Rates are input 0.10 / output 0.50 / cache read 0.01 USD per 1M; requests exceeding 100,000 input tokens use 0.50 / 2.50 / 0.05 for the whole request. Cost estimation now supports this long-context tier (2026-11-25, PR #572).
+
+## v0.36.2（2026-11-24）
+
+### AI の結果に影響する変更 / Changes that affect AI output
+
 - 表のデザインの AI ドラフトで、研究単位（study）の項目に tab1.csv のキー列名（study_label・registration_id・n_documents）が提案されたら、`_reported` を付けて自動改名します。再ドラフトでは、現行の版に同じレベル・同じ名前の項目がある提案は改名せず（アウトカムの結果の ma.csv のキー列名も同じ）、改名するときは現行の版の項目名とも重ならない名前にします（2026-11-22、issue #553）。
   In AI drafts of the table design, study-level fields proposed with tab1.csv key column names (study_label, registration_id and n_documents) are automatically renamed with `_reported`. On a redraft, a proposal whose name and level match a field in the current version is not renamed (the same applies to ma.csv key column names for outcome result fields), and renamed proposals avoid the names of fields in the current version (2026-11-22, issue #553).
 
@@ -24,6 +33,8 @@ This is the public changelog of this extension. Any change that can alter AI out
   New study-level fields can no longer use tab1.csv key column names. For existing fields with these names, R set tab1.csv / tab1_status.csv columns become `<name>_field` (with numbered suffixes for further collisions), so update column references in R code. Existing fields can be saved without renaming (StudyData stores columns by field name, so renaming would not carry verified values to the new column). The ma.csv key column names from v0.36.1 (issue #549) now work the same way, so existing outcome result fields no longer block confirming the table design or adding outcomes from the pilot. Importing a table design from JSON / CSV no longer rejects the whole file for these names; the editor checks them instead (2026-11-22, issue #553).
 - 研究単位（study）の項目に `study_label` という名前の既存項目があると、`study_wide.csv` の見出しに `study_label` が 2 回出る問題を修正しました。その項目の列名を `study_label_field`（さらに重なれば連番）に変えます。複数選択の 1/0 列、AI 下書きの `__source` 列、`consult_fields` の値は元の項目名のままです（2026-11-23、issue #561）。
   Fixed `study_label` appearing twice in the `study_wide.csv` header when the table design has an existing study-level field named `study_label`. That field's column is now named `study_label_field` (with numbered suffixes for further collisions). Multi-select 1/0 columns, the `__source` columns of AI drafts and the values in `consult_fields` keep the original field name (2026-11-23, issue #561).
+- 合格基準の初期値（正確度 92%、偽陽性の割合 3%）の説明を直しました。これは CESAR のデータ抽出の中止境界（感度 92%、重大エラー割合 3%、いずれも点推定）を、正確度と偽陽性の割合の出発点に流用した値です。CESAR では、この境界は中止を決める最低ラインで、合格の目標ではありません。値は変わりません（2026-11-24、issue #557）。
+  Corrected the explanation of the acceptance criteria starting values (accuracy 92% and false-positive proportion 3%). They are adapted from the CESAR project’s stopping (futility) boundaries for data extraction (sensitivity 92% and major error proportion 3%, both point estimates). In CESAR, these boundaries are minimum bars for stopping, not targets for passing. The values are unchanged (2026-11-24, issue #557).
 
 ## v0.36.1（2026-11-17）
 
