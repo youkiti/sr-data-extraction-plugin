@@ -9,6 +9,13 @@ export const MODELS = [
   { id: 'gpt-6.2-sol', route: 'codex' },
 ] as const;
 export type Condition = 'md' | 'pdf';
+export type PromptVariant = 'default' | 'allow-calc';
+export function promptVariant(env = process.env): PromptVariant {
+  const value = env.BENCH_PROMPT_VARIANT;
+  if (value === undefined || value === 'default') return 'default';
+  if (value === 'allow-calc') return value;
+  throw new Error('BENCH_PROMPT_VARIANT は default / allow-calc で指定してください');
+}
 export const selectedModels = () => MODELS.filter((model) => process.env.BENCH_MODELS?.trim()
   ? readSubset('BENCH_MODELS', MODELS.map((m) => m.id)).includes(model.id) : 'keyEnv' in model);
 export function condition(env = process.env): Condition {

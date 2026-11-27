@@ -35,7 +35,7 @@ export async function main(): Promise<void> {
     icos.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
     const destination = path.join(outputRoot(), `records-${runLabel()}`, model.id);
     await writeJson(`${destination}.json`, { label: runLabel(), condition: inputCondition, model: model.id,
-      promptVersion: manifest.promptVersion, harnessCommit: manifest.harnessCommit, convertedAt, icos });
+      promptVersion: manifest.promptVersion, promptVariant: manifest.promptVariant ?? 'default', harnessCommit: manifest.harnessCommit, convertedAt, icos });
     await writeJson(`${destination}.stats.json`, secondaryMetrics(model.id, set.studies, runs, ledger));
     console.log(`${model.id}: run=${runs.length}, RCT=${set.studies.length}, ICO=${icos.length}`);
   }

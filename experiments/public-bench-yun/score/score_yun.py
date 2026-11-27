@@ -177,7 +177,8 @@ def score_file(document, gold, pmcids, draws, calculator_class, utils, comma_nor
             records = [build_record(row, {field: by_id[row["id"]]["fields"][field]["value"]
                                           for field in FIELDS[task]}, task, utils, comma_normalized) for row in rows]
             calculator = calculator_class(task)
-        results.append({"model": document["model"], "condition": document["condition"], "task": task,
+        results.append({"model": document["model"], "condition": document["condition"],
+                        "promptVariant": document.get("promptVariant", "default"), "task": task,
                         "nIcos": len(records), "nRcts": len({row["pmcid"] for row in records}),
                         "metrics": calculate(calculator, records),
                         "extraCounts": extra_counts(records, by_id, task),

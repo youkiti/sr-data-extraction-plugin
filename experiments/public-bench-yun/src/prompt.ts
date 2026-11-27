@@ -3,7 +3,17 @@ import { EXTRACT_DATA_TEMPERATURE } from '../../../src/features/extraction/execu
 import type { SchemaField } from '../../../src/domain/schemaField';
 import type { ChatMessage, ChatOptions } from '../../../src/lib/llm/LLMProvider';
 import type { Document, Ico, Study } from './dataset';
+import { promptVariant, type PromptVariant } from './config';
 export { promptCharacters } from '../../cochrane-numeric-benchmark/src/prompt';
+export const DEFAULT_RULE_SENTENCE = 'Never infer, compute, or guess values that are not explicitly stated.';
+export const ALLOW_CALC_RULE_SENTENCE = 'Never infer or guess values that are not explicitly stated.';
+export function systemPrompt(variant: PromptVariant, prompt = buildExtractDataSystemPrompt(false, false)): string {
+  if (variant === 'default') return prompt;
+  if (prompt.split(DEFAULT_RULE_SENTENCE).length !== 2) {
+    throw new Error('allow-calc の置換対象文はシステムプロンプトに正確に 1 回必要です');
+  }
+  return prompt.replace(DEFAULT_RULE_SENTENCE, ALLOW_CALC_RULE_SENTENCE);
+}
 export const FIELD_ORDER = ['intervention_events', 'intervention_group_size', 'intervention_mean', 'intervention_standard_deviation',
   'comparator_events', 'comparator_group_size', 'comparator_mean', 'comparator_standard_deviation'] as const;
 export function buildFields(icos: Ico[]): SchemaField[] {
@@ -24,10 +34,10 @@ export function buildOutcomeList(icos: Ico[]) {
     description: `Intervention group: ${ico.intervention.trim()} | Comparator group: ${ico.comparator.trim()} | Outcome: ${ico.outcome.trim()} | Data type: ${ico.outcome_type}`,
     typicalTimepoints: null }));
 }
-export function buildStudyRequest(study: Study, documents: Document[]) {
+export function buildStudyRequest(study: Study, documents: Document[], variant = promptVariant()) {
   const fields = buildFields(study.icos);
   const messages: ChatMessage[] = [
-    { role: 'system', content: buildExtractDataSystemPrompt(false, false) },
+    { role: 'system', content: systemPrompt(variant) },
     { role: 'user', content: buildExtractDataUserContent({ fields, outcomeList: buildOutcomeList(study.icos), protocolContext: null, documents }) },
   ];
   const chatOptions: ChatOptions = { temperature: EXTRACT_DATA_TEMPERATURE, responseSchema: extractDataResponseSchema(false) };

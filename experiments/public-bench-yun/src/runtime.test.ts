@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { ledgerWriter, type LedgerEntry } from '../../cochrane-numeric-benchmark/src/ledger';
 import { spendBeforeAttempt } from './runner';
 import { readJson } from '../../cochrane-numeric-benchmark/src/io';
-import { condition, runLabel, outputRoot, yunRoot, selectedModels, selectedPmcids } from './config';
+import { condition, promptVariant, runLabel, outputRoot, yunRoot, selectedModels, selectedPmcids } from './config';
 import { checkInputs, inputManifest, requestHashes, type Manifest } from './manifest';
 import { buildStudyRequest } from './prompt';
 import type { EvaluationSet, Study } from './dataset';
@@ -16,7 +16,16 @@ const study: Study = { pmcid: 2, studyKey: 'PMC2', icos: [{ id: 1, outcomeId: 'o
 const request = buildStudyRequest(study, [{ role: 'article', filename: 'PMC2.md', mode: 'text', pages: [{ page: 1, text: '本文' }] }]);
 const manifest: Manifest = { hashes: { gold: 'gold', 'md/PMC2': 'md', 'request/model__PMC2': 'request' },
   promptVersion: 17, harnessCommit: null, excluded: [], emptyGold: null, condition: 'md', yunCommit: 'upstream',
-  goldSha256: 'gold', models: ['model'], codexEffort: null };
+  goldSha256: 'gold', models: ['model'], codexEffort: null, promptVariant: 'default' };
+
+test('プロンプト変種は未設定・default・allow-calc だけを許可する', () => {
+  assert.equal(promptVariant({}), 'default');
+  assert.equal(promptVariant({ BENCH_PROMPT_VARIANT: 'default' }), 'default');
+  assert.equal(promptVariant({ BENCH_PROMPT_VARIANT: 'allow-calc' }), 'allow-calc');
+  for (const value of ['', 'unknown', ' default', 'ALLOW-CALC']) {
+    assert.throws(() => promptVariant({ BENCH_PROMPT_VARIANT: value }), /BENCH_PROMPT_VARIANT/);
+  }
+});
 
 test('条件・ラベル・出力と上流の絶対パス・PMCID 制限を検査', () => {
   assert.equal(condition({ BENCH_CONDITION: 'md' }), 'md'); assert.equal(condition({ BENCH_CONDITION: 'pdf' }), 'pdf');
@@ -54,6 +63,14 @@ test('依頼ハッシュは codex の推論設定も含め、依頼とメタデ�
   assert.throws(() => checkInputs(manifest, { ...manifest, models: ['other'] }), /マニフェスト/);
   assert.throws(() => checkInputs(manifest, { ...manifest, excluded: [{ pmcid: 4, reason: 'no_pdf' }] }), /マニフェスト/);
 });
+test('変種のない旧マニフェストは default とだけ互換性がある', () => {
+  const { promptVariant: _variant, ...previous } = manifest;
+  checkInputs(previous, manifest);
+  checkInputs(manifest, { ...manifest, harnessCommit: 'new-commit' });
+  checkInputs({ ...manifest, promptVariant: 'allow-calc' }, { ...manifest, promptVariant: 'allow-calc' });
+  assert.throws(() => checkInputs(previous, { ...manifest, promptVariant: 'allow-calc' }), /マニフェスト/);
+  assert.throws(() => checkInputs(manifest, { ...manifest, promptVariant: 'allow-calc' }), /マニフェスト/);
+});
 test('dry run はディレクトリも作らず、初回のみマニフェスト保存、変更時は再開を拒否', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'yun-manifest-'));
   try {
@@ -65,6 +82,7 @@ test('dry run はディレクトリも作らず、初回のみマニフェスト
     await inputManifest(set, plans, 'md', runs, false, null);
     const saved = await readJson<Manifest>(path.join(runs, '_inputs.json'));
     assert.equal(saved.emptyGold, null); assert.equal(saved.condition, 'md'); assert.equal(saved.goldSha256, 'gold');
+    assert.equal(saved.promptVariant, promptVariant());
     await inputManifest(set, plans, 'md', runs, false, null);
     await assert.rejects(inputManifest(set, [{ ...plans[0]!, request: { ...request, chatOptions: { ...request.chatOptions, temperature: 0.9 } } }], 'md', runs, false, null), /ハッシュ/);
   } finally { await rm(dir, { recursive: true, force: true }); }
